@@ -683,6 +683,11 @@ var xp_bar: ProgressBar
 var ult_bar: ProgressBar        # 궁극기 충전 게이지 (하단 중앙)
 var ult_bar_label: Label        # "Q 궁극기" / "READY!"
 var ult_gauge := 0.0            # 0~1, 처치로 충전 → Q로 발동
+var skill_e_cd := 0.0           # E 스킬샷 남은 쿨다운
+var skill_space_cd := 0.0       # Space 노바 남은 쿨다운
+var skill_hud_label: Label      # E/Space 쿨다운 상태 표시
+const SKILL_E_MAX := 5.0
+const SKILL_SPACE_MAX := 8.0
 var hp_text: Label
 var lv_label: Label             # 뱀서식: 최상단 XP 바 안의 레벨 표기
 var timer_label: Label          # 뱀서식: 상단 중앙 대형 생존 타이머
@@ -1420,6 +1425,13 @@ func _process(delta: float) -> void:
 func _physics_process(delta: float) -> void:
 	if state != State.PLAYING:
 		return
+
+	# 능동 스킬 쿨다운 감소 + HUD 갱신
+	if skill_e_cd > 0.0:
+		skill_e_cd = maxf(0.0, skill_e_cd - delta)
+	if skill_space_cd > 0.0:
+		skill_space_cd = maxf(0.0, skill_space_cd - delta)
+	_refresh_skill_hud()
 
 	var enemies := get_tree().get_nodes_in_group("enemies")
 
@@ -5489,7 +5501,10 @@ func _start_game(d: Dictionary) -> void:
 	cheat_invincible = false
 	run_gold = 0
 	ult_gauge = 0.0
+	skill_e_cd = 0.0
+	skill_space_cd = 0.0
 	_refresh_ult_bar()
+	_refresh_skill_hud()
 	run_damage_dealt = 0.0
 	run_damage_taken = 0.0
 	run_bosses = 0
@@ -5712,6 +5727,15 @@ func _continue_abyss() -> void:
 # ---------------------------------------------------------------------
 #  일시정지 (ESC)
 # ---------------------------------------------------------------------
+# E/Space 스킬 쿨다운 HUD 갱신 (준비=밝게, 쿨=남은 초)
+func _refresh_skill_hud() -> void:
+	if skill_hud_label == null:
+		return
+	var et := "E ✓" if skill_e_cd <= 0.0 else "E %.0f" % ceil(skill_e_cd)
+	var st := "Space ✓" if skill_space_cd <= 0.0 else "Space %.0f" % ceil(skill_space_cd)
+	skill_hud_label.text = "%s     %s" % [et, st]
+
+
 # 궁극 게이지 바 갱신 (가볍게 — 처치마다 호출)
 func _refresh_ult_bar() -> void:
 	if ult_bar == null:
@@ -5724,6 +5748,59 @@ func _refresh_ult_bar() -> void:
 		else:
 			ult_bar_label.text = "Q  궁극기  %d%%" % int(ult_gauge * 100.0)
 			ult_bar_label.add_theme_color_override("font_color", Color(0.85, 0.8, 0.95))
+
+
+# E 스킬샷: 마우스 방향으로 강력한 관통 빔 (히트스캔 코리도어). RPG식 조준 스킬.
+func _fire_skillshot() -> void:
+	if player == null:
+		return
+	var dir: Vector2 = get_global_mouse_position() - player.position
+	dir = dir.normalized() if dir.length() > 1.0 else Vector2.RIGHT
+	var reach := 720.0
+	var width := 34.0
+	var dmg: float = 120.0 * player.damage_mult * (1.0 + time_survived / 300.0)
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if not is_instance_valid(e):
+			continue
+		var to: Vector2 = e.position - player.position
+		var along: float = to.dot(dir)
+		if along < 0.0 or along > reach:
+			continue
+		if (to - dir * along).length() < width + e.radius:
+			e.take_damage(dmg, true)
+			e.shove(player.position, 130.0)
+	if boss and is_instance_valid(boss):
+		var tb: Vector2 = boss.position - player.position
+		var al: float = tb.dot(dir)
+		if al > 0.0 and al < reach and (tb - dir * al).length() < width + boss.radius:
+			boss.take_damage(dmg * 1.5)
+	# 코드 빔(bolt)을 플레이어→방향으로
+	var beam := Effect.new()
+	beam.kind = "bolt"
+	beam.position = player.position + dir * reach
+	beam.from_global = player.position
+	beam.col = Color(0.5, 0.9, 1.0)
+	beam.life = 0.24
+	beam.max_life = 0.24
+	add_child(beam)
+	play_sfx("hit", -6.0)
+	shake_t = maxf(shake_t, 0.12)
+
+
+# Space 노바: 플레이어 주변 원형 폭발 (넉백+딜). 포위 대응 스킬.
+func _fire_nova() -> void:
+	if player == null:
+		return
+	var rad := 220.0
+	var dmg: float = 70.0 * player.damage_mult * (1.0 + time_survived / 300.0)
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if is_instance_valid(e) and player.position.distance_to(e.position) < rad + e.radius:
+			e.take_damage(dmg, true)
+			e.shove(player.position, 320.0)
+	_spawn_proc_fx("ring", player.position, rad * 2.0, Color(0.4, 0.9, 1.0), 0.4)
+	_spawn_proc_fx("burst", player.position, rad * 0.5, Color(0.7, 1.0, 1.0), 0.35)
+	play_sfx("ult", -12.0)
+	shake_t = maxf(shake_t, 0.18)
 
 
 # 궁극기: 화면 전역 대형 폭발 (능동 스킬 Phase 1). 게이지 소모.
@@ -5754,6 +5831,17 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_Q:
 		if state == State.PLAYING and ult_gauge >= 1.0:
 			_fire_ultimate()
+			get_viewport().set_input_as_handled()
+	# E: 스킬샷 (쿨다운) / Space: 노바 (쿨다운)
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_E:
+		if state == State.PLAYING and skill_e_cd <= 0.0:
+			_fire_skillshot()
+			skill_e_cd = SKILL_E_MAX
+			get_viewport().set_input_as_handled()
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_SPACE:
+		if state == State.PLAYING and skill_space_cd <= 0.0:
+			_fire_nova()
+			skill_space_cd = SKILL_SPACE_MAX
 			get_viewport().set_input_as_handled()
 	# F3: 성능 카운터 토글
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F3:
@@ -6578,6 +6666,17 @@ func _build_ui(s: Vector2) -> void:
 	ult_bar_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	ult_bar_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud.add_child(ult_bar_label)
+	# E/Space 스킬 쿨다운 표시 (궁극 바 위)
+	skill_hud_label = Label.new()
+	skill_hud_label.position = Vector2(s.x / 2.0 - 150, s.y - 54)
+	skill_hud_label.size = Vector2(300, 18)
+	skill_hud_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	skill_hud_label.add_theme_font_size_override("font_size", 12)
+	skill_hud_label.add_theme_constant_override("outline_size", 3)
+	skill_hud_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	skill_hud_label.add_theme_color_override("font_color", Color(0.7, 0.95, 1.0))
+	skill_hud_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud.add_child(skill_hud_label)
 
 	# 레벨 표기 (XP 바 안쪽 좌측)
 	lv_label = Label.new()
