@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://blii6ak1wyvwd"
-path="res://.godot/imported/8.png-0ddcdea66315bf22033e06ad9136b1ec.ctex"
+uid="uid://beilm86dxsfgr"
+path="res://.godot/imported/2.png-7e3b880338d78eda78d61be27ac90d6b.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/anim/isolde_walk/8.png"
-dest_files=["res://.godot/imported/8.png-0ddcdea66315bf22033e06ad9136b1ec.ctex"]
+source_file="res://assets/anim/mordek_1_walk/2.png"
+dest_files=["res://.godot/imported/2.png-7e3b880338d78eda78d61be27ac90d6b.ctex"]
 
 [params]
 

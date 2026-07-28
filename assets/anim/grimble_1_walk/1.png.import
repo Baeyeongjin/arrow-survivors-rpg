@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://8n7aa1qe7xhg"
-path="res://.godot/imported/2.png-b82297fda254545ccea22daaf1538ef4.ctex"
+uid="uid://c2auqbxqxbgop"
+path="res://.godot/imported/1.png-6dcc3040323937d6517ddc2a6378e13c.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/anim/mordek_walk/2.png"
-dest_files=["res://.godot/imported/2.png-b82297fda254545ccea22daaf1538ef4.ctex"]
+source_file="res://assets/anim/grimble_1_walk/1.png"
+dest_files=["res://.godot/imported/1.png-6dcc3040323937d6517ddc2a6378e13c.ctex"]
 
 [params]
 

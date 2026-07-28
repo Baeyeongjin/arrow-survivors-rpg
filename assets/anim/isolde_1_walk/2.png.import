@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://b0x7guh0wf3gq"
-path="res://.godot/imported/7.png-60ad409307df312a885fbc44b85d125b.ctex"
+uid="uid://cqna5q42lg0t3"
+path="res://.godot/imported/2.png-7e297ec6d61c81037fed9bd506c076b3.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/anim/grimble_walk/7.png"
-dest_files=["res://.godot/imported/7.png-60ad409307df312a885fbc44b85d125b.ctex"]
+source_file="res://assets/anim/isolde_1_walk/2.png"
+dest_files=["res://.godot/imported/2.png-7e297ec6d61c81037fed9bd506c076b3.ctex"]
 
 [params]
 
