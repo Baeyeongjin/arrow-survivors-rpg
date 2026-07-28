@@ -700,6 +700,9 @@ var inv_detail_label: Label
 var inv_equip_btn: Button
 var inv_discard_btn: Button
 var _inv_sel := -1              # 선택한 가방 인덱스
+var stat_points := 0            # 미분배 능력치 포인트 (레벨업마다 +1)
+var char_stats := {"str": 0, "agi": 0, "vit": 0, "foc": 0}   # 분배 누적치 (리셋 대상)
+var inv_stat_box: VBoxContainer # 인벤토리 좌하단 능력치 분배 UI
 var hp_text: Label
 var lv_label: Label             # 뱀서식: 최상단 XP 바 안의 레벨 표기
 var timer_label: Label          # 뱀서식: 상단 중앙 대형 생존 타이머
@@ -4329,8 +4332,10 @@ func _gain_xp(amount: int) -> void:
 		level += 1
 		xp_to_next = _xp_requirement(level)
 		pending_levelups += 1
+		stat_points += 1   # RPG 능력치 포인트: 레벨업마다 1점 (인벤토리 I에서 분배)
 	if player:
 		player.set_stage(GameConfig.hero_stage_for_level(level))
+	_refresh_equip_hud()   # HUD의 스탯 포인트 표시 갱신
 	_apply_char_growth()   # 뱀서식: 레벨이 오르면 캐릭터 고유 특성도 자란다
 	if pending_levelups > 0 and state == State.PLAYING:
 		_start_levelup()
@@ -4543,8 +4548,80 @@ func _refresh_equip_hud() -> void:
 			lines.append("%s: —" % EQUIP_SLOT_NAME[slot])
 		else:
 			lines.append("%s: %s%s" % [EQUIP_SLOT_NAME[slot], str(RARITY_TAG.get(str(it["rarity"]), "")), str(it["name"])])
-	lines.append("[ I ] 인벤토리 (%d)" % inventory.size())
+	var inv_line := "[ I ] 인벤토리 (%d)" % inventory.size()
+	if stat_points > 0:
+		inv_line += "  ◆스탯 %d" % stat_points
+	lines.append(inv_line)
 	equip_hud_label.text = "\n".join(lines)
+
+
+# ── 능력치 분배 (Phase 2: RPG 스탯 포인트) ────────────────────────────
+# 포인트당 효과는 전부 player의 가산형 필드로 → 장비 어픽스와 같은 통에 합산.
+const STAT_DEFS := [
+	{"key": "str", "name": "힘",   "desc": "공격력 +3%"},
+	{"key": "agi", "name": "민첩", "desc": "공격속도·이동속도 ↑"},
+	{"key": "vit", "name": "체력", "desc": "최대체력 +10·재생"},
+	{"key": "foc", "name": "집중", "desc": "공격범위 +3%·방어 +0.5"},
+]
+
+
+func _apply_stat_point(key: String) -> void:
+	if player == null:
+		return
+	match key:
+		"str":
+			player.damage_mult += 0.03
+		"agi":
+			player.cooldown_mult = maxf(0.3, player.cooldown_mult - 0.01)
+			player.speed += 3.0
+		"vit":
+			player.max_hp += 10.0
+			player.hp = minf(player.max_hp, player.hp + 10.0)
+			player.regen += 0.1
+		"foc":
+			player.area_mult += 0.03
+			player.armor += 0.5
+
+
+func _spend_stat_point(key: String) -> void:
+	if stat_points <= 0 or not char_stats.has(key):
+		return
+	stat_points -= 1
+	char_stats[key] = int(char_stats[key]) + 1
+	assert(stat_points >= 0)   # 불변식: 분배 포인트는 음수가 될 수 없음
+	_apply_stat_point(key)
+	play_sfx("select", -12.0)
+	_refresh_stat_box()
+	_refresh_equip_hud()
+	_update_ui()
+
+
+func _refresh_stat_box() -> void:
+	if inv_stat_box == null:
+		return
+	for c in inv_stat_box.get_children():
+		c.queue_free()
+	var hdr := Label.new()
+	hdr.text = "분배 포인트: %d" % stat_points
+	hdr.add_theme_font_size_override("font_size", 15)
+	hdr.add_theme_color_override("font_color", Color(1.0, 0.9, 0.4) if stat_points > 0 else Color(0.6, 0.62, 0.68))
+	inv_stat_box.add_child(hdr)
+	for d in STAT_DEFS:
+		var key := str(d["key"])
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		var lb := Label.new()
+		lb.custom_minimum_size = Vector2(268, 26)
+		lb.add_theme_font_size_override("font_size", 13)
+		lb.text = "%s Lv%d  (%s)" % [str(d["name"]), int(char_stats[key]), str(d["desc"])]
+		row.add_child(lb)
+		var btn := Button.new()
+		btn.text = "＋"
+		btn.custom_minimum_size = Vector2(40, 26)
+		btn.disabled = stat_points <= 0
+		btn.pressed.connect(_spend_stat_point.bind(key))
+		row.add_child(btn)
+		inv_stat_box.add_child(row)
 
 
 # ── 인벤토리 (Phase 3b: 직접 장착/비교 UI) ─────────────────────────────
@@ -4588,6 +4665,7 @@ func _toggle_inventory() -> void:
 func _refresh_inventory_screen() -> void:
 	if inv_equip_box == null:
 		return
+	_refresh_stat_box()   # 좌하단 능력치 분배
 	# 좌: 장착 3슬롯
 	for c in inv_equip_box.get_children():
 		c.queue_free()
@@ -4691,6 +4769,16 @@ func _build_inventory_ui(s: Vector2, overlay: CanvasLayer) -> void:
 	inv_equip_box.position = Vector2(fl + 30, 152)
 	inv_equip_box.add_theme_constant_override("separation", 8)
 	inventory_panel.add_child(inv_equip_box)
+	var sh := Label.new()
+	sh.text = "[ 능력치 분배 ]"
+	sh.position = Vector2(fl + 30, 322)
+	sh.add_theme_font_size_override("font_size", 17)
+	sh.add_theme_color_override("font_color", Color(1.0, 0.7, 0.85))
+	inventory_panel.add_child(sh)
+	inv_stat_box = VBoxContainer.new()
+	inv_stat_box.position = Vector2(fl + 30, 350)
+	inv_stat_box.add_theme_constant_override("separation", 6)
+	inventory_panel.add_child(inv_stat_box)
 	var bh := Label.new()
 	bh.text = "[ 가방 ]"
 	bh.position = Vector2(fl + 370, 122)
@@ -5868,6 +5956,8 @@ func _start_game(d: Dictionary) -> void:
 	_equip_applied = {}
 	inventory = []
 	_inv_sel = -1
+	stat_points = 0
+	char_stats = {"str": 0, "agi": 0, "vit": 0, "foc": 0}   # 런 시작: 능력치 분배 초기화
 	if inventory_panel:
 		inventory_panel.visible = false
 	_refresh_ult_bar()
