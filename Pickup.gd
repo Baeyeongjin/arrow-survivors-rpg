@@ -7,6 +7,7 @@ var radius := 11.0   # 젬(Gem.GEM_PX)과 겉보기 크기를 맞춤 — 바닥 
 var icon_path := ""  # 패시브 랜드마크처럼 kind와 파일명이 다를 때 지정
 var item := {}       # kind=="gear"일 때 장비 데이터(slot/rarity/affixes)를 싣는다
 var gear_col := Color(1, 1, 1)   # 장비 등급색 (겉보기)
+var gear_tier := 0   # 0 커먼/레어 · 1 에픽 · 2 레전더리 → 빛기둥·반짝이 강도
 var _t := 0.0
 var _taken := false   # 획득 1회 보장 (일시정지 타이밍에 중복 발동 방지)
 
@@ -46,12 +47,28 @@ func _draw() -> void:
 	var gcol := _glow_color()
 	draw_circle(o, (radius + 2.0) * pulse, Color(gcol.r, gcol.g, gcol.b, 0.14))
 
-	# 장비: 등급색 다이아몬드 + 흰 테두리 (아이콘 없이 코드로)
+	# 장비: 등급색 다이아몬드 + 흰 테두리. 에픽·레전더리는 빛기둥/반짝이로 '득템' 강조.
 	if kind == "gear":
+		# 고등급 광주(디아블로식): 바닥에서 솟는 등급색 빛기둥
+		if gear_tier >= 1:
+			var bh := (72.0 if gear_tier == 2 else 46.0) * pulse
+			var bw := 11.0 if gear_tier == 2 else 7.0
+			var a0 := (0.34 if gear_tier == 2 else 0.20) * (0.85 + 0.15 * sin(_t * 6.0))
+			var botc := Color(gear_col.r, gear_col.g, gear_col.b, a0)
+			var topc := Color(gear_col.r, gear_col.g, gear_col.b, 0.0)
+			draw_polygon(
+				PackedVector2Array([o + Vector2(-bw, 2), o + Vector2(bw, 2), o + Vector2(bw * 0.35, -bh), o + Vector2(-bw * 0.35, -bh)]),
+				PackedColorArray([botc, botc, topc, topc]))
 		var d := radius * pulse
 		var pts := PackedVector2Array([o + Vector2(0, -d), o + Vector2(d, 0), o + Vector2(0, d), o + Vector2(-d, 0)])
 		draw_colored_polygon(pts, gear_col)
 		draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2], pts[3], pts[0]]), Color(1, 1, 1, 0.9), 1.5)
+		# 레전더리: 궤도 반짝이 별
+		if gear_tier == 2:
+			for k in 3:
+				var ang := _t * 2.2 + k * TAU / 3.0
+				var sp := o + Vector2(cos(ang), sin(ang)) * (d + 6.0)
+				draw_circle(sp, 1.8, Color(1, 1, 1, 0.9))
 		return
 	var tex := Assets.tex(icon_path if icon_path != "" else "res://assets/items/%s.png" % kind)
 	if tex:

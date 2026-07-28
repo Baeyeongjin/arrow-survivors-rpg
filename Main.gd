@@ -4426,12 +4426,22 @@ func _maybe_drop_gear(pos: Vector2, elite: bool) -> void:
 
 
 func _spawn_gear_pickup(pos: Vector2, it: Dictionary) -> void:
+	var ord: int = RARITY_ORDER.get(str(it["rarity"]), 0)
+	var col: Color = RARITY_COL.get(str(it["rarity"]), Color.WHITE)
 	var p := Pickup.new()
 	p.kind = "gear"
 	p.item = it
-	p.gear_col = RARITY_COL.get(str(it["rarity"]), Color.WHITE)
+	p.gear_col = col
+	p.gear_tier = 2 if ord >= 4 else (1 if ord >= 3 else 0)   # 에픽1·레전더리2
 	p.position = pos
 	add_child(p)
+	# 고등급 드롭 순간 연출 (필드에서 '떴다!'가 보이게)
+	if ord >= 3:
+		_spawn_proc_fx("burst", pos, 70.0, col, 0.45)
+		_spawn_proc_fx("ring", pos, 110.0, col, 0.4)
+		play_sfx("levelup", -12.0)
+		if ord >= 4:
+			_flash(Color(col.r, col.g, col.b, 0.3))
 
 
 # 장비 획득: 현재 슬롯보다 등급이 같거나 높으면 장착, 아니면 골드로 분해.
@@ -4444,8 +4454,17 @@ func _pickup_gear(it: Dictionary) -> void:
 		_apply_equipment()
 		_gear_toast(it)
 		play_sfx("levelup", -12.0)
-		if RARITY_ORDER.get(str(it["rarity"]), 0) >= 3:
-			_flash(RARITY_COL.get(str(it["rarity"]), Color.WHITE))
+		# 에픽·레전더리 장착 순간 화려하게 (플래시 + 버스트 + 흔들림, 레전더리는 슬로우모)
+		var ord: int = RARITY_ORDER.get(str(it["rarity"]), 0)
+		if ord >= 3:
+			var col: Color = RARITY_COL.get(str(it["rarity"]), Color.WHITE)
+			_flash(Color(col.r, col.g, col.b, 0.5))
+			_spawn_proc_fx("burst", player.position, 130.0, col, 0.45)
+			_spawn_proc_fx("ring", player.position, 200.0, col, 0.4)
+			play_sfx("ult", -8.0)
+			shake_t = maxf(shake_t, 0.16)
+			if ord >= 4:
+				_slowmo(0.5, 220)
 	else:
 		run_gold += 5   # 하위 등급은 분해 (5골드)
 		_update_ui()
