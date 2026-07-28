@@ -680,6 +680,9 @@ var diff_label := ""
 # UI
 var hp_bar: ProgressBar
 var xp_bar: ProgressBar
+var ult_bar: ProgressBar        # 궁극기 충전 게이지 (하단 중앙)
+var ult_bar_label: Label        # "Q 궁극기" / "READY!"
+var ult_gauge := 0.0            # 0~1, 처치로 충전 → Q로 발동
 var hp_text: Label
 var lv_label: Label             # 뱀서식: 최상단 XP 바 안의 레벨 표기
 var timer_label: Label          # 뱀서식: 상단 중앙 대형 생존 타이머
@@ -3943,6 +3946,9 @@ func _death_fx_for(key: String) -> String:
 
 func on_enemy_killed(e: Enemy) -> void:
 	kills += 1
+	# 궁극기 게이지 충전 (엘리트는 크게). 처치 = 게이지 → "쌓아서 터뜨리는" 능동 루프.
+	ult_gauge = minf(1.0, ult_gauge + (0.05 if e.elite else 0.008))
+	_refresh_ult_bar()
 	var enemy_key := str(e.tier.get("key", "unknown"))
 	var enemy_kills: Dictionary = meta.get_or_add("enemy_kills", {})
 	enemy_kills[enemy_key] = int(enemy_kills.get(enemy_key, 0)) + 1
@@ -5482,6 +5488,8 @@ func _start_game(d: Dictionary) -> void:
 	cheated = false
 	cheat_invincible = false
 	run_gold = 0
+	ult_gauge = 0.0
+	_refresh_ult_bar()
 	run_damage_dealt = 0.0
 	run_damage_taken = 0.0
 	run_bosses = 0
@@ -5704,7 +5712,49 @@ func _continue_abyss() -> void:
 # ---------------------------------------------------------------------
 #  일시정지 (ESC)
 # ---------------------------------------------------------------------
+# 궁극 게이지 바 갱신 (가볍게 — 처치마다 호출)
+func _refresh_ult_bar() -> void:
+	if ult_bar == null:
+		return
+	ult_bar.value = ult_gauge
+	if ult_bar_label:
+		if ult_gauge >= 1.0:
+			ult_bar_label.text = "★ Q  궁극기  READY ★"
+			ult_bar_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.5))
+		else:
+			ult_bar_label.text = "Q  궁극기  %d%%" % int(ult_gauge * 100.0)
+			ult_bar_label.add_theme_color_override("font_color", Color(0.85, 0.8, 0.95))
+
+
+# 궁극기: 화면 전역 대형 폭발 (능동 스킬 Phase 1). 게이지 소모.
+func _fire_ultimate() -> void:
+	if state != State.PLAYING or player == null:
+		return
+	ult_gauge = 0.0
+	# 시간이 지날수록 강해짐 — 후반 탱커도 정리되도록.
+	var dmg: float = 80.0 * player.damage_mult * (1.0 + time_survived / 240.0)
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if is_instance_valid(e):
+			e.take_damage(dmg, true)
+			e.shove(player.position, 260.0)
+	if boss and is_instance_valid(boss):
+		boss.take_damage(dmg * 4.0)
+	# 연출: 보라 섬광 + 큰 흔들림 + 슬로우모 + 확산 충격파(개선된 ring/burst 재활용)
+	_flash(Color(0.72, 0.42, 1.0, 0.6))
+	shake_t = maxf(shake_t, 0.4)
+	_slowmo(0.4, 260)
+	play_sfx("ult", -4.0)
+	_spawn_proc_fx("ring", player.position, 540.0, Color(0.82, 0.45, 1.0), 0.6)
+	_spawn_proc_fx("burst", player.position, 240.0, Color(1.0, 0.7, 1.0), 0.5)
+	_refresh_ult_bar()
+
+
 func _unhandled_input(event: InputEvent) -> void:
+	# Q: 궁극기 발동 (게이지 가득 찼을 때만, 플레이 중)
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_Q:
+		if state == State.PLAYING and ult_gauge >= 1.0:
+			_fire_ultimate()
+			get_viewport().set_input_as_handled()
 	# F3: 성능 카운터 토글
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F3:
 		show_perf = not show_perf
@@ -6507,6 +6557,27 @@ func _build_ui(s: Vector2) -> void:
 	xp_bar.position = Vector2.ZERO
 	xp_bar.size = Vector2(s.x, xh)
 	hud.add_child(xp_bar)
+
+	# 궁극기 게이지 (하단 중앙 어빌리티 바 — RPG식 능동 스킬)
+	ult_bar = ProgressBar.new()
+	ult_bar.show_percentage = false
+	ult_bar.max_value = 1.0
+	ult_bar.value = 0.0
+	ult_bar.add_theme_stylebox_override("background", _bar_bg())
+	ult_bar.add_theme_stylebox_override("fill", _fill_box(Color(0.72, 0.42, 1.0)))
+	ult_bar.size = Vector2(300, 18)
+	ult_bar.position = Vector2(s.x / 2.0 - 150, s.y - 34)
+	hud.add_child(ult_bar)
+	ult_bar_label = Label.new()
+	ult_bar_label.position = Vector2(s.x / 2.0 - 150, s.y - 34)
+	ult_bar_label.size = Vector2(300, 18)
+	ult_bar_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ult_bar_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	ult_bar_label.add_theme_font_size_override("font_size", 12)
+	ult_bar_label.add_theme_constant_override("outline_size", 3)
+	ult_bar_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	ult_bar_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud.add_child(ult_bar_label)
 
 	# 레벨 표기 (XP 바 안쪽 좌측)
 	lv_label = Label.new()
