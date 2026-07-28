@@ -169,18 +169,23 @@ static func tier_by_key(key: String) -> Dictionary:
 static func stages() -> Array:
 	return [
 		{"name": "던전",   "boss": "boss_1", "tint": Color(0.70, 0.70, 0.78),
+			"element": "phys", "boss_weak": "",
 			"field_passives": ["armor", "wings", "magnet", "spinach"],
 			"props": ["res://assets/props/s1_a.png", "res://assets/props/s1_b.png"]},
 		{"name": "지옥",   "boss": "boss_2", "tint": Color(0.85, 0.55, 0.50),
+			"element": "fire", "boss_weak": "ice",
 			"field_passives": ["spinach", "tomato", "candela", "stone_mask"],
 			"props": ["res://assets/props/s2_a.png", "res://assets/props/s2_b.png"]},
 		{"name": "빙하",   "boss": "boss_3", "tint": Color(0.50, 0.65, 0.90),
+			"element": "ice", "boss_weak": "fire",
 			"field_passives": ["tome", "spellbinder", "crown", "armor"],
 			"props": ["res://assets/props/s3_a.png", "res://assets/props/s3_b.png"]},
 		{"name": "공허",   "boss": "boss_4", "tint": Color(0.60, 0.45, 0.85),
+			"element": "dark", "boss_weak": "holy",
 			"field_passives": ["duplicator", "keen_eye", "clover", "skull"],
 			"props": ["res://assets/props/s4_a.png", "res://assets/props/s4_b.png"]},
 		{"name": "마왕성", "boss": "boss_5", "tint": Color(0.75, 0.65, 0.55),
+			"element": "dark", "boss_weak": "holy",
 			"field_passives": ["vitality", "iron_will", "berserker", "swiftness"],
 			"props": ["res://assets/props/s5_a.png", "res://assets/props/s5_b.png"]},
 	]

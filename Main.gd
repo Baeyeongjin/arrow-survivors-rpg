@@ -93,8 +93,9 @@ const EVO_START_TIME := 600.0 # 일반 런 진화 상자는 10:00 이후부터 �
 const FREE_WEAPON_SLOTS := 6   # 뱀서식: 6칸까지 자유롭게 신규무기 획득 (억제 사실상 제거)
 const BOSS_TIME := 180.0        # 첫 보스 3분 (1분→3분: 초반에 빌드 쌓을 여유)
 const FINAL_STAGE := 5
-const RUN_TIME := 1800.0     # 30분에 피날레 사신 강림
+const RUN_TIME := 1800.0     # 30분에 피날레 사신 강림 (레거시 캠페인 모드)
 const STAGE_TIME := 360.0    # 스테이지당 6분 (5스테이지 = 30분)
+const DUNGEON_BOSS_TIME := 300.0   # 던전 모드: 5분 생존 후 던전 보스(목표) 출현 → 처치=클리어
 const MAX_ENEMIES := 300     # 동시 등장 상한 (뱀서형 밀도 + 내장 GPU 부하 관리. 340은 Iris Xe에서 랙 → 300으로 한 단계 롤백)
 # 일반 런 보스 시간표. VS식 고정 시각 등장 + 처치 시 상자 드롭.
 # 10:30 상자부터 첫 진화를 안정적으로 노릴 수 있도록 2분 30초 간격을 유지한다.
@@ -492,8 +493,9 @@ var _wave_minute := -1       # 분 단위 웨이브 진행 인덱스
 var _current_wave: Dictionary = {} # GameConfig의 현재 분 웨이브 데이터
 var abyss_mode := false      # 30분 승리 후 무한 모드
 var reaper_active := false    # 사신 강림(30분 피날레 보스)
-var reaper_warned := false    # 사신 강림 경고 표시 여부
+var reaper_warned := false    # 사신 강림 경고 표시 여부 (던전 모드에선 보스 출현 경고로 재사용)
 var _boss_is_reaper := false  # 현재 보스가 사신인지
+var _boss_is_objective := false  # 던전 모드: 이 보스가 목표 보스인가 (처치=클리어)
 var stage_banner_t := 0.0
 var stage_label: Label
 
@@ -1437,6 +1439,14 @@ func _process(delta: float) -> void:
 		if not boss_spawned and time_survived >= next_boss_time:
 			last_boss_stage = stage_num
 			_spawn_boss()
+	elif map_stage > 0:
+		# 던전 모드(B블렌드): 5분 생존 → 단일 목표 보스 → 처치=클리어. 다중보스·사신 없음.
+		if not boss_spawned and not _boss_is_objective:
+			if not reaper_warned and time_survived >= DUNGEON_BOSS_TIME - 45.0:
+				reaper_warned = true
+				_event_banner("⚠ 곧 던전 보스가 나타난다...")
+			if time_survived >= DUNGEON_BOSS_TIME:
+				_spawn_dungeon_boss()
 	else:
 		# 시간 기반 스테이지 진행 (5스테이지 × 6분)
 		var tstage: int = clamp(int(time_survived / STAGE_TIME) + 1, 1, FINAL_STAGE)
@@ -3686,6 +3696,19 @@ func _spawn_reaper() -> void:
 	shake_t = max(shake_t, 0.4)
 
 
+# 던전 목표 보스: 해당 던전 보스를 클라이맥스로 등장. 처치하면 클리어(on_boss_killed에서 처리).
+func _spawn_dungeon_boss() -> void:
+	_spawn_boss(str(GameConfig.stage_info(map_stage)["boss"]))
+	_boss_is_objective = true
+	if boss and is_instance_valid(boss):
+		boss.weak = str(GameConfig.stage_info(map_stage).get("boss_weak", ""))
+		boss.max_hp *= 1.6   # 목표 보스는 더 단단하게 (던전 클라이맥스)
+		boss.hp = boss.max_hp
+	var wk := str(GameConfig.stage_info(map_stage).get("boss_weak", ""))
+	var hint := "  (약점: %s)" % str(ELEMENT_NAME.get(wk, "")) if wk != "" else ""
+	_event_banner("⚠ 던전 보스 출현! — 처치하면 클리어%s" % hint)
+
+
 # Legacy prototype only. VS식 보스는 전용 탄막/특수패턴 없이 추격하며,
 # 아래 함수들은 의도적으로 호출하지 않는다. 향후 별도 도전 모드에서만 재사용 후보.
 func boss_shoot(b: Boss) -> void:
@@ -4213,6 +4236,28 @@ func on_breakable_destroyed(b) -> void:
 
 
 func on_boss_killed() -> void:
+	# 던전 목표 보스 처치 = 던전 클리어 (B블렌드 승리조건)
+	if _boss_is_objective:
+		_boss_is_objective = false
+		var bpos: Vector2 = boss.position if (boss and is_instance_valid(boss)) else player.position
+		boss = null
+		boss_spawned = false
+		run_bosses += 1
+		# 클리어 보상: 확정 장비 2개(_found → 런 종료 시 보관함행) + 골드
+		inventory.append(_roll_gear())
+		inventory.append(_roll_gear())
+		run_gold += 40 * map_stage
+		# 다음 던전 해금
+		if not cheated and map_stage >= int(meta.get("stage_unlocked", 1)) and map_stage < FINAL_STAGE:
+			meta["stage_unlocked"] = map_stage + 1
+		_slowmo(0.4, 360)
+		_flash(Color(1.0, 0.9, 0.6, 0.5))
+		shake_t = max(shake_t, 0.35)
+		if state == State.PLAYING:
+			state = State.VICTORY
+			get_tree().paused = true
+			_show_end("⚔ 던전 클리어! — %s 정복" % str(GameConfig.stage_info(map_stage)["name"]), true)
+		return
 	# 사신 처치 = 진정한 승리 (30분 피날레)
 	if _boss_is_reaper:
 		_boss_is_reaper = false
@@ -6554,7 +6599,8 @@ func _start_game(d: Dictionary) -> void:
 	if not _prepare_selected_stage():
 		push_error("Selected stage failed to initialize: %d" % sel_stage)
 	decorations.clear()
-	stage_num = 1
+	# 던전 모드: 선택 던전 번호를 난이도 티어로 고정(빙하=3층 몹 등). 캠페인/심연은 1에서 시작.
+	stage_num = map_stage if map_stage > 0 else 1
 	diff_enemy_hp = d["enemy_hp"]
 	diff_enemy_speed = d["enemy_speed"]
 	diff_spawn = d["spawn"]
@@ -6664,6 +6710,7 @@ func _start_game(d: Dictionary) -> void:
 	reaper_active = false
 	reaper_warned = false
 	_boss_is_reaper = false
+	_boss_is_objective = false
 	# 뱀서식: 캐릭터별 고유 시작 무기를 Lv1로 지급 (기본공격 + 시작무기 = 캐릭터 정체성)
 	var sw := str(sel_char.get("weapon", "arrow"))
 	_add_weapon(sw)
@@ -7215,16 +7262,17 @@ func _refresh_stage_selection() -> void:
 		return
 	sel_stage = clampi(sel_stage if sel_stage > 0 else 1, 1, FINAL_STAGE)
 	var selected_data: Dictionary = GameConfig.stage_info(sel_stage)
-	# 지형 성격 + 몹 테마를 함께 안내한다(StageLayout / stage_roster와 일치).
-	var layout_names := ["개활 묘역", "가로 회랑", "얼음 미로", "세로 탑", "열주 대홀"]
+	# 던전별 몹 테마 안내 (stage_roster와 일치).
 	var mob_themes := ["언데드", "화염", "냉기", "공허", "마족"]
 	if map_detail_label:
-		map_detail_label.text = "선택: %d번 · %s · %s · %s 몹\n스테이지 아이템 4개 · 전용 보스 출현" % [
-			sel_stage, selected_data["name"], layout_names[sel_stage - 1], mob_themes[sel_stage - 1]
+		var wk := str(selected_data.get("boss_weak", ""))
+		var weak_hint := "보스 약점: %s" % str(ELEMENT_NAME.get(wk, "")) if wk != "" else "보스 약점: 없음"
+		map_detail_label.text = "선택: %d번 · %s · %s 몹 · %s\n5분 생존 후 던전 보스 → 처치 시 클리어" % [
+			sel_stage, selected_data["name"], mob_themes[sel_stage - 1], weak_hint
 		]
 	if map_confirm_button:
 		map_confirm_button.disabled = sel_stage > unlocked_stage_count
-		map_confirm_button.text = "%d번 맵 입장" % sel_stage
+		map_confirm_button.text = "%s 입장" % str(selected_data["name"])
 	for card_index in map_cards.size():
 		var stage_no := card_index + 1
 		var card := map_cards[card_index]
@@ -8554,7 +8602,7 @@ func _build_ui(s: Vector2) -> void:
 	frame_tex.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	stage_select_panel.add_child(frame_tex)
 	var stttl := Label.new()
-	stttl.text = "맵 선택"
+	stttl.text = "던전 선택"
 	stttl.position = Vector2(frame_pos.x + 210.0 * frame_scale, frame_pos.y + 17.0 * frame_scale)
 	stttl.size = Vector2(268.0 * frame_scale, 34.0 * frame_scale)
 	stttl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
