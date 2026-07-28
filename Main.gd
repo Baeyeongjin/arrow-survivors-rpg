@@ -688,6 +688,10 @@ var skill_space_cd := 0.0       # Space 노바 남은 쿨다운
 var skill_hud_label: Label      # E/Space 쿨다운 상태 표시
 const SKILL_E_MAX := 5.0
 const SKILL_SPACE_MAX := 8.0
+# 장비 시스템 (Phase 3): 3슬롯 + 등급별 랜덤 어픽스
+var equipped := {"weapon": {}, "armor": {}, "trinket": {}}   # 슬롯 → 아이템 딕셔너리
+var _equip_applied := {}        # stat → 현재 player에 적용된 총량 (교체 시 diff 제거용)
+var equip_hud_label: Label      # 장착 3슬롯 표시
 var hp_text: Label
 var lv_label: Label             # 뱀서식: 최상단 XP 바 안의 레벨 표기
 var timer_label: Label          # 뱀서식: 상단 중앙 대형 생존 타이머
@@ -3961,6 +3965,7 @@ func on_enemy_killed(e: Enemy) -> void:
 	# 궁극기 게이지 충전 (엘리트는 크게). 처치 = 게이지 → "쌓아서 터뜨리는" 능동 루프.
 	ult_gauge = minf(1.0, ult_gauge + (0.05 if e.elite else 0.008))
 	_refresh_ult_bar()
+	_maybe_drop_gear(e.position, e.elite)   # 장비 드롭 (엘리트 확정급, 일반 저확률)
 	var enemy_key := str(e.tier.get("key", "unknown"))
 	var enemy_kills: Dictionary = meta.get_or_add("enemy_kills", {})
 	enemy_kills[enemy_key] = int(enemy_kills.get(enemy_key, 0)) + 1
@@ -4139,6 +4144,10 @@ func on_boss_killed() -> void:
 			_show_end("⚰ 사신을 물리쳤다 — 진정한 승리!", true)
 		return
 	run_gold += 15 * stage_num   # 보스 보상
+	# 보스 = 장비 전리품 확정 2개
+	if boss and is_instance_valid(boss):
+		_spawn_gear_pickup(boss.position + Vector2(-18, 0), _roll_gear())
+		_spawn_gear_pickup(boss.position + Vector2(18, 0), _roll_gear())
 	boss = null
 	run_bosses += 1
 	boss_spawned = false
@@ -4371,6 +4380,133 @@ func _roll_rarity() -> String:
 	if r < leg + epi + rar:
 		return "rare"
 	return "common"
+
+
+# ── 장비 시스템 (Phase 3: 핵앤슬래시 드롭) ─────────────────────────────
+const EQUIP_SLOTS := ["weapon", "armor", "trinket"]
+const EQUIP_SLOT_NAME := {"weapon": "무기", "armor": "방어구", "trinket": "장신구"}
+const GEAR_NOUNS := {
+	"weapon": ["검", "도끼", "지팡이", "단검", "창"],
+	"armor": ["갑옷", "로브", "비늘갑주", "망토"],
+	"trinket": ["반지", "부적", "목걸이", "인장"]}
+const GEAR_ADJ := ["맹독의", "불타는", "얼어붙은", "강철의", "고대의", "저주받은", "빛나는", "심연의"]
+# 어픽스 풀: player의 가산형 스탯만 (교체 시 diff 제거가 깔끔한 필드).
+const GEAR_AFFIXES := [
+	{"stat": "damage_mult", "name": "공격력", "per": 0.06, "pct": true},
+	{"stat": "max_hp", "name": "최대체력", "per": 14.0, "pct": false},
+	{"stat": "armor", "name": "방어", "per": 1.0, "pct": false},
+	{"stat": "area_mult", "name": "범위", "per": 0.05, "pct": true},
+	{"stat": "pickup_radius", "name": "자석", "per": 18.0, "pct": false},
+	{"stat": "regen", "name": "재생", "per": 0.3, "pct": false},
+]
+const GEAR_AFFIX_COUNT := {"common": 1, "rare": 1, "epic": 2, "legendary": 3}
+const GEAR_POWER := {"common": 1.0, "rare": 1.5, "epic": 2.2, "legendary": 3.2}
+const RARITY_TAG := {"common": "", "rare": "[레어]", "epic": "◆에픽◆", "legendary": "★레전더리★"}
+
+
+# 랜덤 장비 1개 생성 (등급은 _roll_rarity 재활용 → 럭 반영)
+func _roll_gear() -> Dictionary:
+	var slot: String = EQUIP_SLOTS[randi() % EQUIP_SLOTS.size()]
+	var rarity := _roll_rarity()
+	var pool: Array = GEAR_AFFIXES.duplicate()
+	pool.shuffle()
+	var affs: Array = []
+	for i in mini(int(GEAR_AFFIX_COUNT[rarity]), pool.size()):
+		var a: Dictionary = pool[i]
+		var v: float = float(a["per"]) * float(GEAR_POWER[rarity]) * randf_range(0.8, 1.2)
+		affs.append({"stat": a["stat"], "name": a["name"], "value": v, "pct": bool(a["pct"])})
+	var nm := "%s %s" % [GEAR_ADJ[randi() % GEAR_ADJ.size()], GEAR_NOUNS[slot][randi() % GEAR_NOUNS[slot].size()]]
+	return {"slot": slot, "rarity": rarity, "affixes": affs, "name": nm}
+
+
+# 처치 지점에서 확률적으로 장비 드롭 (엘리트/보스는 높게)
+func _maybe_drop_gear(pos: Vector2, elite: bool) -> void:
+	if randf() < (0.35 if elite else 0.02):
+		_spawn_gear_pickup(pos, _roll_gear())
+
+
+func _spawn_gear_pickup(pos: Vector2, it: Dictionary) -> void:
+	var p := Pickup.new()
+	p.kind = "gear"
+	p.item = it
+	p.gear_col = RARITY_COL.get(str(it["rarity"]), Color.WHITE)
+	p.position = pos
+	add_child(p)
+
+
+# 장비 획득: 현재 슬롯보다 등급이 같거나 높으면 장착, 아니면 골드로 분해.
+func _pickup_gear(it: Dictionary) -> void:
+	var slot := str(it["slot"])
+	var cur: Dictionary = equipped.get(slot, {})
+	var better: bool = cur.is_empty() or RARITY_ORDER.get(str(it["rarity"]), 0) >= RARITY_ORDER.get(str(cur.get("rarity", "")), 0)
+	if better:
+		equipped[slot] = it
+		_apply_equipment()
+		_gear_toast(it)
+		play_sfx("levelup", -12.0)
+		if RARITY_ORDER.get(str(it["rarity"]), 0) >= 3:
+			_flash(RARITY_COL.get(str(it["rarity"]), Color.WHITE))
+	else:
+		run_gold += 5   # 하위 등급은 분해 (5골드)
+		_update_ui()
+
+
+# 장착 아이템 어픽스를 player 스탯에 반영 (이전 적용분 제거 후 재계산 → 교체 정확).
+func _apply_equipment() -> void:
+	if player == null:
+		return
+	for stat in _equip_applied.keys():
+		_equip_stat(str(stat), -float(_equip_applied[stat]))
+	var totals := {}
+	for slot in EQUIP_SLOTS:
+		var it: Dictionary = equipped.get(slot, {})
+		for a in it.get("affixes", []):
+			totals[a["stat"]] = float(totals.get(a["stat"], 0.0)) + float(a["value"])
+	for stat in totals.keys():
+		_equip_stat(str(stat), float(totals[stat]))
+	_equip_applied = totals
+	_refresh_equip_hud()
+
+
+func _equip_stat(stat: String, v: float) -> void:
+	if player == null:
+		return
+	match stat:
+		"damage_mult": player.damage_mult += v
+		"max_hp":
+			player.max_hp += v
+			player.hp = clampf(player.hp + maxf(0.0, v), 0.0, player.max_hp)
+		"armor": player.armor += v
+		"area_mult": player.area_mult += v
+		"pickup_radius": player.pickup_radius += v
+		"regen": player.regen += v
+
+
+func _gear_toast(it: Dictionary) -> void:
+	if ach_toast == null:
+		return
+	var parts: Array = []
+	for a in it["affixes"]:
+		var vs := ("%d%%" % round(float(a["value"]) * 100.0)) if bool(a["pct"]) else ("%d" % round(float(a["value"])))
+		parts.append("%s +%s" % [a["name"], vs])
+	var tag := str(RARITY_TAG.get(str(it["rarity"]), ""))
+	ach_toast.text = "%s %s  [%s]" % [tag, str(it["name"]), ", ".join(parts)]
+	ach_toast.add_theme_color_override("font_color", RARITY_COL.get(str(it["rarity"]), Color.WHITE))
+	ach_toast.visible = true
+	ach_toast_t = 2.6
+
+
+func _refresh_equip_hud() -> void:
+	if equip_hud_label == null:
+		return
+	var lines: Array = []
+	for slot in EQUIP_SLOTS:
+		var it: Dictionary = equipped.get(slot, {})
+		if it.is_empty():
+			lines.append("%s: —" % EQUIP_SLOT_NAME[slot])
+		else:
+			lines.append("%s: %s%s" % [EQUIP_SLOT_NAME[slot], str(RARITY_TAG.get(str(it["rarity"]), "")), str(it["name"])])
+	equip_hud_label.text = "\n".join(lines)
 
 
 func _populate_levelup() -> void:
@@ -5503,8 +5639,11 @@ func _start_game(d: Dictionary) -> void:
 	ult_gauge = 0.0
 	skill_e_cd = 0.0
 	skill_space_cd = 0.0
+	equipped = {"weapon": {}, "armor": {}, "trinket": {}}   # 런 시작: 장비 초기화
+	_equip_applied = {}
 	_refresh_ult_bar()
 	_refresh_skill_hud()
+	_refresh_equip_hud()
 	run_damage_dealt = 0.0
 	run_damage_taken = 0.0
 	run_bosses = 0
@@ -6677,6 +6816,16 @@ func _build_ui(s: Vector2) -> void:
 	skill_hud_label.add_theme_color_override("font_color", Color(0.7, 0.95, 1.0))
 	skill_hud_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud.add_child(skill_hud_label)
+	# 장착 장비 3슬롯 (좌하단)
+	equip_hud_label = Label.new()
+	equip_hud_label.position = Vector2(10, s.y - 78)
+	equip_hud_label.size = Vector2(280, 68)
+	equip_hud_label.add_theme_font_size_override("font_size", 12)
+	equip_hud_label.add_theme_constant_override("outline_size", 3)
+	equip_hud_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	equip_hud_label.add_theme_color_override("font_color", Color(0.9, 0.92, 0.98))
+	equip_hud_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud.add_child(equip_hud_label)
 
 	# 레벨 표기 (XP 바 안쪽 좌측)
 	lv_label = Label.new()

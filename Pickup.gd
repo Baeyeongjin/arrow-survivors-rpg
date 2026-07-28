@@ -5,6 +5,8 @@ extends Node2D
 var kind := "chest"
 var radius := 11.0   # 젬(Gem.GEM_PX)과 겉보기 크기를 맞춤 — 바닥 아이템끼리 통일
 var icon_path := ""  # 패시브 랜드마크처럼 kind와 파일명이 다를 때 지정
+var item := {}       # kind=="gear"일 때 장비 데이터(slot/rarity/affixes)를 싣는다
+var gear_col := Color(1, 1, 1)   # 장비 등급색 (겉보기)
 var _t := 0.0
 var _taken := false   # 획득 1회 보장 (일시정지 타이밍에 중복 발동 방지)
 
@@ -26,7 +28,10 @@ func _process(delta: float) -> void:
 			remove_from_group("landmarks")
 		else:
 			remove_from_group("pickups")
-		get_parent().on_pickup(kind)
+		if kind == "gear":
+			get_parent()._pickup_gear(item)
+		else:
+			get_parent().on_pickup(kind)
 		queue_free()
 		return
 	queue_redraw()
@@ -41,6 +46,13 @@ func _draw() -> void:
 	var gcol := _glow_color()
 	draw_circle(o, (radius + 2.0) * pulse, Color(gcol.r, gcol.g, gcol.b, 0.14))
 
+	# 장비: 등급색 다이아몬드 + 흰 테두리 (아이콘 없이 코드로)
+	if kind == "gear":
+		var d := radius * pulse
+		var pts := PackedVector2Array([o + Vector2(0, -d), o + Vector2(d, 0), o + Vector2(0, d), o + Vector2(-d, 0)])
+		draw_colored_polygon(pts, gear_col)
+		draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2], pts[3], pts[0]]), Color(1, 1, 1, 0.9), 1.5)
+		return
 	var tex := Assets.tex(icon_path if icon_path != "" else "res://assets/items/%s.png" % kind)
 	if tex:
 		var w: float = Gem.GEM_PX * pulse   # 젬과 같은 크기 기준
@@ -90,6 +102,8 @@ func _draw() -> void:
 			draw_rect(Rect2(o + Vector2(-2, -3), Vector2(4, 6)), Color(1, 0.9, 0.4))
 
 func _glow_color() -> Color:
+	if kind == "gear":
+		return gear_col
 	if kind.begins_with("passive:"):
 		return Color(0.45, 0.88, 1.0)
 	match kind:
