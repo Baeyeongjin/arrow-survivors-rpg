@@ -523,12 +523,15 @@ var title_gold_label: Label
 # 마을 대장간 (Phase 5): 지속 장비 보관함 강화/장착
 var forge_panel: Control
 var forge_gold_label: Label
-var forge_loadout_box: VBoxContainer
+var forge_stash_label: Label
+var forge_loadout_box: HBoxContainer
 var forge_list_box: VBoxContainer
 var forge_detail_label: Label
 var forge_equip_btn: Button
 var forge_upgrade_btn: Button
 var forge_discard_btn: Button
+var forge_loadout_width := 250.0
+var forge_list_item_width := 300.0
 var _forge_sel := -1              # 선택한 보관함 인덱스
 var pause_panel: Control
 var pause_stats_box: GridContainer   # 일시정지 스탯 패널 (레벨업과 동일한 아이콘 그리드)
@@ -704,11 +707,15 @@ var _equip_applied := {}        # stat → 현재 player에 적용된 총량 (�
 var equip_hud_label: Label      # 장착 3슬롯 표시
 var inventory := []             # 미장착 장비 목록 (가방)
 var inventory_panel: Control
-var inv_equip_box: VBoxContainer
+var inv_equip_box: HBoxContainer
 var inv_list_box: VBoxContainer
-var inv_detail_label: Label
+var inv_detail_label: RichTextLabel
+var inv_bag_label: Label
 var inv_equip_btn: Button
 var inv_discard_btn: Button
+var inv_equip_width := 230.0
+var inv_stat_label_width := 170.0
+var inv_list_item_width := 260.0
 var _inv_sel := -1              # 선택한 가방 인덱스
 var stat_points := 0            # 미분배 능력치 포인트 (레벨업마다 +1)
 var char_stats := {"str": 0, "agi": 0, "vit": 0, "foc": 0}   # 분배 누적치 (리셋 대상)
@@ -808,8 +815,40 @@ func _ready() -> void:
 		_autoshot()
 
 
+# UI 레이아웃 검수용 샘플. --autoshot --screen=inventory|forge --ui-preview-gear 에서만 사용하며 저장하지 않는다.
+func _seed_gear_ui_preview() -> void:
+	var current_weapon := {
+		"slot": "weapon", "rarity": "rare", "name": "심연의 단검", "gear_id": "preview-current-weapon", "lvl": 1,
+		"affixes": [{"stat": "damage_mult", "name": "공격력", "value": 0.1008, "base_value": 0.09, "pct": true}]}
+	var preview_armor := {
+		"slot": "armor", "rarity": "common", "name": "강철의 갑옷", "gear_id": "preview-armor", "lvl": 0,
+		"affixes": [{"stat": "armor", "name": "방어", "value": 1.0, "base_value": 1.0, "pct": false}]}
+	var preview_trinket := {
+		"slot": "trinket", "rarity": "epic", "name": "빛나는 부적", "gear_id": "preview-trinket", "lvl": 2,
+		"affixes": [{"stat": "regen", "name": "재생", "value": 0.4704, "base_value": 0.36, "pct": false}, {"stat": "pickup_radius", "name": "자석", "value": 28.8, "base_value": 22.0, "pct": false}]}
+	var weapon_candidate := {
+		"slot": "weapon", "rarity": "epic", "name": "폭풍의 창", "gear_id": "preview-weapon-candidate", "lvl": 0,
+		"affixes": [{"stat": "damage_mult", "name": "공격력", "value": 0.145, "base_value": 0.145, "pct": true}, {"stat": "area_mult", "name": "범위", "value": 0.11, "base_value": 0.11, "pct": true}]}
+	var armor_candidate := {
+		"slot": "armor", "rarity": "rare", "name": "얼어붙은 로브", "gear_id": "preview-armor-candidate", "lvl": 0,
+		"affixes": [{"stat": "max_hp", "name": "최대체력", "value": 20.0, "base_value": 20.0, "pct": false}]}
+	current_weapon["icon"] = "res://assets/items/gear_dagger.png"
+	preview_armor["icon"] = "res://assets/items/gear_plate.png"
+	preview_trinket["icon"] = "res://assets/items/gear_amulet.png"
+	weapon_candidate["icon"] = "res://assets/items/gear_spear.png"
+	armor_candidate["icon"] = "res://assets/items/gear_robe.png"
+	meta["gold"] = 240
+	meta["stash"] = [current_weapon.duplicate(true), preview_armor.duplicate(true), preview_trinket.duplicate(true), weapon_candidate.duplicate(true), armor_candidate.duplicate(true)]
+	meta["loadout"] = {"weapon": current_weapon.duplicate(true), "armor": preview_armor.duplicate(true), "trinket": preview_trinket.duplicate(true)}
+	equipped = {"weapon": current_weapon.duplicate(true), "armor": preview_armor.duplicate(true), "trinket": preview_trinket.duplicate(true)}
+	inventory = [weapon_candidate.duplicate(true), armor_candidate.duplicate(true)]
+	_inv_sel = 0
+	stat_points = 2
+	char_stats = {"str": 3, "agi": 1, "vit": 0, "foc": 2}
+
+
 # [개발 도구] --autoshot: 화면을 캡처해 user://autoshot.png로 저장 후 종료.
-#   --screen=title|char|diff : 해당 메뉴 화면을 캡처 (기본: 런 시작 후 HUD)
+#   --screen=title|char|diff|inventory|forge : 해당 메뉴 화면을 캡처 (기본: 런 시작 후 HUD)
 #   --pause                  : 일시정지 화면 캡처
 func _autoshot() -> void:
 	await get_tree().create_timer(0.5, true, false, true).timeout
@@ -831,6 +870,24 @@ func _autoshot() -> void:
 	if "--map-mouse-click-test" in args:
 		var click_passed := await _run_map_mouse_click_test()
 		get_tree().quit(0 if click_passed else 1)
+		return
+	if "--screen=inventory" in args or "--screen=forge" in args:
+		if "--ui-preview-gear" in args:
+			_seed_gear_ui_preview()
+		title_panel.visible = false
+		if "--screen=inventory" in args:
+			inventory_panel.visible = true
+			_refresh_inventory_screen()
+		else:
+			_open_forge()
+			var preview_stash: Array = meta.get("stash", [])
+			if "--ui-preview-gear" in args and not preview_stash.is_empty():
+				_select_forge_item(0)
+		await get_tree().create_timer(0.5, true, false, true).timeout
+		var gear_ui_image := get_viewport().get_texture().get_image()
+		gear_ui_image.save_png("user://autoshot.png")
+		print("AUTOSHOT SAVED: ", ProjectSettings.globalize_path("user://autoshot.png"))
+		get_tree().quit()
 		return
 	for scr in ["title", "char", "stage", "diff", "modifier", "shop", "ach", "collection", "opt"]:
 		if ("--screen=" + scr) in args:
@@ -4584,6 +4641,187 @@ const STAT_DEFS := [
 ]
 
 
+# 인벤토리에는 "이번 런에 총 얼마가 바뀌는가"를 보여 준다.
+# 기존의 포인트당 설명은 길어서 작은 창에서 버튼/상세 정보와 겹쳤다.
+func _stat_summary(key: String, lv: int) -> String:
+	match key:
+		"str":
+			return "공격 +%d%%" % (lv * 3)
+		"agi":
+			return "이속 +%d · 공속 +%d%%" % [lv * 3, lv]
+		"vit":
+			return "체력 +%d · 재생 +%.1f" % [lv * 10, float(lv) * 0.1]
+		"foc":
+			return "범위 +%d%% · 방어 +%.1f" % [lv * 3, float(lv) * 0.5]
+	return ""
+
+
+func _gear_icon_path(item: Dictionary, slot_hint: String = "") -> String:
+	var icon_path := str(item.get("icon", ""))
+	if not icon_path.is_empty():
+		return icon_path
+	var slot := str(item.get("slot", ""))
+	if slot.is_empty():
+		slot = slot_hint
+	match slot:
+		"weapon":
+			return "res://assets/items/gear_sword.png"
+		"armor":
+			return "res://assets/items/gear_plate.png"
+		"trinket":
+			return "res://assets/items/gear_ring.png"
+	return ""
+
+
+func _gear_slot_symbol(slot: String) -> String:
+	match slot:
+		"weapon":
+			return "⚔"
+		"armor":
+			return "🛡"
+		"trinket":
+			return "✦"
+	return "•"
+
+
+func _gear_icon_socket(item: Dictionary, slot_hint: String = "", icon_size: Vector2 = Vector2(36.0, 36.0)) -> Panel:
+	var socket := Panel.new()
+	socket.custom_minimum_size = icon_size
+	socket.add_theme_stylebox_override("panel", _slot_style())
+	socket.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var texture := Assets.tex(_gear_icon_path(item, slot_hint))
+	if texture:
+		var image := TextureRect.new()
+		image.texture = texture
+		image.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		image.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		image.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		image.set_anchors_preset(Control.PRESET_FULL_RECT)
+		image.offset_left = 3.0
+		image.offset_top = 3.0
+		image.offset_right = -3.0
+		image.offset_bottom = -3.0
+		image.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		socket.add_child(image)
+	else:
+		var fallback := Label.new()
+		fallback.text = _gear_slot_symbol(slot_hint)
+		fallback.set_anchors_preset(Control.PRESET_FULL_RECT)
+		fallback.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		fallback.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		fallback.add_theme_font_size_override("font_size", 16)
+		fallback.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		socket.add_child(fallback)
+	return socket
+
+
+func _gear_equipped_card(item: Dictionary, slot: String, row_width: float) -> Control:
+	var card := Panel.new()
+	card.custom_minimum_size = Vector2(maxf(52.0, (row_width - 8.0) / float(EQUIP_SLOTS.size())), 82.0)
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	card.add_theme_stylebox_override("panel", _flatbox(Color(0.035, 0.04, 0.07, 0.88), 4.0))
+	card.tooltip_text = _gear_detail_text(item)
+	var content := VBoxContainer.new()
+	content.set_anchors_preset(Control.PRESET_FULL_RECT)
+	content.offset_left = 3.0
+	content.offset_top = 3.0
+	content.offset_right = -3.0
+	content.offset_bottom = -3.0
+	content.add_theme_constant_override("separation", 1)
+	card.add_child(content)
+	var icon_center := CenterContainer.new()
+	icon_center.custom_minimum_size = Vector2(0.0, 38.0)
+	icon_center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	icon_center.add_child(_gear_icon_socket(item, slot, Vector2(36.0, 36.0)))
+	content.add_child(icon_center)
+	var label := Label.new()
+	label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.clip_text = true
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 10)
+	var forge_tag := " +%d" % _gear_level(item) if _gear_level(item) > 0 else ""
+	label.text = "%s\n%s%s" % [str(EQUIP_SLOT_NAME.get(slot, slot)), str(item.get("name", "비어 있음")), forge_tag]
+	label.add_theme_color_override("font_color", RARITY_COL.get(str(item.get("rarity", "")), Color(0.7, 0.72, 0.78)) if not item.is_empty() else Color(0.6, 0.62, 0.68))
+	content.add_child(label)
+	return card
+
+
+func _apply_gear_button_icon(button: Button, item: Dictionary) -> void:
+	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	button.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	button.vertical_icon_alignment = VERTICAL_ALIGNMENT_CENTER
+	button.expand_icon = true
+	button.add_theme_constant_override("icon_max_width", 28)
+	var texture := Assets.tex(_gear_icon_path(item))
+	if texture:
+		button.icon = texture
+
+
+func _gear_slot_text(it: Dictionary) -> String:
+	if it.is_empty():
+		return "— 비어 있음"
+	var forge_tag := " +%d" % _gear_level(it) if _gear_level(it) > 0 else ""
+	return "%s %s%s" % [str(RARITY_TAG.get(str(it.get("rarity", "")), "")), str(it.get("name", "장비")), forge_tag]
+
+
+func _gear_detail_text(it: Dictionary) -> String:
+	if it.is_empty():
+		return "비어 있음"
+	var forge_tag := " +%d" % _gear_level(it) if _gear_level(it) > 0 else ""
+	var lines := [
+		"%s %s%s" % [str(RARITY_TAG.get(str(it.get("rarity", "")), "")), str(it.get("name", "장비")), forge_tag],
+		"%s" % str(EQUIP_SLOT_NAME.get(str(it.get("slot", "")), "장비")),
+	]
+	for raw_affix in it.get("affixes", []):
+		if not (raw_affix is Dictionary):
+			continue
+		var affix := raw_affix as Dictionary
+		var value_text := "%d%%" % round(float(affix.get("value", 0.0)) * 100.0) if bool(affix.get("pct", false)) else "%d" % round(float(affix.get("value", 0.0)))
+		lines.append("• %s +%s" % [str(affix.get("name", "효과")), value_text])
+	return "\n".join(lines)
+
+
+func _gear_compare_text(selected: Dictionary, current: Dictionary) -> String:
+	var lines := [
+		"[color=#ffb6d4][b]선택 장비[/b][/color]",
+		_gear_detail_text(selected),
+		"",
+		"[color=#8fcfff][b]현재 장비[/b][/color]",
+		_gear_detail_text(current),
+	]
+	var delta := {}
+	var names := {}
+	for raw_affix in selected.get("affixes", []):
+		if raw_affix is Dictionary:
+			var affix := raw_affix as Dictionary
+			var key := str(affix.get("stat", ""))
+			delta[key] = float(delta.get(key, 0.0)) + float(affix.get("value", 0.0))
+			names[key] = str(affix.get("name", "효과"))
+	for raw_affix in current.get("affixes", []):
+		if raw_affix is Dictionary:
+			var affix := raw_affix as Dictionary
+			var key := str(affix.get("stat", ""))
+			delta[key] = float(delta.get(key, 0.0)) - float(affix.get("value", 0.0))
+			names[key] = str(affix.get("name", "효과"))
+	var changes: Array[String] = []
+	for key in delta.keys():
+		var value := float(delta[key])
+		if is_zero_approx(value):
+			continue
+		var pct: bool = key in ["damage_mult", "area_mult"]
+		var value_text := "%+.0f%%" % (value * 100.0) if pct else "%+.1f" % value
+		var arrow := "▲" if value > 0.0 else "▼"
+		var color := "#79eca3" if value > 0.0 else "#ff8296"
+		changes.append("[color=%s]%s %s %s[/color]" % [color, arrow, str(names.get(key, "효과")), value_text])
+	if not changes.is_empty():
+		lines.append("")
+		lines.append("[color=#ffd36d][b]교체 변화[/b][/color]")
+		lines.append_array(changes)
+	return "\n".join(lines)
+
+
 func _apply_stat_point(key: String) -> void:
 	if player == null:
 		return
@@ -4621,23 +4859,31 @@ func _refresh_stat_box() -> void:
 	for c in inv_stat_box.get_children():
 		c.queue_free()
 	var hdr := Label.new()
-	hdr.text = "분배 포인트: %d" % stat_points
-	hdr.add_theme_font_size_override("font_size", 15)
+	hdr.text = "분배 포인트 %d  ·  이번 런 전용" % stat_points
+	hdr.custom_minimum_size = Vector2(0, 22)
+	hdr.add_theme_font_size_override("font_size", 13)
 	hdr.add_theme_color_override("font_color", Color(1.0, 0.9, 0.4) if stat_points > 0 else Color(0.6, 0.62, 0.68))
 	inv_stat_box.add_child(hdr)
 	for d in STAT_DEFS:
 		var key := str(d["key"])
 		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 8)
+		row.custom_minimum_size = Vector2(0, 26)
+		row.add_theme_constant_override("separation", 6)
 		var lb := Label.new()
-		lb.custom_minimum_size = Vector2(268, 26)
-		lb.add_theme_font_size_override("font_size", 13)
-		lb.text = "%s Lv%d  (%s)" % [str(d["name"]), int(char_stats[key]), str(d["desc"])]
+		lb.custom_minimum_size = Vector2(inv_stat_label_width, 26)
+		lb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		lb.clip_text = true
+		lb.add_theme_font_size_override("font_size", 12)
+		var lv := int(char_stats[key])
+		lb.text = "%s Lv%d · %s" % [str(d["name"]), lv, _stat_summary(key, lv)]
+		lb.tooltip_text = "%s\n포인트당 %s" % [str(d["name"]), str(d["desc"])]
 		row.add_child(lb)
 		var btn := Button.new()
-		btn.text = "＋"
-		btn.custom_minimum_size = Vector2(40, 26)
+		btn.text = "+"
+		btn.custom_minimum_size = Vector2(34, 26)
 		btn.disabled = stat_points <= 0
+		btn.tooltip_text = "%s에 포인트 투자" % str(d["name"])
+		_style_button(btn, "res://assets/ui/button.png", 10.0, 1.0)
 		btn.pressed.connect(_spend_stat_point.bind(key))
 		row.add_child(btn)
 		inv_stat_box.add_child(row)
@@ -4847,26 +5093,23 @@ func _refresh_forge() -> void:
 		return
 	_ensure_gear_meta()
 	var stash: Array = meta["stash"]
-	forge_gold_label.text = "보유 골드: %d G" % int(meta.get("gold", 0))
+	forge_gold_label.text = "보유 골드 %d G  ·  장착 장비는 다음 런부터 적용" % int(meta.get("gold", 0))
+	if forge_stash_label:
+		forge_stash_label.text = "[ 보관함 ]  %d개" % stash.size()
 	for child in forge_loadout_box.get_children():
 		child.queue_free()
 	var loadout: Dictionary = meta["loadout"]
 	for slot in EQUIP_SLOTS:
 		var item: Dictionary = loadout.get(slot, {})
-		var row := Label.new()
-		row.custom_minimum_size = Vector2(300, 52)
-		row.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		row.add_theme_font_size_override("font_size", 13)
-		row.text = "%s\n%s" % [str(EQUIP_SLOT_NAME[slot]), _gear_line(item)]
-		row.add_theme_color_override("font_color", RARITY_COL.get(str(item.get("rarity", "")), Color(0.62, 0.65, 0.72)) if not item.is_empty() else Color(0.62, 0.65, 0.72))
-		forge_loadout_box.add_child(row)
+		forge_loadout_box.add_child(_gear_equipped_card(item, slot, forge_loadout_width))
 	for child in forge_list_box.get_children():
 		child.queue_free()
 	if stash.is_empty():
 		var empty := Label.new()
-		empty.text = "런에서 획득한 장비가 아직 없습니다.\n엘리트와 보스를 처치해 보관함을 채우세요."
-		empty.custom_minimum_size = Vector2(500, 72)
+		empty.text = "🎁 보관함이 비어 있습니다.\n\n다음 런에서 엘리트와 보스를 처치해\n영구 장비를 획득하세요."
+		empty.custom_minimum_size = Vector2(forge_list_item_width, 118)
 		empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		empty.add_theme_font_size_override("font_size", 13)
 		empty.add_theme_color_override("font_color", Color(0.62, 0.65, 0.72))
 		forge_list_box.add_child(empty)
 	for i in range(stash.size()):
@@ -4874,21 +5117,24 @@ func _refresh_forge() -> void:
 		var button := Button.new()
 		var equipped_mark := " [장착]" if _forge_item_equipped(item) else ""
 		var selected_mark := "▶ " if i == _forge_sel else ""
-		button.text = "%s[%s] %s%s" % [selected_mark, str(EQUIP_SLOT_NAME.get(str(item["slot"]), "장비")), _gear_line(item), equipped_mark]
-		button.custom_minimum_size = Vector2(500, 42)
+		var forge_tag := " +%d" % _gear_level(item) if _gear_level(item) > 0 else ""
+		button.text = "%s[%s] %s%s%s" % [selected_mark, str(EQUIP_SLOT_NAME.get(str(item.get("slot", "")), "장비")), str(item.get("name", "장비")), forge_tag, equipped_mark]
+		button.custom_minimum_size = Vector2(forge_list_item_width, 42)
 		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		button.add_theme_font_size_override("font_size", 13)
+		button.add_theme_font_size_override("font_size", 12)
 		button.modulate = RARITY_COL.get(str(item.get("rarity", "")), Color.WHITE)
-		_style_button(button, "res://assets/ui/button.png", 18.0, 4.0)
+		_style_button(button, "res://assets/ui/button.png", 12.0, 2.0)
+		_apply_gear_button_icon(button, item)
+		button.tooltip_text = _gear_detail_text(item)
 		button.pressed.connect(_select_forge_item.bind(i))
 		forge_list_box.add_child(button)
 	var selected := _forge_selected_item()
 	if selected.is_empty():
-		forge_detail_label.text = "보관함에서 장비를 선택하면 장착, 강화, 분해를 할 수 있습니다.\n강화는 최대 5단계이며 단계마다 모든 어픽스가 +12% 강해집니다."
+		forge_detail_label.text = "장비를 선택하면 여기서 비교와 강화를 진행합니다.\n\n[ 대장간 안내 ]\n• 장착: 다음 런 시작부터 적용\n• 강화: 최대 5단계, 모든 어픽스 +12%\n• 분해: 장비를 골드로 환원"
 		forge_equip_btn.disabled = true
 		forge_upgrade_btn.disabled = true
 		forge_discard_btn.disabled = true
-		forge_equip_btn.text = "장착 ▶"
+		forge_equip_btn.text = "장비 선택"
 		forge_upgrade_btn.text = "강화 +1"
 		forge_discard_btn.text = "분해"
 		return
@@ -4897,7 +5143,7 @@ func _refresh_forge() -> void:
 	var upgrade_cost := _forge_upgrade_cost(selected)
 	var current_bonus := int(round(lv * FORGE_LEVEL_BONUS * 100.0))
 	var next_text := "최대 강화" if lv >= FORGE_MAX_LEVEL else "다음 Lv +%d%%" % int(round((lv + 1) * FORGE_LEVEL_BONUS * 100.0))
-	forge_detail_label.text = "선택: %s\n강화 Lv%d/%d  ·  현재 어픽스 +%d%%  ·  %s\n%s" % [_gear_line(selected), lv, FORGE_MAX_LEVEL, current_bonus, next_text, "현재 로드아웃에 장착 중입니다." if is_equipped else "장착하면 다음 런 시작부터 적용됩니다."]
+	forge_detail_label.text = "%s\n\n[ 강화 ]\nLv%d/%d  ·  현재 어픽스 +%d%%\n%s\n\n[ 적용 ]\n%s" % [_gear_detail_text(selected), lv, FORGE_MAX_LEVEL, current_bonus, next_text, "현재 로드아웃에 장착 중입니다." if is_equipped else "장착하면 다음 런 시작부터 적용됩니다."]
 	forge_equip_btn.disabled = false
 	forge_equip_btn.text = "장착 해제" if is_equipped else "장착 ▶"
 	forge_upgrade_btn.disabled = lv >= FORGE_MAX_LEVEL or int(meta.get("gold", 0)) < upgrade_cost
@@ -4984,44 +5230,58 @@ func _toggle_inventory() -> void:
 func _refresh_inventory_screen() -> void:
 	if inv_equip_box == null:
 		return
-	_refresh_stat_box()   # 좌하단 능력치 분배
-	# 좌: 장착 3슬롯
+	_refresh_stat_box()
+	if inv_bag_label:
+		inv_bag_label.text = "[ 가방 ]  %d개" % inventory.size()
+	# 좌: 이번 런 장착 3슬롯
 	for c in inv_equip_box.get_children():
 		c.queue_free()
 	for slot in EQUIP_SLOTS:
 		var it: Dictionary = equipped.get(slot, {})
-		var lb := Label.new()
-		lb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		lb.custom_minimum_size = Vector2(300, 46)
-		lb.add_theme_font_size_override("font_size", 13)
-		lb.text = "%s\n%s" % [str(EQUIP_SLOT_NAME[slot]), _gear_line(it)]
-		lb.add_theme_color_override("font_color", RARITY_COL.get(str(it.get("rarity", "")), Color(0.7, 0.72, 0.78)) if not it.is_empty() else Color(0.6, 0.62, 0.68))
-		inv_equip_box.add_child(lb)
-	# 우: 가방 목록 (버튼)
+		inv_equip_box.add_child(_gear_equipped_card(it, slot, inv_equip_width))
+	# 가운데: 가방 목록
 	for c in inv_list_box.get_children():
 		c.queue_free()
-	for i in inventory.size():
-		var it2: Dictionary = inventory[i]
-		var b := Button.new()
-		b.text = "%s %s [%s]" % [str(RARITY_TAG.get(str(it2["rarity"]), "")), str(it2["name"]), str(EQUIP_SLOT_NAME[str(it2["slot"])])]
-		b.custom_minimum_size = Vector2(500, 34)
-		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		b.add_theme_font_size_override("font_size", 13)
-		b.modulate = RARITY_COL.get(str(it2["rarity"]), Color.WHITE)
-		var idx := i
-		b.pressed.connect(func() -> void: _select_inv_item(idx))
-		inv_list_box.add_child(b)
-	# 하단: 선택 상세/비교
+	if inventory.is_empty():
+		var empty := Label.new()
+		empty.text = "가방이 비어 있습니다.\n\n엘리트와 보스를 처치해\n새 장비를 획득하세요."
+		empty.custom_minimum_size = Vector2(inv_list_item_width, 106)
+		empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		empty.add_theme_font_size_override("font_size", 13)
+		empty.add_theme_color_override("font_color", Color(0.62, 0.65, 0.72))
+		inv_list_box.add_child(empty)
+	else:
+		for i in inventory.size():
+			var it2: Dictionary = inventory[i]
+			var b := Button.new()
+			var selected_mark := "▶ " if i == _inv_sel else ""
+			var forge_tag := " +%d" % _gear_level(it2) if _gear_level(it2) > 0 else ""
+			b.text = "%s[%s] %s%s" % [selected_mark, str(EQUIP_SLOT_NAME.get(str(it2.get("slot", "")), "장비")), str(it2.get("name", "장비")), forge_tag]
+			b.custom_minimum_size = Vector2(inv_list_item_width, 40)
+			b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			b.add_theme_font_size_override("font_size", 12)
+			b.modulate = RARITY_COL.get(str(it2.get("rarity", "")), Color.WHITE)
+			_style_button(b, "res://assets/ui/button.png", 12.0, 2.0)
+			_apply_gear_button_icon(b, it2)
+			b.tooltip_text = _gear_detail_text(it2)
+			var idx := i
+			b.pressed.connect(func() -> void: _select_inv_item(idx))
+			inv_list_box.add_child(b)
+	# 우: 선택 장비와 현재 장비 비교
 	if _inv_sel >= 0 and _inv_sel < inventory.size():
 		var sel: Dictionary = inventory[_inv_sel]
 		var slot := str(sel["slot"])
-		inv_detail_label.text = "선택: %s\n현재 %s: %s" % [_gear_line(sel), str(EQUIP_SLOT_NAME[slot]), _gear_line(equipped.get(slot, {}))]
+		inv_detail_label.text = _gear_compare_text(sel, equipped.get(slot, {})) + "\n\n장착하면 기존 %s는 가방으로 이동합니다." % str(EQUIP_SLOT_NAME[slot])
 		inv_equip_btn.disabled = false
 		inv_discard_btn.disabled = false
+		inv_equip_btn.text = "장착 ▶"
+		inv_discard_btn.text = "분해 (+%d G)" % _gear_gold_value(sel)
 	else:
-		inv_detail_label.text = "가방에서 장비를 선택하세요."
+		inv_detail_label.text = "가방에서 장비를 선택하세요.\n\n선택한 장비의 어픽스와 현재 장비 대비 변화량을 여기서 확인할 수 있습니다."
 		inv_equip_btn.disabled = true
 		inv_discard_btn.disabled = true
+		inv_equip_btn.text = "장착 ▶"
+		inv_discard_btn.text = "분해"
 
 
 func _select_inv_item(idx: int) -> void:
@@ -5059,86 +5319,150 @@ func _discard_inv_item(idx: int) -> void:
 func _build_inventory_ui(s: Vector2, overlay: CanvasLayer) -> void:
 	inventory_panel = Control.new()
 	inventory_panel.visible = false
+	inventory_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	overlay.add_child(inventory_panel)
 	var dim := ColorRect.new()
 	dim.color = Color(0.03, 0.03, 0.06, 0.92)
-	dim.size = s
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	inventory_panel.add_child(dim)
-	var fl := s.x / 2.0 - 460.0
+	var modal := _modal_rect(s)
 	var frame := Panel.new()
-	frame.position = Vector2(fl, 60)
-	frame.size = Vector2(920, 600)
-	frame.add_theme_stylebox_override("panel", _bar_bg())
+	frame.position = modal.position
+	frame.size = modal.size
+	# menu_panel.png의 큰 오너먼트가 내부 3패널 위까지 읽혀 정보가 묻히므로, 여기서는 단정한 금테를 쓴다.
+	frame.add_theme_stylebox_override("panel", _hud_style())
 	inventory_panel.add_child(frame)
 	var ttl := Label.new()
-	ttl.text = "🎒 인벤토리   ( I / ESC 닫기 )"
-	ttl.position = Vector2(fl, 74)
-	ttl.size = Vector2(920, 36)
+	ttl.text = "🎒 인벤토리"
+	ttl.position = Vector2(0, 13)
+	ttl.size = Vector2(modal.size.x, 32)
 	ttl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	ttl.add_theme_font_size_override("font_size", 26)
+	ttl.add_theme_font_size_override("font_size", 24)
 	ttl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
-	inventory_panel.add_child(ttl)
-	var eh := Label.new()
-	eh.text = "[ 장착 ]"
-	eh.position = Vector2(fl + 30, 122)
-	eh.add_theme_font_size_override("font_size", 17)
-	eh.add_theme_color_override("font_color", Color(0.6, 0.9, 1.0))
-	inventory_panel.add_child(eh)
-	inv_equip_box = VBoxContainer.new()
-	inv_equip_box.position = Vector2(fl + 30, 152)
-	inv_equip_box.add_theme_constant_override("separation", 8)
-	inventory_panel.add_child(inv_equip_box)
+	frame.add_child(ttl)
+	var sub := Label.new()
+	sub.text = "이번 런 장비와 능력치 · 런 종료 시 초기화됩니다"
+	sub.position = Vector2(0, 45)
+	sub.size = Vector2(modal.size.x, 20)
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub.add_theme_font_size_override("font_size", 12)
+	sub.add_theme_color_override("font_color", Color(0.67, 0.7, 0.8))
+	frame.add_child(sub)
+
+	var inner_x := 18.0
+	var inner_w := modal.size.x - inner_x * 2.0
+	var content_top := 88.0
+	var footer_y := modal.size.y - 61.0
+	var content_h := maxf(150.0, footer_y - content_top - 12.0)
+	var gap := clampf(modal.size.x * 0.018, 10.0, 18.0)
+	var left_w := clampf(inner_w * 0.25, 195.0, 270.0)
+	var mid_w := clampf(inner_w * 0.29, 220.0, 340.0)
+	var right_w := inner_w - left_w - mid_w - gap * 2.0
+	if right_w < 220.0:
+		var recover := 220.0 - right_w
+		var take_mid := minf(recover, maxf(0.0, mid_w - 190.0))
+		mid_w -= take_mid
+		recover -= take_mid
+		left_w -= minf(recover, maxf(0.0, left_w - 175.0))
+		right_w = inner_w - left_w - mid_w - gap * 2.0
+	inv_equip_width = maxf(120.0, left_w - 24.0)
+	inv_stat_label_width = maxf(84.0, left_w - 68.0)
+	inv_list_item_width = maxf(150.0, mid_w - 20.0)
+
+	var left := Panel.new()
+	left.position = Vector2(inner_x, content_top)
+	left.size = Vector2(left_w, content_h)
+	left.add_theme_stylebox_override("panel", _section_style(Color(0.33, 0.63, 0.83, 0.9)))
+	frame.add_child(left)
+	var lh := Label.new()
+	lh.text = "⚔ 장착 장비"
+	lh.position = Vector2(12, 10)
+	lh.size = Vector2(left_w - 24.0, 22)
+	lh.add_theme_font_size_override("font_size", 15)
+	lh.add_theme_color_override("font_color", Color(0.6, 0.9, 1.0))
+	left.add_child(lh)
+	inv_equip_box = HBoxContainer.new()
+	inv_equip_box.position = Vector2(12, 40)
+	inv_equip_box.size = Vector2(left_w - 24.0, 84)
+	inv_equip_box.add_theme_constant_override("separation", 4)
+	left.add_child(inv_equip_box)
+	var stat_y := 142.0 if content_h >= 355.0 else maxf(132.0, content_h - 164.0)
 	var sh := Label.new()
-	sh.text = "[ 능력치 분배 ]"
-	sh.position = Vector2(fl + 30, 322)
-	sh.add_theme_font_size_override("font_size", 17)
-	sh.add_theme_color_override("font_color", Color(1.0, 0.7, 0.85))
-	inventory_panel.add_child(sh)
+	sh.text = "✦ 능력치 분배"
+	sh.position = Vector2(12, stat_y)
+	sh.size = Vector2(left_w - 24.0, 22)
+	sh.add_theme_font_size_override("font_size", 15)
+	sh.add_theme_color_override("font_color", Color(1.0, 0.68, 0.84))
+	left.add_child(sh)
 	inv_stat_box = VBoxContainer.new()
-	inv_stat_box.position = Vector2(fl + 30, 350)
-	inv_stat_box.add_theme_constant_override("separation", 6)
-	inventory_panel.add_child(inv_stat_box)
-	var bh := Label.new()
-	bh.text = "[ 가방 ]"
-	bh.position = Vector2(fl + 370, 122)
-	bh.add_theme_font_size_override("font_size", 17)
-	bh.add_theme_color_override("font_color", Color(1.0, 0.85, 0.5))
-	inventory_panel.add_child(bh)
+	inv_stat_box.position = Vector2(12, stat_y + 28.0)
+	inv_stat_box.size = Vector2(left_w - 24.0, maxf(100.0, content_h - stat_y - 36.0))
+	inv_stat_box.add_theme_constant_override("separation", 4)
+	left.add_child(inv_stat_box)
+
+	var mid := Panel.new()
+	mid.position = Vector2(inner_x + left_w + gap, content_top)
+	mid.size = Vector2(mid_w, content_h)
+	mid.add_theme_stylebox_override("panel", _section_style(Color(0.72, 0.56, 0.28, 0.9)))
+	frame.add_child(mid)
+	inv_bag_label = Label.new()
+	inv_bag_label.position = Vector2(12, 10)
+	inv_bag_label.size = Vector2(mid_w - 24.0, 22)
+	inv_bag_label.add_theme_font_size_override("font_size", 15)
+	inv_bag_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.5))
+	mid.add_child(inv_bag_label)
 	var scroll := ScrollContainer.new()
-	scroll.position = Vector2(fl + 370, 152)
-	scroll.size = Vector2(520, 320)
-	inventory_panel.add_child(scroll)
+	scroll.position = Vector2(8, 42)
+	scroll.size = Vector2(mid_w - 16.0, content_h - 50.0)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	mid.add_child(scroll)
 	inv_list_box = VBoxContainer.new()
 	inv_list_box.add_theme_constant_override("separation", 4)
 	scroll.add_child(inv_list_box)
-	inv_detail_label = Label.new()
-	inv_detail_label.position = Vector2(fl + 30, 494)
-	inv_detail_label.size = Vector2(860, 76)
+
+	var right := Panel.new()
+	right.position = Vector2(inner_x + left_w + gap + mid_w + gap, content_top)
+	right.size = Vector2(right_w, content_h)
+	right.add_theme_stylebox_override("panel", _section_style(Color(0.78, 0.48, 0.65, 0.9)))
+	frame.add_child(right)
+	var dh := Label.new()
+	dh.text = "◇ 선택 장비 · 비교"
+	dh.position = Vector2(12, 10)
+	dh.size = Vector2(right_w - 24.0, 22)
+	dh.add_theme_font_size_override("font_size", 15)
+	dh.add_theme_color_override("font_color", Color(1.0, 0.72, 0.86))
+	right.add_child(dh)
+	inv_detail_label = RichTextLabel.new()
+	inv_detail_label.position = Vector2(12, 42)
+	inv_detail_label.size = Vector2(right_w - 24.0, content_h - 54.0)
+	inv_detail_label.bbcode_enabled = true
+	inv_detail_label.scroll_active = false
 	inv_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	inv_detail_label.add_theme_font_size_override("font_size", 14)
-	inv_detail_label.add_theme_color_override("font_color", Color(0.92, 0.94, 0.98))
-	inventory_panel.add_child(inv_detail_label)
+	inv_detail_label.add_theme_font_size_override("normal_font_size", 13)
+	inv_detail_label.add_theme_color_override("default_color", Color(0.92, 0.94, 0.98))
+	right.add_child(inv_detail_label)
+
 	var close_btn := Button.new()
-	close_btn.text = "닫기 (I)"
-	close_btn.position = Vector2(fl + 30, 592)
-	close_btn.size = Vector2(150, 46)
+	close_btn.text = "닫기 (I / ESC)"
+	close_btn.position = Vector2(18, footer_y + 6.0)
+	close_btn.size = Vector2(162, 44)
 	_style_button(close_btn, "res://assets/ui/button.png")
 	close_btn.pressed.connect(_toggle_inventory)
-	inventory_panel.add_child(close_btn)
+	frame.add_child(close_btn)
 	inv_equip_btn = Button.new()
 	inv_equip_btn.text = "장착 ▶"
-	inv_equip_btn.position = Vector2(fl + 560, 592)
-	inv_equip_btn.size = Vector2(150, 46)
+	inv_equip_btn.position = Vector2(modal.size.x - 18.0 - 168.0 - 10.0 - 148.0, footer_y + 6.0)
+	inv_equip_btn.size = Vector2(148, 44)
 	_style_button(inv_equip_btn, "res://assets/ui/button.png")
 	inv_equip_btn.pressed.connect(func() -> void: _equip_from_inventory(_inv_sel))
-	inventory_panel.add_child(inv_equip_btn)
+	frame.add_child(inv_equip_btn)
 	inv_discard_btn = Button.new()
 	inv_discard_btn.text = "분해 (+골드)"
-	inv_discard_btn.position = Vector2(fl + 725, 592)
-	inv_discard_btn.size = Vector2(165, 46)
+	inv_discard_btn.position = Vector2(modal.size.x - 18.0 - 168.0, footer_y + 6.0)
+	inv_discard_btn.size = Vector2(168, 44)
 	_style_button(inv_discard_btn, "res://assets/ui/button.png")
 	inv_discard_btn.pressed.connect(func() -> void: _discard_inv_item(_inv_sel))
-	inventory_panel.add_child(inv_discard_btn)
+	frame.add_child(inv_discard_btn)
 
 
 func _populate_levelup() -> void:
@@ -7265,6 +7589,24 @@ func _flatbox(bg: Color, corner: float = 4.0) -> StyleBoxFlat:
 	return sb
 
 
+# 모달 창 공통 규칙: 작은 창에서도 화면 밖으로 나가지 않도록 현재 뷰포트 안에 맞춘다.
+# 기존 인벤토리/대장간은 920×600 절대 좌표라 작은 창에서 하단 버튼과 상세 정보가 겹쳤다.
+func _modal_rect(view: Vector2, preferred: Vector2 = Vector2(1120, 640), margin: float = 24.0) -> Rect2:
+	var max_size := Vector2(maxf(1.0, view.x - margin * 2.0), maxf(1.0, view.y - margin * 2.0))
+	var panel_size := Vector2(minf(preferred.x, max_size.x), minf(preferred.y, max_size.y))
+	return Rect2((view - panel_size) * 0.5, panel_size)
+
+
+# 인벤토리/대장간 내부 섹션 공통 카드. 금 테두리는 창틀보다 약하게 두어 정보 계층을 만든다.
+func _section_style(accent: Color = Color(0.34, 0.31, 0.43, 0.9)) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.045, 0.042, 0.07, 0.82)
+	sb.set_border_width_all(1)
+	sb.border_color = accent
+	sb.set_corner_radius_all(5)
+	return sb
+
+
 func _inv_slot(icon_path: String, lvl: String, fallback: String, evolvable: bool = false, max_pips: int = 8) -> Control:
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 1)
@@ -8481,100 +8823,149 @@ func _build_ui(s: Vector2) -> void:
 	back_btn.pressed.connect(func() -> void: shop_panel.visible = false)
 	shop_panel.add_child(back_btn)
 
-	# ── 대장간 패널: 런에서 건진 장비를 영구 보관·장착·강화한다. ──
+	# ── 대장간: 인벤토리와 같은 3패널 구조(로드아웃 / 보관함 / 상세)로 정리한다. ──
 	forge_panel = Control.new()
 	forge_panel.visible = false
+	forge_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	overlay.add_child(forge_panel)
 	var fdim := ColorRect.new()
 	fdim.color = Color(0.03, 0.03, 0.06, 0.92)
-	fdim.size = s
+	fdim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	forge_panel.add_child(fdim)
-	var fl := s.x / 2.0 - 460.0
+	var forge_modal := _modal_rect(s)
 	var fbg := Panel.new()
-	fbg.position = Vector2(fl, 60)
-	fbg.size = Vector2(920, 600)
+	fbg.position = forge_modal.position
+	fbg.size = forge_modal.size
+	# 대장간도 장비 정보가 주인공이므로 배경 장식보다 얇은 금테를 우선한다.
 	fbg.add_theme_stylebox_override("panel", _hud_style())
-	fbg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	forge_panel.add_child(fbg)
 	var fttl := Label.new()
 	fttl.text = "⚒ 대장간 — 영구 장비"
-	fttl.position = Vector2(fl, 74)
-	fttl.size = Vector2(920, 36)
+	fttl.position = Vector2(0, 13)
+	fttl.size = Vector2(forge_modal.size.x, 32)
 	fttl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	fttl.add_theme_font_size_override("font_size", 26)
+	fttl.add_theme_font_size_override("font_size", 24)
 	fttl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
-	forge_panel.add_child(fttl)
+	fbg.add_child(fttl)
 	forge_gold_label = Label.new()
-	forge_gold_label.position = Vector2(fl, 108)
-	forge_gold_label.size = Vector2(920, 24)
+	forge_gold_label.position = Vector2(0, 45)
+	forge_gold_label.size = Vector2(forge_modal.size.x, 20)
 	forge_gold_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	forge_gold_label.add_theme_font_size_override("font_size", 12)
 	forge_gold_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
-	forge_panel.add_child(forge_gold_label)
+	fbg.add_child(forge_gold_label)
+
+	var inner_x := 18.0
+	var inner_w := forge_modal.size.x - inner_x * 2.0
+	var content_top := 88.0
+	var footer_y := forge_modal.size.y - 61.0
+	var content_h := maxf(150.0, footer_y - content_top - 12.0)
+	var gap := clampf(forge_modal.size.x * 0.018, 10.0, 18.0)
+	var left_w := clampf(inner_w * 0.25, 195.0, 270.0)
+	var mid_w := clampf(inner_w * 0.31, 225.0, 350.0)
+	var right_w := inner_w - left_w - mid_w - gap * 2.0
+	if right_w < 220.0:
+		var recover := 220.0 - right_w
+		var take_mid := minf(recover, maxf(0.0, mid_w - 195.0))
+		mid_w -= take_mid
+		recover -= take_mid
+		left_w -= minf(recover, maxf(0.0, left_w - 175.0))
+		right_w = inner_w - left_w - mid_w - gap * 2.0
+	forge_loadout_width = maxf(120.0, left_w - 24.0)
+	forge_list_item_width = maxf(155.0, mid_w - 20.0)
+
+	var loadout_panel := Panel.new()
+	loadout_panel.position = Vector2(inner_x, content_top)
+	loadout_panel.size = Vector2(left_w, content_h)
+	loadout_panel.add_theme_stylebox_override("panel", _section_style(Color(0.33, 0.63, 0.83, 0.9)))
+	fbg.add_child(loadout_panel)
 	var flh := Label.new()
-	flh.text = "[ 현재 로드아웃 ]"
-	flh.position = Vector2(fl + 30, 140)
-	flh.add_theme_font_size_override("font_size", 17)
+	flh.text = "⚔ 현재 로드아웃"
+	flh.position = Vector2(12, 10)
+	flh.size = Vector2(left_w - 24.0, 22)
+	flh.add_theme_font_size_override("font_size", 15)
 	flh.add_theme_color_override("font_color", Color(0.6, 0.9, 1.0))
-	forge_panel.add_child(flh)
-	forge_loadout_box = VBoxContainer.new()
-	forge_loadout_box.position = Vector2(fl + 30, 170)
-	forge_loadout_box.add_theme_constant_override("separation", 8)
-	forge_panel.add_child(forge_loadout_box)
+	loadout_panel.add_child(flh)
+	forge_loadout_box = HBoxContainer.new()
+	forge_loadout_box.position = Vector2(12, 40)
+	forge_loadout_box.size = Vector2(left_w - 24.0, 84)
+	forge_loadout_box.add_theme_constant_override("separation", 4)
+	loadout_panel.add_child(forge_loadout_box)
 	var ftip := Label.new()
-	ftip.text = "장착한 장비는 다음 런 시작부터 적용됩니다.\n강화: 모든 어픽스 +12% / 단계 (최대 +5)"
-	ftip.position = Vector2(fl + 30, 370)
-	ftip.size = Vector2(290, 88)
+	ftip.text = "[ 영구 장비 ]\n장착 효과는 다음 런부터 적용됩니다.\n\n강화는 최대 5단계이며\n모든 어픽스가 단계마다 +12% 강해집니다."
+	ftip.position = Vector2(12, 142)
+	ftip.size = Vector2(left_w - 24.0, maxf(100.0, content_h - 154.0))
 	ftip.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	ftip.add_theme_font_size_override("font_size", 13)
+	ftip.add_theme_font_size_override("font_size", 12)
 	ftip.add_theme_color_override("font_color", Color(0.72, 0.75, 0.84))
-	forge_panel.add_child(ftip)
-	var fsh := Label.new()
-	fsh.text = "[ 보관함 ]"
-	fsh.position = Vector2(fl + 370, 140)
-	fsh.add_theme_font_size_override("font_size", 17)
-	fsh.add_theme_color_override("font_color", Color(1.0, 0.85, 0.5))
-	forge_panel.add_child(fsh)
+	loadout_panel.add_child(ftip)
+
+	var stash_panel := Panel.new()
+	stash_panel.position = Vector2(inner_x + left_w + gap, content_top)
+	stash_panel.size = Vector2(mid_w, content_h)
+	stash_panel.add_theme_stylebox_override("panel", _section_style(Color(0.72, 0.56, 0.28, 0.9)))
+	fbg.add_child(stash_panel)
+	forge_stash_label = Label.new()
+	forge_stash_label.position = Vector2(12, 10)
+	forge_stash_label.size = Vector2(mid_w - 24.0, 22)
+	forge_stash_label.add_theme_font_size_override("font_size", 15)
+	forge_stash_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.5))
+	stash_panel.add_child(forge_stash_label)
 	var fscroll := ScrollContainer.new()
-	fscroll.position = Vector2(fl + 370, 170)
-	fscroll.size = Vector2(520, 286)
+	fscroll.position = Vector2(8, 42)
+	fscroll.size = Vector2(mid_w - 16.0, content_h - 50.0)
 	fscroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	forge_panel.add_child(fscroll)
+	stash_panel.add_child(fscroll)
 	forge_list_box = VBoxContainer.new()
 	forge_list_box.add_theme_constant_override("separation", 4)
 	fscroll.add_child(forge_list_box)
+
+	var detail_panel := Panel.new()
+	detail_panel.position = Vector2(inner_x + left_w + gap + mid_w + gap, content_top)
+	detail_panel.size = Vector2(right_w, content_h)
+	detail_panel.add_theme_stylebox_override("panel", _section_style(Color(0.78, 0.48, 0.65, 0.9)))
+	fbg.add_child(detail_panel)
+	var fdh := Label.new()
+	fdh.text = "◇ 장비 상세 · 강화"
+	fdh.position = Vector2(12, 10)
+	fdh.size = Vector2(right_w - 24.0, 22)
+	fdh.add_theme_font_size_override("font_size", 15)
+	fdh.add_theme_color_override("font_color", Color(1.0, 0.72, 0.86))
+	detail_panel.add_child(fdh)
 	forge_detail_label = Label.new()
-	forge_detail_label.position = Vector2(fl + 30, 476)
-	forge_detail_label.size = Vector2(860, 96)
+	forge_detail_label.position = Vector2(12, 42)
+	forge_detail_label.size = Vector2(right_w - 24.0, content_h - 54.0)
 	forge_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	forge_detail_label.add_theme_font_size_override("font_size", 14)
+	forge_detail_label.add_theme_font_size_override("font_size", 13)
 	forge_detail_label.add_theme_color_override("font_color", Color(0.92, 0.94, 0.98))
-	forge_panel.add_child(forge_detail_label)
+	detail_panel.add_child(forge_detail_label)
+
 	var fback := Button.new()
 	fback.text = "← 돌아가기"
-	fback.position = Vector2(fl + 30, 592)
-	fback.size = Vector2(150, 46)
+	fback.position = Vector2(18, footer_y + 6.0)
+	fback.size = Vector2(150, 44)
 	_style_button(fback, "res://assets/ui/button.png")
 	fback.pressed.connect(func() -> void: forge_panel.visible = false)
-	forge_panel.add_child(fback)
+	fbg.add_child(fback)
 	forge_equip_btn = Button.new()
-	forge_equip_btn.position = Vector2(fl + 195, 592)
-	forge_equip_btn.size = Vector2(150, 46)
+	forge_equip_btn.position = Vector2(forge_modal.size.x - 18.0 - 154.0 - 10.0 - 160.0 - 10.0 - 136.0, footer_y + 6.0)
+	forge_equip_btn.size = Vector2(136, 44)
 	_style_button(forge_equip_btn, "res://assets/ui/button.png")
 	forge_equip_btn.pressed.connect(_forge_toggle_equip)
-	forge_panel.add_child(forge_equip_btn)
+	fbg.add_child(forge_equip_btn)
 	forge_upgrade_btn = Button.new()
-	forge_upgrade_btn.position = Vector2(fl + 360, 592)
-	forge_upgrade_btn.size = Vector2(165, 46)
+	forge_upgrade_btn.position = Vector2(forge_modal.size.x - 18.0 - 154.0 - 10.0 - 160.0, footer_y + 6.0)
+	forge_upgrade_btn.size = Vector2(160, 44)
 	_style_button(forge_upgrade_btn, "res://assets/ui/button.png")
 	forge_upgrade_btn.pressed.connect(_forge_upgrade_selected)
-	forge_panel.add_child(forge_upgrade_btn)
+	fbg.add_child(forge_upgrade_btn)
 	forge_discard_btn = Button.new()
-	forge_discard_btn.position = Vector2(fl + 540, 592)
-	forge_discard_btn.size = Vector2(180, 46)
+	forge_discard_btn.position = Vector2(forge_modal.size.x - 18.0 - 154.0, footer_y + 6.0)
+	forge_discard_btn.size = Vector2(154, 44)
 	_style_button(forge_discard_btn, "res://assets/ui/button.png")
 	forge_discard_btn.add_theme_color_override("font_color", Color(1.0, 0.72, 0.6))
 	forge_discard_btn.pressed.connect(_forge_discard_selected)
-	forge_panel.add_child(forge_discard_btn)
+	fbg.add_child(forge_discard_btn)
 
 	# ── 옵션 패널 (음악/효과음 볼륨, 전체화면) ──
 	options_panel = Control.new()
