@@ -4519,6 +4519,10 @@ const GEAR_NOUNS := {
 	"armor": ["갑옷", "로브", "비늘갑주", "망토"],
 	"trinket": ["반지", "부적", "목걸이", "인장"]}
 const GEAR_ADJ := ["맹독의", "불타는", "얼어붙은", "강철의", "고대의", "저주받은", "빛나는", "심연의"]
+# 장비 무기 명사 → 실제 전투 무기 키. 무기 슬롯 장비가 캐릭터 주무기(weapon1)를 대체한다.
+# ponytail: 무기 비주얼은 속성별 변형이 없어 '얼어붙은 지팡이'도 혼탄 이펙트다. 데미지 상성은 정확.
+const GEAR_NOUN_ATTACK := {
+	"검": "cleave", "도끼": "axe", "지팡이": "soul_bolt", "단검": "knife", "창": "spear"}
 # 장비 접두어 → 속성. 무기 슬롯 장비의 이 속성이 곧 내 공격 속성이 된다(상성 판정).
 const GEAR_ADJ_ELEMENT := {
 	"맹독의": "dark", "불타는": "fire", "얼어붙은": "ice", "강철의": "phys",
@@ -4575,7 +4579,8 @@ func _roll_gear() -> Dictionary:
 	var nm := "%s %s" % [adj, noun]
 	# _found: 런 중 주운 표식 → 런 종료 시 이 장비만 마을 보관함으로 이월. lvl: 대장간 강화 레벨.
 	# element: 접두어에서 결정. 무기 슬롯이면 이 속성이 곧 내 공격 속성.
-	return {"slot": slot, "rarity": rarity, "affixes": affs, "name": nm, "icon": GEAR_NOUN_ICON.get(noun, ""), "element": GEAR_ADJ_ELEMENT.get(adj, "phys"), "_found": true, "gear_id": _new_gear_id(), "lvl": 0}
+	# weapon_kind: 무기 슬롯이면 실제 전투 무기 키 (주무기 대체). 다른 슬롯은 "".
+	return {"slot": slot, "rarity": rarity, "affixes": affs, "name": nm, "icon": GEAR_NOUN_ICON.get(noun, ""), "element": GEAR_ADJ_ELEMENT.get(adj, "phys"), "weapon_kind": GEAR_NOUN_ATTACK.get(noun, ""), "_found": true, "gear_id": _new_gear_id(), "lvl": 0}
 
 
 # 처치 지점에서 확률적으로 장비 드롭 (엘리트/보스는 높게)
@@ -4963,7 +4968,12 @@ func _gear_line(it: Dictionary) -> String:
 		parts.append("%s+%s" % [str(a["name"]), vs])
 	var lv := _gear_level(it)
 	var forge_tag := " +%d" % lv if lv > 0 else ""
-	return "%s %s%s  (%s)" % [str(RARITY_TAG.get(str(it["rarity"]), "")), str(it["name"]), forge_tag, ", ".join(parts)]
+	# 무기 장비: 속성 + 발동 무기를 함께 표기(장착 시 주공격이 바뀜을 알림).
+	var wk := str(it.get("weapon_kind", ""))
+	var extra := ""
+	if str(it.get("slot", "")) == "weapon" and wk != "":
+		extra = "  [%s·%s]" % [str(ELEMENT_NAME.get(str(it.get("element", "phys")), "물리")), str(WNAMES.get(wk, wk))]
+	return "%s %s%s%s  (%s)" % [str(RARITY_TAG.get(str(it["rarity"]), "")), str(it["name"]), forge_tag, extra, ", ".join(parts)]
 
 
 func _bag_toast(it: Dictionary) -> void:
@@ -5008,6 +5018,10 @@ func _normalize_persistent_gear(it: Dictionary) -> Dictionary:
 	# 속성 백필: 구 세이브·프리뷰 장비는 element가 없으니 이름 접두어로 보완.
 	if str(normalized.get("element", "")).is_empty():
 		normalized["element"] = GEAR_ADJ_ELEMENT.get(str(normalized.get("name", "")).split(" ")[0], "phys")
+	# 무기 키 백필: 무기 슬롯인데 weapon_kind가 없으면 이름 명사(둘째 단어)로 보완.
+	if str(normalized.get("slot", "")) == "weapon" and str(normalized.get("weapon_kind", "")).is_empty():
+		var parts: PackedStringArray = str(normalized.get("name", "")).split(" ")
+		normalized["weapon_kind"] = GEAR_NOUN_ATTACK.get(parts[1] if parts.size() > 1 else "", "")
 	var affixes: Array = []
 	for raw_affix in normalized.get("affixes", []):
 		if not (raw_affix is Dictionary):
@@ -6711,8 +6725,10 @@ func _start_game(d: Dictionary) -> void:
 	reaper_warned = false
 	_boss_is_reaper = false
 	_boss_is_objective = false
-	# 뱀서식: 캐릭터별 고유 시작 무기를 Lv1로 지급 (기본공격 + 시작무기 = 캐릭터 정체성)
-	var sw := str(sel_char.get("weapon", "arrow"))
+	# B블렌드: 장착한 무기 장비가 캐릭터 주무기(weapon1)를 대체. 없으면 캐릭터 기본 무기.
+	# (캐릭터 고유 2번째 무기 weapon2는 유지 → 캐릭터 정체성 일부 보존)
+	var gear_wpn := str(equipped.get("weapon", {}).get("weapon_kind", ""))
+	var sw := gear_wpn if gear_wpn != "" and WNAMES.has(gear_wpn) else str(sel_char.get("weapon", "arrow"))
 	_add_weapon(sw)
 	# 캐릭터 고유 2번째 시작 무기 (예: 나이트 = 검기 + 회전검 '방패')
 	var sw2 := str(sel_char.get("weapon2", ""))
