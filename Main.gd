@@ -6939,15 +6939,42 @@ func _refresh_ult_bar() -> void:
 		return
 	ult_bar.value = ult_gauge
 	if ult_bar_label:
+		var un := str(ULT_NAME.get(_char_ult(), "궁극기"))
 		if ult_gauge >= 1.0:
-			ult_bar_label.text = "★ Q  궁극기  READY ★"
+			ult_bar_label.text = "★ Q  %s  READY ★" % un
 			ult_bar_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.5))
 		else:
-			ult_bar_label.text = "Q  궁극기  %d%%" % int(ult_gauge * 100.0)
+			ult_bar_label.text = "Q  %s  %d%%" % [un, int(ult_gauge * 100.0)]
 			ult_bar_label.add_theme_color_override("font_color", Color(0.85, 0.8, 0.95))
 
 
 # E 스킬샷: 마우스 방향으로 강력한 관통 빔 (히트스캔 코리도어). RPG식 조준 스킬.
+# 캐릭터별 고유 스킬: ult=궁극기 아키타입, element=스킬 3종의 속성(색·상성).
+# GameConfig를 안 건드리고 여기 한 곳에서 분기 (character key 기준).
+const CHAR_SKILLS := {
+	"corvius":   {"ult": "blast",    "element": "dark"},   # 역병의사 — 비전 폭발
+	"gustavo":   {"ult": "reap",     "element": "phys"},   # 정육점 탱커 — 흡혈 수확
+	"serafina":  {"ult": "judgment", "element": "holy"},   # 수녀 — 신성 심판+자힐
+	"valentino": {"ult": "reap",     "element": "dark"},   # 뱀파이어 — 흡혈 수확
+	"pixie":     {"ult": "meteor",   "element": "fire"},   # 마녀 — 운석비
+	"django":    {"ult": "blast",    "element": "phys"},   # 노상강도 — 비전 폭발
+	"bolt":      {"ult": "blast",    "element": "dark"},    # 해골 — 비전 폭발
+	"morgana":   {"ult": "blizzard", "element": "ice"},    # 유령 — 빙결 결계
+	"isolde":    {"ult": "blizzard", "element": "ice"},    # 서리 마녀 — 빙결 결계
+	"grimble":   {"ult": "blast",    "element": "dark"},    # 부두술사 — 비전 폭발
+	"mordek":    {"ult": "reap",     "element": "phys"},   # 처형인 — 흡혈 수확
+}
+const ULT_NAME := {"blast": "비전 폭발", "meteor": "운석비", "blizzard": "빙결 결계", "judgment": "신성 심판", "reap": "암흑 수확"}
+
+
+func _char_ult() -> String:
+	return str((CHAR_SKILLS.get(str(sel_char.get("key", "")), {}) as Dictionary).get("ult", "blast"))
+
+
+func _char_skill_element() -> String:
+	return str((CHAR_SKILLS.get(str(sel_char.get("key", "")), {}) as Dictionary).get("element", "phys"))
+
+
 func _fire_skillshot() -> void:
 	if player == null:
 		return
@@ -6955,6 +6982,8 @@ func _fire_skillshot() -> void:
 	dir = dir.normalized() if dir.length() > 1.0 else Vector2.RIGHT
 	var reach := 720.0
 	var width := 34.0
+	var elem := _char_skill_element()
+	var col: Color = ELEMENT_COL.get(elem, Color(0.5, 0.9, 1.0))
 	var dmg: float = 120.0 * player.damage_mult * (1.0 + time_survived / 300.0)
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if not is_instance_valid(e):
@@ -6964,19 +6993,19 @@ func _fire_skillshot() -> void:
 		if along < 0.0 or along > reach:
 			continue
 		if (to - dir * along).length() < width + e.radius:
-			e.take_damage(dmg, true)
+			e.take_damage(dmg, true, false, elem)
 			e.shove(player.position, 130.0)
 	if boss and is_instance_valid(boss):
 		var tb: Vector2 = boss.position - player.position
 		var al: float = tb.dot(dir)
 		if al > 0.0 and al < reach and (tb - dir * al).length() < width + boss.radius:
-			boss.take_damage(dmg * 1.5)
-	# 코드 빔(bolt)을 플레이어→방향으로
+			boss.take_damage(dmg * 1.5, true, elem)
+	# 코드 빔(bolt)을 플레이어→방향으로 (캐릭터 속성색)
 	var beam := Effect.new()
 	beam.kind = "bolt"
 	beam.position = player.position + dir * reach
 	beam.from_global = player.position
-	beam.col = Color(0.5, 0.9, 1.0)
+	beam.col = col
 	beam.life = 0.24
 	beam.max_life = 0.24
 	add_child(beam)
@@ -6989,13 +7018,17 @@ func _fire_nova() -> void:
 	if player == null:
 		return
 	var rad := 220.0
+	var elem := _char_skill_element()
+	var col: Color = ELEMENT_COL.get(elem, Color(0.4, 0.9, 1.0))
 	var dmg: float = 70.0 * player.damage_mult * (1.0 + time_survived / 300.0)
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if is_instance_valid(e) and player.position.distance_to(e.position) < rad + e.radius:
-			e.take_damage(dmg, true)
+			e.take_damage(dmg, true, false, elem)
 			e.shove(player.position, 320.0)
-	_spawn_proc_fx("ring", player.position, rad * 2.0, Color(0.4, 0.9, 1.0), 0.4)
-	_spawn_proc_fx("burst", player.position, rad * 0.5, Color(0.7, 1.0, 1.0), 0.35)
+	if boss and is_instance_valid(boss) and player.position.distance_to(boss.position) < rad + boss.radius:
+		boss.take_damage(dmg, true, elem)
+	_spawn_proc_fx("ring", player.position, rad * 2.0, col, 0.4)
+	_spawn_proc_fx("burst", player.position, rad * 0.5, col.lightened(0.3), 0.35)
 	play_sfx("ult", -12.0)
 	shake_t = maxf(shake_t, 0.18)
 
@@ -7005,22 +7038,100 @@ func _fire_ultimate() -> void:
 	if state != State.PLAYING or player == null:
 		return
 	ult_gauge = 0.0
-	# 시간이 지날수록 강해짐 — 후반 탱커도 정리되도록.
-	var dmg: float = 80.0 * player.damage_mult * (1.0 + time_survived / 240.0)
+	# 캐릭터별 고유 궁극기. 시간이 지날수록 강해짐(후반 탱커 정리).
+	var base: float = 80.0 * player.damage_mult * (1.0 + time_survived / 240.0)
+	var elem := _char_skill_element()
+	var col: Color = ELEMENT_COL.get(elem, Color(0.82, 0.45, 1.0))
+	match _char_ult():
+		"meteor": _ult_meteor(base, elem, col)
+		"blizzard": _ult_blizzard(base, elem, col)
+		"judgment": _ult_judgment(base, elem, col)
+		"reap": _ult_reap(base, elem, col)
+		_: _ult_blast(base, elem, col)
+	play_sfx("ult", -4.0)
+	_refresh_ult_bar()
+
+
+# 비전 폭발: 화면 전역 균등 대형 폭발 (기본형).
+func _ult_blast(base: float, elem: String, col: Color) -> void:
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if is_instance_valid(e):
-			e.take_damage(dmg, true)
+			e.take_damage(base, true, false, elem)
 			e.shove(player.position, 260.0)
 	if boss and is_instance_valid(boss):
-		boss.take_damage(dmg * 4.0)
-	# 연출: 보라 섬광 + 큰 흔들림 + 슬로우모 + 확산 충격파(개선된 ring/burst 재활용)
-	_flash(Color(0.72, 0.42, 1.0, 0.6))
+		boss.take_damage(base * 4.0, true, elem)
+	_flash(Color(col.r, col.g, col.b, 0.6))
 	shake_t = maxf(shake_t, 0.4)
 	_slowmo(0.4, 260)
-	play_sfx("ult", -4.0)
-	_spawn_proc_fx("ring", player.position, 540.0, Color(0.82, 0.45, 1.0), 0.6)
-	_spawn_proc_fx("burst", player.position, 240.0, Color(1.0, 0.7, 1.0), 0.5)
-	_refresh_ult_bar()
+	_spawn_proc_fx("ring", player.position, 540.0, col, 0.6)
+	_spawn_proc_fx("burst", player.position, 240.0, col.lightened(0.35), 0.5)
+
+
+# 운석비: 랜덤 지점에 다중 폭발. 겹치는 곳은 큰 피해 (픽시 유리대포).
+func _ult_meteor(base: float, elem: String, col: Color) -> void:
+	var targets := get_tree().get_nodes_in_group("enemies")
+	for i in 10:
+		var pos: Vector2 = player.position + Vector2(randf_range(-320, 320), randf_range(-320, 320))
+		if targets.size() > 0:
+			var t = targets[randi() % targets.size()]
+			if is_instance_valid(t):
+				pos = t.position
+		var rad := 120.0
+		for e in get_tree().get_nodes_in_group("enemies"):
+			if is_instance_valid(e) and pos.distance_to(e.position) <= rad:
+				e.take_damage(base * 1.4, true, false, elem)
+		if boss and is_instance_valid(boss) and pos.distance_to(boss.position) <= rad:
+			boss.take_damage(base * 1.4, true, elem)
+		_spawn_proc_fx("burst", pos, rad, col, 0.4)
+	_flash(Color(col.r, col.g, col.b, 0.4))
+	shake_t = maxf(shake_t, 0.36)
+
+
+# 빙결 결계: 전역 냉기 피해 + 강한 둔화 (이졸데·모르가나 컨트롤형).
+func _ult_blizzard(base: float, elem: String, col: Color) -> void:
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if is_instance_valid(e):
+			e.take_damage(base * 0.8, true, false, elem)
+			e.apply_slow(0.7, 4.0)
+	if boss and is_instance_valid(boss):
+		boss.take_damage(base * 3.0, true, elem)
+	_flash(Color(col.r, col.g, col.b, 0.42))
+	shake_t = maxf(shake_t, 0.3)
+	_spawn_proc_fx("ring", player.position, 660.0, col, 0.7)
+	_spawn_proc_fx("burst", player.position, 260.0, col.lightened(0.4), 0.5)
+
+
+# 신성 심판: 전역 피해 + 자기 회복 (세라피나 서포터).
+func _ult_judgment(base: float, elem: String, col: Color) -> void:
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if is_instance_valid(e):
+			e.take_damage(base * 1.1, true, false, elem)
+			e.shove(player.position, 200.0)
+	if boss and is_instance_valid(boss):
+		boss.take_damage(base * 3.5, true, elem)
+	player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.3)   # 심판의 가호: 30% 회복
+	_flash(Color(col.r, col.g, col.b, 0.55))
+	shake_t = maxf(shake_t, 0.34)
+	_spawn_proc_fx("ring", player.position, 560.0, col, 0.6)
+	_spawn_proc_fx("burst", player.position, 220.0, Color(1.0, 1.0, 0.82), 0.55)
+
+
+# 암흑 수확: 전역 피해 + 흡혈 (구스타보·발렌티노·모르덱 근접 탱커/뱀파이어).
+func _ult_reap(base: float, elem: String, col: Color) -> void:
+	var dealt := 0.0
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if is_instance_valid(e):
+			dealt += minf(maxf(0.0, e.hp), base * 1.2)
+			e.take_damage(base * 1.2, true, false, elem)
+			e.shove(player.position, 240.0)
+	if boss and is_instance_valid(boss):
+		boss.take_damage(base * 4.0, true, elem)
+	player.hp = minf(player.max_hp, player.hp + dealt * 0.15)   # 수확 흡혈: 가한 피해의 15% 회복
+	_flash(Color(col.r, col.g, col.b, 0.58))
+	shake_t = maxf(shake_t, 0.4)
+	_slowmo(0.4, 260)
+	_spawn_proc_fx("ring", player.position, 540.0, col, 0.6)
+	_spawn_proc_fx("burst", player.position, 240.0, col.lightened(0.3), 0.5)
 
 
 func _unhandled_input(event: InputEvent) -> void:
