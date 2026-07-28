@@ -520,6 +520,16 @@ var shop_panel: Control
 var shop_gold_label: Label
 var shop_buttons: Array = []
 var title_gold_label: Label
+# 마을 대장간 (Phase 5): 지속 장비 보관함 강화/장착
+var forge_panel: Control
+var forge_gold_label: Label
+var forge_loadout_box: VBoxContainer
+var forge_list_box: VBoxContainer
+var forge_detail_label: Label
+var forge_equip_btn: Button
+var forge_upgrade_btn: Button
+var forge_discard_btn: Button
+var _forge_sel := -1              # 선택한 보관함 인덱스
 var pause_panel: Control
 var pause_stats_box: GridContainer   # 일시정지 스탯 패널 (레벨업과 동일한 아이콘 그리드)
 var pause_weap_box: HBoxContainer   # 일시정지: 무기 아이콘 줄
@@ -748,6 +758,7 @@ func _ready() -> void:
 	# UI/아이콘 픽셀 선명하게 (기본 linear → nearest)
 	get_viewport().canvas_item_default_texture_filter = Viewport.DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST
 	meta = Meta.load_data()
+	_ensure_gear_meta()   # Phase 5 저장 포맷 정리(구버전/중단된 세이브도 안전하게 보정)
 	var startup_unlocks := _sync_meta_unlocks()
 	if not startup_unlocks.is_empty():
 		Meta.save_data(meta)
@@ -4424,6 +4435,13 @@ const GEAR_AFFIX_COUNT := {"common": 1, "rare": 1, "epic": 2, "legendary": 3}
 const GEAR_POWER := {"common": 1.0, "rare": 1.5, "epic": 2.2, "legendary": 3.2}
 const RARITY_TAG := {"common": "", "rare": "[레어]", "epic": "◆에픽◆", "legendary": "★레전더리★"}
 
+# Phase 5 대장간: 장비 하나당 최대 5회, 강화마다 모든 어픽스가 +12%씩 강해진다.
+# 런 골드가 초반 영구 강화와 함께 자연스럽게 소모되도록 등급별 비용을 별도로 둔다.
+const FORGE_MAX_LEVEL := 5
+const FORGE_LEVEL_BONUS := 0.12
+const FORGE_UPGRADE_BASE_COST := {"common": 18, "rare": 40, "epic": 85, "legendary": 175}
+const FORGE_SALVAGE_BASE := {"common": 5, "rare": 12, "epic": 28, "legendary": 60}
+
 
 # 랜덤 장비 1개 생성 (등급은 _roll_rarity 재활용 → 럭 반영)
 func _roll_gear() -> Dictionary:
@@ -4435,10 +4453,11 @@ func _roll_gear() -> Dictionary:
 	for i in mini(int(GEAR_AFFIX_COUNT[rarity]), pool.size()):
 		var a: Dictionary = pool[i]
 		var v: float = float(a["per"]) * float(GEAR_POWER[rarity]) * randf_range(0.8, 1.2)
-		affs.append({"stat": a["stat"], "name": a["name"], "value": v, "pct": bool(a["pct"])})
+		affs.append({"stat": a["stat"], "name": a["name"], "value": v, "base_value": v, "pct": bool(a["pct"])})
 	var noun: String = GEAR_NOUNS[slot][randi() % GEAR_NOUNS[slot].size()]
 	var nm := "%s %s" % [GEAR_ADJ[randi() % GEAR_ADJ.size()], noun]
-	return {"slot": slot, "rarity": rarity, "affixes": affs, "name": nm, "icon": GEAR_NOUN_ICON.get(noun, "")}
+	# _found: 런 중 주운 표식 → 런 종료 시 이 장비만 마을 보관함으로 이월. lvl: 대장간 강화 레벨.
+	return {"slot": slot, "rarity": rarity, "affixes": affs, "name": nm, "icon": GEAR_NOUN_ICON.get(noun, ""), "_found": true, "gear_id": _new_gear_id(), "lvl": 0}
 
 
 # 처치 지점에서 확률적으로 장비 드롭 (엘리트/보스는 높게)
@@ -4632,7 +4651,9 @@ func _gear_line(it: Dictionary) -> String:
 	for a in it["affixes"]:
 		var vs := ("%d%%" % round(float(a["value"]) * 100.0)) if bool(a["pct"]) else ("%d" % round(float(a["value"])))
 		parts.append("%s+%s" % [str(a["name"]), vs])
-	return "%s %s  (%s)" % [str(RARITY_TAG.get(str(it["rarity"]), "")), str(it["name"]), ", ".join(parts)]
+	var lv := _gear_level(it)
+	var forge_tag := " +%d" % lv if lv > 0 else ""
+	return "%s %s%s  (%s)" % [str(RARITY_TAG.get(str(it["rarity"]), "")), str(it["name"]), forge_tag, ", ".join(parts)]
 
 
 func _bag_toast(it: Dictionary) -> void:
@@ -4646,6 +4667,304 @@ func _bag_toast(it: Dictionary) -> void:
 
 func _gear_gold_value(it: Dictionary) -> int:
 	return {"common": 3, "rare": 6, "epic": 12, "legendary": 25}.get(str(it.get("rarity", "")), 3)
+
+
+# ── 마을 대장간 (Phase 5: 영구 보관·로드아웃·강화) ─────────────────────
+# 장비 ID는 보관함과 로드아웃의 같은 아이템을 연결한다. 이름/어픽스가 같은 드롭도 구분해야
+# 강화·분해가 의도한 한 개에만 적용된다.
+func _new_gear_id() -> String:
+	return "%x-%08x" % [Time.get_ticks_usec(), randi()]
+
+
+func _gear_level(it: Dictionary) -> int:
+	return clampi(int(it.get("lvl", 0)), 0, FORGE_MAX_LEVEL)
+
+
+func _is_valid_gear(it: Dictionary) -> bool:
+	return str(it.get("slot", "")) in EQUIP_SLOTS and RARITY_ORDER.has(str(it.get("rarity", ""))) and it.has("affixes")
+
+
+# 저장용 장비를 정규화한다. base_value를 남겨 강화값을 누적 오차 없이 재계산하고,
+# 중단된 Phase 5 세이브나 구버전 드롭에도 ID/강화 레벨을 보완한다.
+func _normalize_persistent_gear(it: Dictionary) -> Dictionary:
+	var normalized: Dictionary = it.duplicate(true)
+	if not _is_valid_gear(normalized):
+		return {}
+	normalized.erase("_found")
+	var lv := _gear_level(normalized)
+	normalized["lvl"] = lv
+	if str(normalized.get("gear_id", "")).is_empty():
+		normalized["gear_id"] = _new_gear_id()
+	var affixes: Array = []
+	for raw_affix in normalized.get("affixes", []):
+		if not (raw_affix is Dictionary):
+			continue
+		var affix: Dictionary = (raw_affix as Dictionary).duplicate(true)
+		var scale := 1.0 + FORGE_LEVEL_BONUS * float(lv)
+		var base_value: float
+		if affix.has("base_value"):
+			base_value = float(affix["base_value"])
+		else:
+			base_value = float(affix.get("value", 0.0)) / scale
+		affix["base_value"] = base_value
+		affix["value"] = base_value * scale
+		affixes.append(affix)
+	normalized["affixes"] = affixes
+	return normalized
+
+
+func _same_gear(a: Dictionary, b: Dictionary) -> bool:
+	var a_id := str(a.get("gear_id", ""))
+	var b_id := str(b.get("gear_id", ""))
+	if not a_id.is_empty() and not b_id.is_empty():
+		return a_id == b_id
+	# ID 도입 전 저장을 한 번만 정리할 때의 폴백. 이후에는 항상 ID로 비교한다.
+	return str(a.get("slot", "")) == str(b.get("slot", "")) and str(a.get("rarity", "")) == str(b.get("rarity", "")) and str(a.get("name", "")) == str(b.get("name", "")) and a.get("affixes", []) == b.get("affixes", [])
+
+
+func _forge_find_stash_index(stash: Array, it: Dictionary) -> int:
+	for i in range(stash.size()):
+		var candidate = stash[i]
+		if candidate is Dictionary and _same_gear(candidate as Dictionary, it):
+			return i
+	return -1
+
+
+# meta.cfg의 장비 데이터를 정리하고, 로드아웃은 반드시 보관함의 같은 아이템을 참조하게 만든다.
+func _ensure_gear_meta() -> void:
+	var clean_stash: Array = []
+	var raw_stash = meta.get("stash", [])
+	if raw_stash is Array:
+		for raw in raw_stash:
+			if raw is Dictionary:
+				var stash_item := _normalize_persistent_gear(raw as Dictionary)
+				if not stash_item.is_empty() and _forge_find_stash_index(clean_stash, stash_item) < 0:
+					clean_stash.append(stash_item)
+	var clean_loadout := {"weapon": {}, "armor": {}, "trinket": {}}
+	var raw_loadout = meta.get("loadout", {})
+	if raw_loadout is Dictionary:
+		for slot in EQUIP_SLOTS:
+			var raw = (raw_loadout as Dictionary).get(slot, {})
+			if raw is Dictionary and not (raw as Dictionary).is_empty():
+				var loadout_item := _normalize_persistent_gear(raw as Dictionary)
+				if not loadout_item.is_empty() and str(loadout_item["slot"]) == slot:
+					var loadout_idx := _forge_find_stash_index(clean_stash, loadout_item)
+					if loadout_idx < 0:
+						clean_stash.append(loadout_item)
+						loadout_idx = clean_stash.size() - 1
+					clean_loadout[slot] = (clean_stash[loadout_idx] as Dictionary).duplicate(true)
+	meta["stash"] = clean_stash
+	meta["loadout"] = clean_loadout
+
+
+func _forge_upgrade_cost(it: Dictionary, at_level: int = -1) -> int:
+	var lv := _gear_level(it) if at_level < 0 else at_level
+	return int(FORGE_UPGRADE_BASE_COST.get(str(it.get("rarity", "")), 18)) * (lv + 1)
+
+
+func _forge_salvage_value(it: Dictionary) -> int:
+	var value := int(FORGE_SALVAGE_BASE.get(str(it.get("rarity", "")), 5))
+	for upgraded_level in range(_gear_level(it)):
+		value += int(round(_forge_upgrade_cost(it, upgraded_level) * 0.5))
+	return value
+
+
+# _found 표식이 있는 장비만 런 종료 시 영구 보관한다. 표식은 런타임 장비에서도 제거해
+# 30분 승리 뒤 심연 모드로 이어가도 같은 아이템이 두 번 보관되지 않게 한다.
+func _bank_found_gear() -> int:
+	_ensure_gear_meta()
+	var stash: Array = meta["stash"]
+	var banked := 0
+	for slot in EQUIP_SLOTS:
+		var equipped_item: Dictionary = equipped.get(slot, {})
+		if not bool(equipped_item.get("_found", false)):
+			continue
+		var saved := _normalize_persistent_gear(equipped_item)
+		if saved.is_empty():
+			continue
+		var equipped_idx := _forge_find_stash_index(stash, saved)
+		if equipped_idx < 0:
+			stash.append(saved)
+		else:
+			stash[equipped_idx] = saved
+		equipped_item.erase("_found")
+		equipped_item["gear_id"] = saved["gear_id"]
+		equipped_item["lvl"] = saved["lvl"]
+		equipped_item["affixes"] = (saved["affixes"] as Array).duplicate(true)
+		equipped[slot] = equipped_item
+		banked += 1
+	for i in range(inventory.size()):
+		var inventory_item: Dictionary = inventory[i]
+		if not bool(inventory_item.get("_found", false)):
+			continue
+		var saved := _normalize_persistent_gear(inventory_item)
+		if saved.is_empty():
+			continue
+		var inventory_idx := _forge_find_stash_index(stash, saved)
+		if inventory_idx < 0:
+			stash.append(saved)
+		else:
+			stash[inventory_idx] = saved
+		inventory_item.erase("_found")
+		inventory_item["gear_id"] = saved["gear_id"]
+		inventory_item["lvl"] = saved["lvl"]
+		inventory_item["affixes"] = (saved["affixes"] as Array).duplicate(true)
+		inventory[i] = inventory_item
+		banked += 1
+	meta["stash"] = stash
+	return banked
+
+
+func _open_forge() -> void:
+	_ensure_gear_meta()
+	_forge_sel = -1
+	_refresh_forge()
+	forge_panel.visible = true
+
+
+func _select_forge_item(idx: int) -> void:
+	_forge_sel = idx
+	_refresh_forge()
+
+
+func _forge_selected_item() -> Dictionary:
+	var stash: Array = meta.get("stash", [])
+	if _forge_sel < 0 or _forge_sel >= stash.size() or not (stash[_forge_sel] is Dictionary):
+		return {}
+	return stash[_forge_sel] as Dictionary
+
+
+func _forge_item_equipped(it: Dictionary) -> bool:
+	if it.is_empty():
+		return false
+	var loadout: Dictionary = meta.get("loadout", {})
+	var current = loadout.get(str(it.get("slot", "")), {})
+	return current is Dictionary and _same_gear(current as Dictionary, it)
+
+
+func _refresh_forge() -> void:
+	if forge_panel == null:
+		return
+	_ensure_gear_meta()
+	var stash: Array = meta["stash"]
+	forge_gold_label.text = "보유 골드: %d G" % int(meta.get("gold", 0))
+	for child in forge_loadout_box.get_children():
+		child.queue_free()
+	var loadout: Dictionary = meta["loadout"]
+	for slot in EQUIP_SLOTS:
+		var item: Dictionary = loadout.get(slot, {})
+		var row := Label.new()
+		row.custom_minimum_size = Vector2(300, 52)
+		row.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		row.add_theme_font_size_override("font_size", 13)
+		row.text = "%s\n%s" % [str(EQUIP_SLOT_NAME[slot]), _gear_line(item)]
+		row.add_theme_color_override("font_color", RARITY_COL.get(str(item.get("rarity", "")), Color(0.62, 0.65, 0.72)) if not item.is_empty() else Color(0.62, 0.65, 0.72))
+		forge_loadout_box.add_child(row)
+	for child in forge_list_box.get_children():
+		child.queue_free()
+	if stash.is_empty():
+		var empty := Label.new()
+		empty.text = "런에서 획득한 장비가 아직 없습니다.\n엘리트와 보스를 처치해 보관함을 채우세요."
+		empty.custom_minimum_size = Vector2(500, 72)
+		empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		empty.add_theme_color_override("font_color", Color(0.62, 0.65, 0.72))
+		forge_list_box.add_child(empty)
+	for i in range(stash.size()):
+		var item: Dictionary = stash[i]
+		var button := Button.new()
+		var equipped_mark := " [장착]" if _forge_item_equipped(item) else ""
+		var selected_mark := "▶ " if i == _forge_sel else ""
+		button.text = "%s[%s] %s%s" % [selected_mark, str(EQUIP_SLOT_NAME.get(str(item["slot"]), "장비")), _gear_line(item), equipped_mark]
+		button.custom_minimum_size = Vector2(500, 42)
+		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		button.add_theme_font_size_override("font_size", 13)
+		button.modulate = RARITY_COL.get(str(item.get("rarity", "")), Color.WHITE)
+		_style_button(button, "res://assets/ui/button.png", 18.0, 4.0)
+		button.pressed.connect(_select_forge_item.bind(i))
+		forge_list_box.add_child(button)
+	var selected := _forge_selected_item()
+	if selected.is_empty():
+		forge_detail_label.text = "보관함에서 장비를 선택하면 장착, 강화, 분해를 할 수 있습니다.\n강화는 최대 5단계이며 단계마다 모든 어픽스가 +12% 강해집니다."
+		forge_equip_btn.disabled = true
+		forge_upgrade_btn.disabled = true
+		forge_discard_btn.disabled = true
+		forge_equip_btn.text = "장착 ▶"
+		forge_upgrade_btn.text = "강화 +1"
+		forge_discard_btn.text = "분해"
+		return
+	var lv := _gear_level(selected)
+	var is_equipped := _forge_item_equipped(selected)
+	var upgrade_cost := _forge_upgrade_cost(selected)
+	var current_bonus := int(round(lv * FORGE_LEVEL_BONUS * 100.0))
+	var next_text := "최대 강화" if lv >= FORGE_MAX_LEVEL else "다음 Lv +%d%%" % int(round((lv + 1) * FORGE_LEVEL_BONUS * 100.0))
+	forge_detail_label.text = "선택: %s\n강화 Lv%d/%d  ·  현재 어픽스 +%d%%  ·  %s\n%s" % [_gear_line(selected), lv, FORGE_MAX_LEVEL, current_bonus, next_text, "현재 로드아웃에 장착 중입니다." if is_equipped else "장착하면 다음 런 시작부터 적용됩니다."]
+	forge_equip_btn.disabled = false
+	forge_equip_btn.text = "장착 해제" if is_equipped else "장착 ▶"
+	forge_upgrade_btn.disabled = lv >= FORGE_MAX_LEVEL or int(meta.get("gold", 0)) < upgrade_cost
+	forge_upgrade_btn.text = "최대 강화" if lv >= FORGE_MAX_LEVEL else "강화 +1 (%d G)" % upgrade_cost
+	forge_discard_btn.disabled = false
+	forge_discard_btn.text = "분해 (+%d G)" % _forge_salvage_value(selected)
+
+
+func _forge_toggle_equip() -> void:
+	var selected := _forge_selected_item()
+	if selected.is_empty():
+		return
+	var slot := str(selected["slot"])
+	var loadout: Dictionary = meta["loadout"]
+	if _forge_item_equipped(selected):
+		loadout[slot] = {}
+	else:
+		loadout[slot] = selected.duplicate(true)
+	meta["loadout"] = loadout
+	Meta.save_data(meta)
+	play_sfx("select", -12.0)
+	_refresh_forge()
+
+
+func _forge_upgrade_selected() -> void:
+	var selected := _forge_selected_item()
+	if selected.is_empty() or _gear_level(selected) >= FORGE_MAX_LEVEL:
+		return
+	var cost := _forge_upgrade_cost(selected)
+	if int(meta.get("gold", 0)) < cost:
+		return
+	meta["gold"] = int(meta["gold"]) - cost
+	selected["lvl"] = _gear_level(selected) + 1
+	selected = _normalize_persistent_gear(selected)
+	var stash: Array = meta["stash"]
+	stash[_forge_sel] = selected
+	meta["stash"] = stash
+	var slot := str(selected["slot"])
+	var loadout: Dictionary = meta["loadout"]
+	var current = loadout.get(slot, {})
+	if current is Dictionary and _same_gear(current as Dictionary, selected):
+		loadout[slot] = selected.duplicate(true)
+		meta["loadout"] = loadout
+	Meta.save_data(meta)
+	play_sfx("levelup", -12.0)
+	_refresh_forge()
+
+
+func _forge_discard_selected() -> void:
+	var selected := _forge_selected_item()
+	if selected.is_empty():
+		return
+	var reward := _forge_salvage_value(selected)
+	var slot := str(selected["slot"])
+	var stash: Array = meta["stash"]
+	stash.remove_at(_forge_sel)
+	meta["stash"] = stash
+	var loadout: Dictionary = meta["loadout"]
+	var current = loadout.get(slot, {})
+	if current is Dictionary and _same_gear(current as Dictionary, selected):
+		loadout[slot] = {}
+		meta["loadout"] = loadout
+	meta["gold"] = int(meta["gold"]) + reward
+	_forge_sel = mini(_forge_sel, stash.size() - 1)
+	Meta.save_data(meta)
+	play_sfx("coin", -8.0)
+	_refresh_forge()
 
 
 func _toggle_inventory() -> void:
@@ -5952,7 +6271,14 @@ func _start_game(d: Dictionary) -> void:
 	ult_gauge = 0.0
 	skill_e_cd = 0.0
 	skill_space_cd = 0.0
-	equipped = {"weapon": {}, "armor": {}, "trinket": {}}   # 런 시작: 장비 초기화
+	# 런 시작: 마을 로드아웃(장착 세트)을 깊은복사로 이월. 런 중 변경이 마을 원본을 오염시키지 않음.
+	_ensure_gear_meta()
+	equipped = {"weapon": {}, "armor": {}, "trinket": {}}
+	var lo: Dictionary = meta.get("loadout", {})
+	for slot in EQUIP_SLOTS:
+		var g = lo.get(slot, {})
+		if g is Dictionary and not g.is_empty():
+			equipped[slot] = (g as Dictionary).duplicate(true)
 	_equip_applied = {}
 	inventory = []
 	_inv_sel = -1
@@ -5960,9 +6286,9 @@ func _start_game(d: Dictionary) -> void:
 	char_stats = {"str": 0, "agi": 0, "vit": 0, "foc": 0}   # 런 시작: 능력치 분배 초기화
 	if inventory_panel:
 		inventory_panel.visible = false
+	_apply_equipment()   # 이월된 로드아웃 어픽스를 player에 반영 (HUD도 내부 갱신)
 	_refresh_ult_bar()
 	_refresh_skill_hud()
-	_refresh_equip_hud()
 	run_damage_dealt = 0.0
 	run_damage_taken = 0.0
 	run_bosses = 0
@@ -6125,6 +6451,7 @@ func _show_end(title: String, win: bool) -> void:
 	var record_key := "%s|%s" % [mode_key, diff_label if diff_label != "" else "기본"]
 	var records: Dictionary = meta.get_or_add("records", {})
 	var record: Dictionary = records.get(record_key, {})
+	var banked_gear := 0
 	if not cheated:
 		record["best_time"] = maxf(float(record.get("best_time", 0.0)), time_survived)
 		record["best_kills"] = maxi(int(record.get("best_kills", 0)), kills)
@@ -6135,6 +6462,7 @@ func _show_end(title: String, win: bool) -> void:
 		records[record_key] = record
 		# 골드 영구 저장 (심연 모드로 이어가도 중복 적립 안 되게 리셋)
 		meta["gold"] = int(meta["gold"]) + run_gold
+		banked_gear = _bank_found_gear()   # 런 중 주운 장비(_found)를 마을 보관함으로 이월
 		Meta.save_data(meta)
 	var earned := run_gold if not cheated else 0
 	run_gold = 0
@@ -6148,8 +6476,10 @@ func _show_end(title: String, win: bool) -> void:
 	var run_dps := run_damage_dealt / maxf(1.0, time_survived)
 	var mode_name := "5막 캠페인" if map_stage == 0 else str(GameConfig.stage_info(map_stage)["name"])
 	var unlock_text := "   ·   다음 맵 해금!" if newly_unlocked > 0 else ""
-	end_label.text = "%s   ·   Lv %d   ·   처치 %d\n생존 %02d:%02d   ·   [%s]   ·   골드 +%d%s\n총 피해 %d   ·   DPS %.1f   ·   받은 피해 %d\n최고 %02d:%02d   ·   최고 Lv%d   ·   최고 처치 %d   ·   최고 피해 %d   ·   클리어 %d회\n보유 %d G" % [
+	var forge_text := "   ·   대장간 보관 +%d" % banked_gear if banked_gear > 0 else ""
+	end_label.text = "%s   ·   Lv %d   ·   처치 %d\n생존 %02d:%02d   ·   [%s]   ·   골드 +%d%s%s\n총 피해 %d   ·   DPS %.1f   ·   받은 피해 %d\n최고 %02d:%02d   ·   최고 Lv%d   ·   최고 처치 %d   ·   최고 피해 %d   ·   클리어 %d회\n보유 %d G" % [
 		mode_name, level, kills, mm2, ss2, diff_label, earned, unlock_text,
+		forge_text,
 		int(round(run_damage_dealt)), run_dps, int(round(run_damage_taken)),
 		best_time / 60, best_time % 60, int(record.get("best_level", 0)),
 		int(record.get("best_kills", 0)), int(round(float(record.get("best_damage", 0.0)))),
@@ -7601,15 +7931,23 @@ func _build_ui(s: Vector2) -> void:
 
 	var shop_btn := Button.new()
 	shop_btn.text = Loc.t("shop")
-	shop_btn.position = Vector2(s.x / 2.0 - 250, 462)
+	shop_btn.position = Vector2(s.x / 2.0 - 250, 450)
 	shop_btn.size = Vector2(240, 52)
 	_style_button(shop_btn, "res://assets/ui/button.png")
 	shop_btn.pressed.connect(_open_shop)
 	title_panel.add_child(shop_btn)
 
+	var forge_btn := Button.new()
+	forge_btn.text = "대장간"
+	forge_btn.position = Vector2(s.x / 2.0 + 10, 450)
+	forge_btn.size = Vector2(240, 52)
+	_style_button(forge_btn, "res://assets/ui/button.png")
+	forge_btn.pressed.connect(_open_forge)
+	title_panel.add_child(forge_btn)
+
 	var collection_btn := Button.new()
 	collection_btn.text = "도감"
-	collection_btn.position = Vector2(s.x / 2.0 + 10, 462)
+	collection_btn.position = Vector2(s.x / 2.0 - 250, 514)
 	collection_btn.size = Vector2(240, 52)
 	_style_button(collection_btn, "res://assets/ui/button.png")
 	collection_btn.pressed.connect(_open_collection)
@@ -7617,7 +7955,7 @@ func _build_ui(s: Vector2) -> void:
 
 	var opt_btn := Button.new()
 	opt_btn.text = Loc.t("options")
-	opt_btn.position = Vector2(s.x / 2.0 - 250, 532)
+	opt_btn.position = Vector2(s.x / 2.0 + 10, 514)
 	opt_btn.size = Vector2(240, 52)
 	_style_button(opt_btn, "res://assets/ui/button.png")
 	opt_btn.pressed.connect(func() -> void: options_panel.visible = true)
@@ -7625,7 +7963,7 @@ func _build_ui(s: Vector2) -> void:
 
 	var ach_btn := Button.new()
 	ach_btn.text = "업적"
-	ach_btn.position = Vector2(s.x / 2.0 + 10, 532)
+	ach_btn.position = Vector2(s.x / 2.0 - 120, 578)
 	ach_btn.size = Vector2(240, 52)
 	_style_button(ach_btn, "res://assets/ui/button.png")
 	ach_btn.pressed.connect(_open_achievements)
@@ -8142,6 +8480,101 @@ func _build_ui(s: Vector2) -> void:
 	_style_button(back_btn, "res://assets/ui/button.png")
 	back_btn.pressed.connect(func() -> void: shop_panel.visible = false)
 	shop_panel.add_child(back_btn)
+
+	# ── 대장간 패널: 런에서 건진 장비를 영구 보관·장착·강화한다. ──
+	forge_panel = Control.new()
+	forge_panel.visible = false
+	overlay.add_child(forge_panel)
+	var fdim := ColorRect.new()
+	fdim.color = Color(0.03, 0.03, 0.06, 0.92)
+	fdim.size = s
+	forge_panel.add_child(fdim)
+	var fl := s.x / 2.0 - 460.0
+	var fbg := Panel.new()
+	fbg.position = Vector2(fl, 60)
+	fbg.size = Vector2(920, 600)
+	fbg.add_theme_stylebox_override("panel", _hud_style())
+	fbg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	forge_panel.add_child(fbg)
+	var fttl := Label.new()
+	fttl.text = "⚒ 대장간 — 영구 장비"
+	fttl.position = Vector2(fl, 74)
+	fttl.size = Vector2(920, 36)
+	fttl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	fttl.add_theme_font_size_override("font_size", 26)
+	fttl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+	forge_panel.add_child(fttl)
+	forge_gold_label = Label.new()
+	forge_gold_label.position = Vector2(fl, 108)
+	forge_gold_label.size = Vector2(920, 24)
+	forge_gold_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	forge_gold_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+	forge_panel.add_child(forge_gold_label)
+	var flh := Label.new()
+	flh.text = "[ 현재 로드아웃 ]"
+	flh.position = Vector2(fl + 30, 140)
+	flh.add_theme_font_size_override("font_size", 17)
+	flh.add_theme_color_override("font_color", Color(0.6, 0.9, 1.0))
+	forge_panel.add_child(flh)
+	forge_loadout_box = VBoxContainer.new()
+	forge_loadout_box.position = Vector2(fl + 30, 170)
+	forge_loadout_box.add_theme_constant_override("separation", 8)
+	forge_panel.add_child(forge_loadout_box)
+	var ftip := Label.new()
+	ftip.text = "장착한 장비는 다음 런 시작부터 적용됩니다.\n강화: 모든 어픽스 +12% / 단계 (최대 +5)"
+	ftip.position = Vector2(fl + 30, 370)
+	ftip.size = Vector2(290, 88)
+	ftip.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	ftip.add_theme_font_size_override("font_size", 13)
+	ftip.add_theme_color_override("font_color", Color(0.72, 0.75, 0.84))
+	forge_panel.add_child(ftip)
+	var fsh := Label.new()
+	fsh.text = "[ 보관함 ]"
+	fsh.position = Vector2(fl + 370, 140)
+	fsh.add_theme_font_size_override("font_size", 17)
+	fsh.add_theme_color_override("font_color", Color(1.0, 0.85, 0.5))
+	forge_panel.add_child(fsh)
+	var fscroll := ScrollContainer.new()
+	fscroll.position = Vector2(fl + 370, 170)
+	fscroll.size = Vector2(520, 286)
+	fscroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	forge_panel.add_child(fscroll)
+	forge_list_box = VBoxContainer.new()
+	forge_list_box.add_theme_constant_override("separation", 4)
+	fscroll.add_child(forge_list_box)
+	forge_detail_label = Label.new()
+	forge_detail_label.position = Vector2(fl + 30, 476)
+	forge_detail_label.size = Vector2(860, 96)
+	forge_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	forge_detail_label.add_theme_font_size_override("font_size", 14)
+	forge_detail_label.add_theme_color_override("font_color", Color(0.92, 0.94, 0.98))
+	forge_panel.add_child(forge_detail_label)
+	var fback := Button.new()
+	fback.text = "← 돌아가기"
+	fback.position = Vector2(fl + 30, 592)
+	fback.size = Vector2(150, 46)
+	_style_button(fback, "res://assets/ui/button.png")
+	fback.pressed.connect(func() -> void: forge_panel.visible = false)
+	forge_panel.add_child(fback)
+	forge_equip_btn = Button.new()
+	forge_equip_btn.position = Vector2(fl + 195, 592)
+	forge_equip_btn.size = Vector2(150, 46)
+	_style_button(forge_equip_btn, "res://assets/ui/button.png")
+	forge_equip_btn.pressed.connect(_forge_toggle_equip)
+	forge_panel.add_child(forge_equip_btn)
+	forge_upgrade_btn = Button.new()
+	forge_upgrade_btn.position = Vector2(fl + 360, 592)
+	forge_upgrade_btn.size = Vector2(165, 46)
+	_style_button(forge_upgrade_btn, "res://assets/ui/button.png")
+	forge_upgrade_btn.pressed.connect(_forge_upgrade_selected)
+	forge_panel.add_child(forge_upgrade_btn)
+	forge_discard_btn = Button.new()
+	forge_discard_btn.position = Vector2(fl + 540, 592)
+	forge_discard_btn.size = Vector2(180, 46)
+	_style_button(forge_discard_btn, "res://assets/ui/button.png")
+	forge_discard_btn.add_theme_color_override("font_color", Color(1.0, 0.72, 0.6))
+	forge_discard_btn.pressed.connect(_forge_discard_selected)
+	forge_panel.add_child(forge_discard_btn)
 
 	# ── 옵션 패널 (음악/효과음 볼륨, 전체화면) ──
 	options_panel = Control.new()

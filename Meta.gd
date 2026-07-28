@@ -46,7 +46,9 @@ static func load_data() -> Dictionary:
 		"lang": str(cf.get_value("opt", "lang", "ko")),
 		# 이펙트 강도 0=끔 1=약함 2=보통(기본) 3=화려함 — 파티클 수·섬광·화면 흔들림에 반영
 		"fx_level": int(cf.get_value("opt", "fx_level", 2)),
-		"screen_shake": bool(cf.get_value("opt", "screen_shake", true))}
+		"screen_shake": bool(cf.get_value("opt", "screen_shake", true)),
+		"stash": cf.get_value("gear", "stash", []),
+		"loadout": cf.get_value("gear", "loadout", {"weapon": {}, "armor": {}, "trinket": {}})}
 	for u in UPGRADES:
 		d["up"][u["key"]] = int(cf.get_value("up", u["key"], 0))
 	# 업적 (섹션 [ach])
@@ -109,6 +111,8 @@ static func save_data(d: Dictionary) -> void:
 		cf.set_value("unlocked_chars", k, d["unlocked_chars"][k])
 	for k in d.get("unlocked_relics", {}).keys():
 		cf.set_value("unlocked_relics", k, d["unlocked_relics"][k])
+	cf.set_value("gear", "stash", d.get("stash", []))
+	cf.set_value("gear", "loadout", d.get("loadout", {"weapon": {}, "armor": {}, "trinket": {}}))
 	cf.save(PATH)
 
 static func cost(u: Dictionary, lv: int) -> int:
