@@ -60,9 +60,18 @@ func _draw() -> void:
 				PackedVector2Array([o + Vector2(-bw, 2), o + Vector2(bw, 2), o + Vector2(bw * 0.35, -bh), o + Vector2(-bw * 0.35, -bh)]),
 				PackedColorArray([botc, botc, topc, topc]))
 		var d := radius * pulse
-		var pts := PackedVector2Array([o + Vector2(0, -d), o + Vector2(d, 0), o + Vector2(0, d), o + Vector2(-d, 0)])
-		draw_colored_polygon(pts, gear_col)
-		draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2], pts[3], pts[0]]), Color(1, 1, 1, 0.9), 1.5)
+		var itex := Assets.tex(str(item.get("icon", "")))
+		if itex:
+			# 등급 링(뒤) + 픽셀 아이콘(앞). 등급은 링 색으로 가시화.
+			draw_circle(o, d * 1.05, Color(gear_col.r, gear_col.g, gear_col.b, 0.30))
+			draw_arc(o, d * 1.15, 0.0, TAU, 22, gear_col, 1.5)
+			var w: float = d * 2.3
+			draw_texture_rect(itex, Rect2(o - Vector2(w, w) / 2.0, Vector2(w, w)), false)
+		else:
+			# 폴백: 등급색 다이아
+			var pts := PackedVector2Array([o + Vector2(0, -d), o + Vector2(d, 0), o + Vector2(0, d), o + Vector2(-d, 0)])
+			draw_colored_polygon(pts, gear_col)
+			draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2], pts[3], pts[0]]), Color(1, 1, 1, 0.9), 1.5)
 		# 레전더리: 궤도 반짝이 별
 		if gear_tier == 2:
 			for k in 3:

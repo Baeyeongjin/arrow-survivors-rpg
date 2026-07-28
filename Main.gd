@@ -4390,6 +4390,14 @@ const GEAR_NOUNS := {
 	"armor": ["갑옷", "로브", "비늘갑주", "망토"],
 	"trinket": ["반지", "부적", "목걸이", "인장"]}
 const GEAR_ADJ := ["맹독의", "불타는", "얼어붙은", "강철의", "고대의", "저주받은", "빛나는", "심연의"]
+const GEAR_NOUN_ICON := {
+	"검": "res://assets/items/gear_sword.png", "도끼": "res://assets/items/gear_axe.png",
+	"지팡이": "res://assets/items/gear_staff.png", "단검": "res://assets/items/gear_dagger.png",
+	"창": "res://assets/items/gear_spear.png", "갑옷": "res://assets/items/gear_plate.png",
+	"로브": "res://assets/items/gear_robe.png", "비늘갑주": "res://assets/items/gear_scale.png",
+	"망토": "res://assets/items/gear_cloak.png", "반지": "res://assets/items/gear_ring.png",
+	"부적": "res://assets/items/gear_amulet.png", "목걸이": "res://assets/items/gear_necklace.png",
+	"인장": "res://assets/items/gear_sigil.png"}
 # 어픽스 풀: player의 가산형 스탯만 (교체 시 diff 제거가 깔끔한 필드).
 const GEAR_AFFIXES := [
 	{"stat": "damage_mult", "name": "공격력", "per": 0.06, "pct": true},
@@ -4415,8 +4423,9 @@ func _roll_gear() -> Dictionary:
 		var a: Dictionary = pool[i]
 		var v: float = float(a["per"]) * float(GEAR_POWER[rarity]) * randf_range(0.8, 1.2)
 		affs.append({"stat": a["stat"], "name": a["name"], "value": v, "pct": bool(a["pct"])})
-	var nm := "%s %s" % [GEAR_ADJ[randi() % GEAR_ADJ.size()], GEAR_NOUNS[slot][randi() % GEAR_NOUNS[slot].size()]]
-	return {"slot": slot, "rarity": rarity, "affixes": affs, "name": nm}
+	var noun: String = GEAR_NOUNS[slot][randi() % GEAR_NOUNS[slot].size()]
+	var nm := "%s %s" % [GEAR_ADJ[randi() % GEAR_ADJ.size()], noun]
+	return {"slot": slot, "rarity": rarity, "affixes": affs, "name": nm, "icon": GEAR_NOUN_ICON.get(noun, "")}
 
 
 # 처치 지점에서 확률적으로 장비 드롭 (엘리트/보스는 높게)
