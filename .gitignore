@@ -1,0 +1,31 @@
+# ── Godot 4 캐시 ──
+.godot/
+
+# ── 내보낸 빌드 (용량 큼 · Git에 불필요) ──
+*.exe
+*.pck
+*.wasm
+*.zip
+*.html
+*.js
+*.worklet.js
+*.apple-touch-icon.png
+*.apple-touch-icon.png.import
+Arrow a Row Clone.*
+
+# ── 백업 폴더 ──
+_bak_*/
+
+# ── OS/에디터 잡파일 ──
+desktop.ini
+Thumbs.db
+.DS_Store
+
+# 내보낸 빌드 폴더 (용량 큼)
+dist/
+*.tmp
+
+assets/_retro_backup/
+
+# GoPeak MCP 개발용 애드온 (서드파티, 로컬 전용 — 셧된 빌드/레포엔 불필요)
+addons/
