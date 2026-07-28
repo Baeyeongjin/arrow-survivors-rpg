@@ -692,6 +692,14 @@ const SKILL_SPACE_MAX := 8.0
 var equipped := {"weapon": {}, "armor": {}, "trinket": {}}   # 슬롯 → 아이템 딕셔너리
 var _equip_applied := {}        # stat → 현재 player에 적용된 총량 (교체 시 diff 제거용)
 var equip_hud_label: Label      # 장착 3슬롯 표시
+var inventory := []             # 미장착 장비 목록 (가방)
+var inventory_panel: Control
+var inv_equip_box: VBoxContainer
+var inv_list_box: VBoxContainer
+var inv_detail_label: Label
+var inv_equip_btn: Button
+var inv_discard_btn: Button
+var _inv_sel := -1              # 선택한 가방 인덱스
 var hp_text: Label
 var lv_label: Label             # 뱀서식: 최상단 XP 바 안의 레벨 표기
 var timer_label: Label          # 뱀서식: 상단 중앙 대형 생존 타이머
@@ -4456,27 +4464,28 @@ func _spawn_gear_pickup(pos: Vector2, it: Dictionary) -> void:
 # 장비 획득: 현재 슬롯보다 등급이 같거나 높으면 장착, 아니면 골드로 분해.
 func _pickup_gear(it: Dictionary) -> void:
 	var slot := str(it["slot"])
-	var cur: Dictionary = equipped.get(slot, {})
-	var better: bool = cur.is_empty() or RARITY_ORDER.get(str(it["rarity"]), 0) >= RARITY_ORDER.get(str(cur.get("rarity", "")), 0)
-	if better:
+	var ord: int = RARITY_ORDER.get(str(it["rarity"]), 0)
+	play_sfx("levelup", -12.0)
+	# 에픽·레전더리 획득 순간 화려하게 (플래시 + 버스트 + 흔들림, 레전더리는 슬로우모)
+	if ord >= 3:
+		var col: Color = RARITY_COL.get(str(it["rarity"]), Color.WHITE)
+		_flash(Color(col.r, col.g, col.b, 0.5))
+		_spawn_proc_fx("burst", player.position, 130.0, col, 0.45)
+		_spawn_proc_fx("ring", player.position, 200.0, col, 0.4)
+		play_sfx("ult", -8.0)
+		shake_t = maxf(shake_t, 0.16)
+		if ord >= 4:
+			_slowmo(0.5, 220)
+	# 빈 슬롯이면 바로 장착(맨손 방지), 아니면 가방으로 → 인벤토리에서 직접 교체.
+	if equipped.get(slot, {}).is_empty():
 		equipped[slot] = it
 		_apply_equipment()
 		_gear_toast(it)
-		play_sfx("levelup", -12.0)
-		# 에픽·레전더리 장착 순간 화려하게 (플래시 + 버스트 + 흔들림, 레전더리는 슬로우모)
-		var ord: int = RARITY_ORDER.get(str(it["rarity"]), 0)
-		if ord >= 3:
-			var col: Color = RARITY_COL.get(str(it["rarity"]), Color.WHITE)
-			_flash(Color(col.r, col.g, col.b, 0.5))
-			_spawn_proc_fx("burst", player.position, 130.0, col, 0.45)
-			_spawn_proc_fx("ring", player.position, 200.0, col, 0.4)
-			play_sfx("ult", -8.0)
-			shake_t = maxf(shake_t, 0.16)
-			if ord >= 4:
-				_slowmo(0.5, 220)
 	else:
-		run_gold += 5   # 하위 등급은 분해 (5골드)
-		_update_ui()
+		inventory.append(it)
+		_bag_toast(it)
+		if inventory_panel and inventory_panel.visible:
+			_refresh_inventory_screen()
 
 
 # 장착 아이템 어픽스를 player 스탯에 반영 (이전 적용분 제거 후 재계산 → 교체 정확).
@@ -4534,7 +4543,195 @@ func _refresh_equip_hud() -> void:
 			lines.append("%s: —" % EQUIP_SLOT_NAME[slot])
 		else:
 			lines.append("%s: %s%s" % [EQUIP_SLOT_NAME[slot], str(RARITY_TAG.get(str(it["rarity"]), "")), str(it["name"])])
+	lines.append("[ I ] 인벤토리 (%d)" % inventory.size())
 	equip_hud_label.text = "\n".join(lines)
+
+
+# ── 인벤토리 (Phase 3b: 직접 장착/비교 UI) ─────────────────────────────
+func _gear_line(it: Dictionary) -> String:
+	if it.is_empty():
+		return "—"
+	var parts: Array = []
+	for a in it["affixes"]:
+		var vs := ("%d%%" % round(float(a["value"]) * 100.0)) if bool(a["pct"]) else ("%d" % round(float(a["value"])))
+		parts.append("%s+%s" % [str(a["name"]), vs])
+	return "%s %s  (%s)" % [str(RARITY_TAG.get(str(it["rarity"]), "")), str(it["name"]), ", ".join(parts)]
+
+
+func _bag_toast(it: Dictionary) -> void:
+	if ach_toast == null:
+		return
+	ach_toast.text = "🎒 가방에 담김: %s%s  [I]" % [str(RARITY_TAG.get(str(it["rarity"]), "")), str(it["name"])]
+	ach_toast.add_theme_color_override("font_color", RARITY_COL.get(str(it["rarity"]), Color.WHITE))
+	ach_toast.visible = true
+	ach_toast_t = 2.2
+
+
+func _gear_gold_value(it: Dictionary) -> int:
+	return {"common": 3, "rare": 6, "epic": 12, "legendary": 25}.get(str(it.get("rarity", "")), 3)
+
+
+func _toggle_inventory() -> void:
+	if inventory_panel == null:
+		return
+	if inventory_panel.visible:
+		inventory_panel.visible = false
+		get_tree().paused = false
+	elif state == State.PLAYING and not (pause_panel and pause_panel.visible):
+		inventory_panel.visible = true
+		get_tree().paused = true
+		_inv_sel = -1
+		_refresh_inventory_screen()
+		play_sfx("select", -14.0)
+
+
+func _refresh_inventory_screen() -> void:
+	if inv_equip_box == null:
+		return
+	# 좌: 장착 3슬롯
+	for c in inv_equip_box.get_children():
+		c.queue_free()
+	for slot in EQUIP_SLOTS:
+		var it: Dictionary = equipped.get(slot, {})
+		var lb := Label.new()
+		lb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		lb.custom_minimum_size = Vector2(300, 46)
+		lb.add_theme_font_size_override("font_size", 13)
+		lb.text = "%s\n%s" % [str(EQUIP_SLOT_NAME[slot]), _gear_line(it)]
+		lb.add_theme_color_override("font_color", RARITY_COL.get(str(it.get("rarity", "")), Color(0.7, 0.72, 0.78)) if not it.is_empty() else Color(0.6, 0.62, 0.68))
+		inv_equip_box.add_child(lb)
+	# 우: 가방 목록 (버튼)
+	for c in inv_list_box.get_children():
+		c.queue_free()
+	for i in inventory.size():
+		var it2: Dictionary = inventory[i]
+		var b := Button.new()
+		b.text = "%s %s [%s]" % [str(RARITY_TAG.get(str(it2["rarity"]), "")), str(it2["name"]), str(EQUIP_SLOT_NAME[str(it2["slot"])])]
+		b.custom_minimum_size = Vector2(500, 34)
+		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		b.add_theme_font_size_override("font_size", 13)
+		b.modulate = RARITY_COL.get(str(it2["rarity"]), Color.WHITE)
+		var idx := i
+		b.pressed.connect(func() -> void: _select_inv_item(idx))
+		inv_list_box.add_child(b)
+	# 하단: 선택 상세/비교
+	if _inv_sel >= 0 and _inv_sel < inventory.size():
+		var sel: Dictionary = inventory[_inv_sel]
+		var slot := str(sel["slot"])
+		inv_detail_label.text = "선택: %s\n현재 %s: %s" % [_gear_line(sel), str(EQUIP_SLOT_NAME[slot]), _gear_line(equipped.get(slot, {}))]
+		inv_equip_btn.disabled = false
+		inv_discard_btn.disabled = false
+	else:
+		inv_detail_label.text = "가방에서 장비를 선택하세요."
+		inv_equip_btn.disabled = true
+		inv_discard_btn.disabled = true
+
+
+func _select_inv_item(idx: int) -> void:
+	_inv_sel = idx
+	_refresh_inventory_screen()
+
+
+func _equip_from_inventory(idx: int) -> void:
+	if idx < 0 or idx >= inventory.size():
+		return
+	var it: Dictionary = inventory[idx]
+	var slot := str(it["slot"])
+	var old: Dictionary = equipped.get(slot, {})
+	equipped[slot] = it
+	inventory.remove_at(idx)
+	if not old.is_empty():
+		inventory.append(old)   # 교체된 장비는 가방으로
+	_apply_equipment()
+	_inv_sel = -1
+	play_sfx("levelup", -12.0)
+	_refresh_inventory_screen()
+
+
+func _discard_inv_item(idx: int) -> void:
+	if idx < 0 or idx >= inventory.size():
+		return
+	run_gold += _gear_gold_value(inventory[idx])
+	inventory.remove_at(idx)
+	_inv_sel = -1
+	play_sfx("hit", -16.0)
+	_refresh_inventory_screen()
+	_update_ui()
+
+
+func _build_inventory_ui(s: Vector2, overlay: CanvasLayer) -> void:
+	inventory_panel = Control.new()
+	inventory_panel.visible = false
+	overlay.add_child(inventory_panel)
+	var dim := ColorRect.new()
+	dim.color = Color(0.03, 0.03, 0.06, 0.92)
+	dim.size = s
+	inventory_panel.add_child(dim)
+	var fl := s.x / 2.0 - 460.0
+	var frame := Panel.new()
+	frame.position = Vector2(fl, 60)
+	frame.size = Vector2(920, 600)
+	frame.add_theme_stylebox_override("panel", _bar_bg())
+	inventory_panel.add_child(frame)
+	var ttl := Label.new()
+	ttl.text = "🎒 인벤토리   ( I / ESC 닫기 )"
+	ttl.position = Vector2(fl, 74)
+	ttl.size = Vector2(920, 36)
+	ttl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ttl.add_theme_font_size_override("font_size", 26)
+	ttl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+	inventory_panel.add_child(ttl)
+	var eh := Label.new()
+	eh.text = "[ 장착 ]"
+	eh.position = Vector2(fl + 30, 122)
+	eh.add_theme_font_size_override("font_size", 17)
+	eh.add_theme_color_override("font_color", Color(0.6, 0.9, 1.0))
+	inventory_panel.add_child(eh)
+	inv_equip_box = VBoxContainer.new()
+	inv_equip_box.position = Vector2(fl + 30, 152)
+	inv_equip_box.add_theme_constant_override("separation", 8)
+	inventory_panel.add_child(inv_equip_box)
+	var bh := Label.new()
+	bh.text = "[ 가방 ]"
+	bh.position = Vector2(fl + 370, 122)
+	bh.add_theme_font_size_override("font_size", 17)
+	bh.add_theme_color_override("font_color", Color(1.0, 0.85, 0.5))
+	inventory_panel.add_child(bh)
+	var scroll := ScrollContainer.new()
+	scroll.position = Vector2(fl + 370, 152)
+	scroll.size = Vector2(520, 320)
+	inventory_panel.add_child(scroll)
+	inv_list_box = VBoxContainer.new()
+	inv_list_box.add_theme_constant_override("separation", 4)
+	scroll.add_child(inv_list_box)
+	inv_detail_label = Label.new()
+	inv_detail_label.position = Vector2(fl + 30, 494)
+	inv_detail_label.size = Vector2(860, 76)
+	inv_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	inv_detail_label.add_theme_font_size_override("font_size", 14)
+	inv_detail_label.add_theme_color_override("font_color", Color(0.92, 0.94, 0.98))
+	inventory_panel.add_child(inv_detail_label)
+	var close_btn := Button.new()
+	close_btn.text = "닫기 (I)"
+	close_btn.position = Vector2(fl + 30, 592)
+	close_btn.size = Vector2(150, 46)
+	_style_button(close_btn, "res://assets/ui/button.png")
+	close_btn.pressed.connect(_toggle_inventory)
+	inventory_panel.add_child(close_btn)
+	inv_equip_btn = Button.new()
+	inv_equip_btn.text = "장착 ▶"
+	inv_equip_btn.position = Vector2(fl + 560, 592)
+	inv_equip_btn.size = Vector2(150, 46)
+	_style_button(inv_equip_btn, "res://assets/ui/button.png")
+	inv_equip_btn.pressed.connect(func() -> void: _equip_from_inventory(_inv_sel))
+	inventory_panel.add_child(inv_equip_btn)
+	inv_discard_btn = Button.new()
+	inv_discard_btn.text = "분해 (+골드)"
+	inv_discard_btn.position = Vector2(fl + 725, 592)
+	inv_discard_btn.size = Vector2(165, 46)
+	_style_button(inv_discard_btn, "res://assets/ui/button.png")
+	inv_discard_btn.pressed.connect(func() -> void: _discard_inv_item(_inv_sel))
+	inventory_panel.add_child(inv_discard_btn)
 
 
 func _populate_levelup() -> void:
@@ -5669,6 +5866,10 @@ func _start_game(d: Dictionary) -> void:
 	skill_space_cd = 0.0
 	equipped = {"weapon": {}, "armor": {}, "trinket": {}}   # 런 시작: 장비 초기화
 	_equip_applied = {}
+	inventory = []
+	_inv_sel = -1
+	if inventory_panel:
+		inventory_panel.visible = false
 	_refresh_ult_bar()
 	_refresh_skill_hud()
 	_refresh_equip_hud()
@@ -5994,6 +6195,16 @@ func _fire_ultimate() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	# I: 인벤토리 토글. 인벤 열린 상태에서 ESC도 닫기.
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_I:
+			_toggle_inventory()
+			get_viewport().set_input_as_handled()
+			return
+		if event.keycode == KEY_ESCAPE and inventory_panel and inventory_panel.visible:
+			_toggle_inventory()
+			get_viewport().set_input_as_handled()
+			return
 	# Q: 궁극기 발동 (게이지 가득 찼을 때만, 플레이 중)
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_Q:
 		if state == State.PLAYING and ult_gauge >= 1.0:
@@ -6965,6 +7176,7 @@ func _build_ui(s: Vector2) -> void:
 	overlay.process_mode = Node.PROCESS_MODE_ALWAYS
 	flash_overlay = FlashOverlay.new()
 	overlay.add_child(flash_overlay)
+	_build_inventory_ui(s, overlay)   # 인벤토리 패널 (I 토글)
 	add_child(overlay)
 
 	# 레벨업 패널
