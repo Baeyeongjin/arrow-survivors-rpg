@@ -94,24 +94,8 @@ const FREE_WEAPON_SLOTS := 6   # 뱀서식: 6칸까지 자유롭게 신규무기
 const BOSS_TIME := 180.0        # 첫 보스 3분 (1분→3분: 초반에 빌드 쌓을 여유)
 const FINAL_STAGE := 5
 const RUN_TIME := 1800.0     # 30분에 피날레 사신 강림 (레거시 캠페인 모드)
-const STAGE_TIME := 360.0    # 스테이지당 6분 (5스테이지 = 30분)
 const DUNGEON_BOSS_TIME := 300.0   # 던전 모드: 5분 생존 후 던전 보스(목표) 출현 → 처치=클리어
 const MAX_ENEMIES := 300     # 동시 등장 상한 (뱀서형 밀도 + 내장 GPU 부하 관리. 340은 Iris Xe에서 랙 → 300으로 한 단계 롤백)
-# 일반 런 보스 시간표. VS식 고정 시각 등장 + 처치 시 상자 드롭.
-# 10:30 상자부터 첫 진화를 안정적으로 노릴 수 있도록 2분 30초 간격을 유지한다.
-const BOSS_SCHEDULE := [
-	{"time": 180.0,  "key": "boss_1"},
-	{"time": 330.0,  "key": "boss_1"},
-	{"time": 480.0,  "key": "boss_2"},
-	{"time": 630.0,  "key": "boss_2"},
-	{"time": 780.0,  "key": "boss_3"},
-	{"time": 930.0,  "key": "boss_3"},
-	{"time": 1080.0, "key": "boss_4"},
-	{"time": 1230.0, "key": "boss_4"},
-	{"time": 1380.0, "key": "boss_4"},
-	{"time": 1530.0, "key": "boss_5"},
-	{"time": 1680.0, "key": "boss_5"},
-]
 # 무기 진화 레시피 (뱀서식): 무기 만렙(Lv8) + 필수 패시브 보유 → 보스 상자 개봉 시 진화
 # passive=필수 패시브 키, name=진화 무기 이름
 const EVO_RECIPE := {
@@ -485,16 +469,13 @@ var map_stage := 0           # 0=기존 5막 캠페인, 1~5=선택한 독립 스
 var stage_layout # 독립 맵의 이동 가능 영역·고정 아이템 좌표
 var stage_map_texture: Texture2D # PixelLab Wang tiles assembled from stage_layout
 var next_boss_time := BOSS_TIME
-var _boss_schedule_idx := 0
 var last_boss_stage := 0     # 스테이지당 보스 1회 보장
 var _event_idx := 0          # 이벤트 종류 순환 인덱스
 var featured_enemy := ""     # 이번 웨이브 주력 몬스터 key (테마 웨이브)
 var _wave_minute := -1       # 분 단위 웨이브 진행 인덱스
 var _current_wave: Dictionary = {} # GameConfig의 현재 분 웨이브 데이터
 var abyss_mode := false      # 30분 승리 후 무한 모드
-var reaper_active := false    # 사신 강림(30분 피날레 보스)
 var reaper_warned := false    # 사신 강림 경고 표시 여부 (던전 모드에선 보스 출현 경고로 재사용)
-var _boss_is_reaper := false  # 현재 보스가 사신인지
 var _boss_is_objective := false  # 던전 모드: 이 보스가 목표 보스인가 (처치=클리어)
 var stage_banner_t := 0.0
 var stage_label: Label
@@ -1447,32 +1428,6 @@ func _process(delta: float) -> void:
 				_event_banner("⚠ 곧 던전 보스가 나타난다...")
 			if time_survived >= DUNGEON_BOSS_TIME:
 				_spawn_dungeon_boss()
-	else:
-		# 시간 기반 스테이지 진행 (5스테이지 × 6분)
-		var tstage: int = clamp(int(time_survived / STAGE_TIME) + 1, 1, FINAL_STAGE)
-		if tstage > stage_num:
-			_advance_stage(tstage)
-		# 29:00 사신 강림 예고
-		if not reaper_warned and time_survived >= RUN_TIME - 60.0:
-			reaper_warned = true
-			_event_banner("⚰ 곧 사신이 강림한다...")
-		# 30:00 = 사신 강림 (자동 승리 대신 최종 피날레 보스)
-		if not reaper_active and time_survived >= RUN_TIME:
-			reaper_active = true
-			if boss and is_instance_valid(boss):
-				boss.queue_free()
-			boss = null
-			boss_spawned = false
-			_spawn_reaper()
-		# 뱀서식: 고정된 분 단위 시간표에 따라 보스 등장. 처치 시 보물상자 확정.
-		if not boss_spawned and not reaper_active and _boss_schedule_idx < BOSS_SCHEDULE.size():
-			var boss_slot: Dictionary = BOSS_SCHEDULE[_boss_schedule_idx]
-			if time_survived >= float(boss_slot["time"]):
-				var scheduled_key := str(boss_slot["key"])
-				if map_stage > 0:
-					scheduled_key = str(GameConfig.stage_info(map_stage)["boss"])
-				_spawn_boss(scheduled_key)
-				_boss_schedule_idx += 1
 
 	# 분 단위 웨이브 표: 적 조합·밀도·엘리트·특수 이벤트를 함께 교체한다.
 	var current_minute := int(time_survived / 60.0)
@@ -3674,28 +3629,6 @@ func _spawn_boss(forced_key: String = "") -> void:
 	stage_banner_t = max(stage_banner_t, 2.5)
 
 
-# 사신 강림 (30분 피날레 보스). 잡몹을 쓸지 않고 호드 속에서 등장 → 처치 시 진정한 승리.
-func _spawn_reaper() -> void:
-	boss_spawned = true
-	_boss_is_reaper = true
-	play_sfx("boss", -2.0)
-	boss = Boss.new()
-	boss.key = "reaper"
-	boss.is_reaper = true
-	boss.position = player.position + Vector2(0, -320)
-	boss.max_hp = (4600.0 + level * 190.0) * diff_enemy_hp
-	boss.hp = boss.max_hp
-	boss.move_speed = 90.0 * diff_enemy_speed
-	boss.radius = 80.0
-	add_child(boss)
-	_clear_easy_boss_arena()
-	if stage_label:
-		stage_label.text = "⚰ 사신 강림!"
-		stage_label.visible = true
-	stage_banner_t = 3.0
-	shake_t = max(shake_t, 0.4)
-
-
 # 던전 목표 보스: 해당 던전 보스를 클라이맥스로 등장. 처치하면 클리어(on_boss_killed에서 처리).
 func _spawn_dungeon_boss() -> void:
 	_spawn_boss(str(GameConfig.stage_info(map_stage)["boss"]))
@@ -3707,131 +3640,6 @@ func _spawn_dungeon_boss() -> void:
 	var wk := str(GameConfig.stage_info(map_stage).get("boss_weak", ""))
 	var hint := "  (약점: %s)" % str(ELEMENT_NAME.get(wk, "")) if wk != "" else ""
 	_event_banner("⚠ 던전 보스 출현! — 처치하면 클리어%s" % hint)
-
-
-# Legacy prototype only. VS식 보스는 전용 탄막/특수패턴 없이 추격하며,
-# 아래 함수들은 의도적으로 호출하지 않는다. 향후 별도 도전 모드에서만 재사용 후보.
-func boss_shoot(b: Boss) -> void:
-	var dir := Vector2(0, 1)
-	if player:
-		dir = (player.position - b.position).normalized()
-	match b.key:
-		"boss_2":
-			# 라바 골렘: 느린 3발 (주력은 용암 장판)
-			_boss_fan(b, dir, 3, 0.3, 240.0)
-		"boss_3":
-			# 아이스 퀸: 8방향 빙결탄 (맞으면 이동 둔화)
-			for i in 8:
-				var ea := EnemyArrow.new()
-				ea.position = b.position
-				ea.velocity = Vector2(0, 1).rotated(TAU * i / 8.0) * 260.0
-				ea.chill = true
-				add_child(ea)
-		"boss_4":
-			# 보이드 호러: 빠른 조준 3연발
-			_boss_fan(b, dir, 3, 0.12, 420.0)
-		"boss_5":
-			# 데몬 엠퍼러: 넓은 7발 부채
-			_boss_fan(b, dir, 7, 0.2, 340.0)
-		"boss_lich":
-			# 리치: 회전 나선 탄막
-			for i in 6:
-				var ea := EnemyArrow.new()
-				ea.position = b.position
-				ea.velocity = Vector2(0, 1).rotated(TAU * i / 6.0 + time_survived * 2.2) * 240.0
-				add_child(ea)
-		"boss_spider":
-			# 거미 여왕: 둔화 거미줄 5발 부채
-			for i in 5:
-				var ea := EnemyArrow.new()
-				ea.position = b.position
-				ea.velocity = dir.rotated((i - 2) * 0.28) * 260.0
-				ea.chill = true
-				add_child(ea)
-		"reaper":
-			# 사신: 전방위 12발 회전 탄막 (죽음의 소용돌이)
-			for i in 12:
-				var ea := EnemyArrow.new()
-				ea.position = b.position
-				ea.velocity = Vector2(0, 1).rotated(TAU * i / 12.0 + time_survived * 1.6) * 300.0
-				add_child(ea)
-		_:
-			# 데몬 킹: 기본 부채탄
-			_boss_fan(b, dir, 2 + stage_num, 0.22, 280.0 + stage_num * 15.0)
-
-
-func _boss_fan(b: Boss, dir: Vector2, n: int, spread: float, spd: float) -> void:
-	for i in n:
-		var ang := (i - (n - 1) / 2.0) * spread
-		var ea := EnemyArrow.new()
-		ea.position = b.position
-		ea.velocity = dir.rotated(ang) * spd
-		add_child(ea)
-
-
-# 보스별 특수 패턴 (4.5초 주기)
-func boss_special(b: Boss) -> void:
-	match b.key:
-		"boss_2":
-			# 용암 장판 3개를 플레이어 주변에 생성
-			for i in 3:
-				var h := Hazard.new()
-				h.position = player.position + Vector2(randf_range(-140, 140), randf_range(-140, 140))
-				h.dps = 14.0 + stage_num * 2.0
-				h.life = 4.0
-				add_child(h)
-		"boss_3":
-			# 서리 노바: 가까우면 피해+둔화
-			if player.position.distance_to(b.position) < 240.0:
-				apply_player_damage(max(1.0, 12.0 - player.armor))
-				player.slow_t = 1.6
-			var fx := Effect.new()
-			fx.kind = "ring"
-			fx.position = b.position
-			fx.rad = 240.0
-			fx.col = Color(0.6, 0.85, 1.0)
-			fx.life = 0.5
-			fx.max_life = 0.5
-			add_child(fx)
-		"boss_4":
-			# 순간이동 → 플레이어 근처에서 8방 방사탄
-			b.position = player.position + Vector2(cos(randf() * TAU), sin(randf() * TAU)) * 230.0
-			for i in 8:
-				var ea := EnemyArrow.new()
-				ea.position = b.position
-				ea.velocity = Vector2(0, 1).rotated(TAU * i / 8.0) * 300.0
-				add_child(ea)
-			shake_t = max(shake_t, 0.12)
-		"boss_5":
-			# 부하 소환 3마리
-			for i in 3:
-				var e := Enemy.new()
-				var tier := GameConfig.pick_enemy_tier(level, stage_num)
-				e.position = b.position + Vector2(randf_range(-70, 70), randf_range(-70, 70))
-				e.setup(tier, time_survived)
-				e.hp *= diff_enemy_hp
-				e.speed *= diff_enemy_speed
-				add_child(e)
-		"boss_lich":
-			# 리치: 언데드 4마리 소환 + 아케인 연출
-			for i in 4:
-				var e := Enemy.new()
-				var tier := GameConfig.pick_enemy_tier(level, stage_num)
-				e.position = b.position + Vector2(randf_range(-90, 90), randf_range(-90, 90))
-				e.setup(tier, time_survived)
-				e.hp *= diff_enemy_hp
-				e.speed *= diff_enemy_speed
-				add_child(e)
-			spawn_fx("fx_arcane", b.position, 220.0)
-		"boss_spider":
-			# 거미 여왕: 플레이어 주변에 끈끈한 거미줄 장판
-			for i in 3:
-				var h := Hazard.new()
-				h.position = player.position + Vector2(randf_range(-130, 130), randf_range(-130, 130))
-				h.dps = 8.0 + stage_num
-				h.life = 5.0
-				h.col = Color(0.72, 0.72, 0.8)
-				add_child(h)
 
 
 const GEM_CAP := 120   # 젬 노드 상한 (성능). 초과 XP는 가까운 젬 병합/먼 젬 재활용으로 총량 유지.
@@ -4258,18 +4066,6 @@ func on_boss_killed() -> void:
 			get_tree().paused = true
 			_show_end("⚔ 던전 클리어! — %s 정복" % str(GameConfig.stage_info(map_stage)["name"]), true)
 		return
-	# 사신 처치 = 진정한 승리 (30분 피날레)
-	if _boss_is_reaper:
-		_boss_is_reaper = false
-		reaper_active = false
-		boss = null
-		boss_spawned = false
-		run_bosses += 1
-		if state == State.PLAYING:
-			state = State.VICTORY
-			get_tree().paused = true
-			_show_end("⚰ 사신을 물리쳤다 — 진정한 승리!", true)
-		return
 	run_gold += 15 * stage_num   # 보스 보상
 	# 보스 = 장비 전리품 확정 2개
 	if boss and is_instance_valid(boss):
@@ -4316,15 +4112,6 @@ func _advance_stage(n: int) -> void:
 		stage_label.visible = true
 	stage_banner_t = 2.5
 	play_sfx("boss", -14.0, 0.0)
-
-
-# 30분 피날레 보스 처치 승리
-func _victory() -> void:
-	if state != State.PLAYING:
-		return
-	state = State.VICTORY
-	get_tree().paused = true
-	_show_end(Loc.t("victory"), true)
 
 
 func _event_banner(txt: String) -> void:
@@ -6698,7 +6485,6 @@ func _start_game(d: Dictionary) -> void:
 	run_damage_dealt = 0.0
 	run_damage_taken = 0.0
 	run_bosses = 0
-	_boss_schedule_idx = 0
 	_wave_minute = -1
 	_current_wave = {}
 	featured_enemy = ""
@@ -6721,9 +6507,7 @@ func _start_game(d: Dictionary) -> void:
 	evolved = {}
 	combos = {}
 	unions = {}
-	reaper_active = false
 	reaper_warned = false
-	_boss_is_reaper = false
 	_boss_is_objective = false
 	# B블렌드: 장착한 무기 장비가 캐릭터 주무기(weapon1)를 대체. 없으면 캐릭터 기본 무기.
 	# (캐릭터 고유 2번째 무기 weapon2는 유지 → 캐릭터 정체성 일부 보존)
