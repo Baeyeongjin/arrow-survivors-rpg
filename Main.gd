@@ -719,6 +719,7 @@ var inv_list_item_width := 260.0
 var _inv_sel := -1              # 선택한 가방 인덱스
 var stat_points := 0            # 미분배 능력치 포인트 (레벨업마다 +1)
 var char_stats := {"str": 0, "agi": 0, "vit": 0, "foc": 0}   # 분배 누적치 (리셋 대상)
+var attack_element := "phys"    # 내 공격 속성 = 장착 무기 속성 (상성 판정 기준). take_damage가 참조.
 var inv_stat_box: VBoxContainer # 인벤토리 좌하단 능력치 분배 UI
 var hp_text: Label
 var lv_label: Label             # 뱀서식: 최상단 XP 바 안의 레벨 표기
@@ -3859,13 +3860,15 @@ func collect_gem(value: int) -> void:
 # ---------------------------------------------------------------------
 #  처치 / XP / 레벨업
 # ---------------------------------------------------------------------
-func _spawn_dmg_num(pos: Vector2, amount: int, crit: bool = false) -> void:
-	# 대량 피격 시 일반 숫자는 상한으로 스킵(크리는 항상 표시)
-	if _dmgnum > 75 and not crit:
+func _spawn_dmg_num(pos: Vector2, amount: int, crit: bool = false, kind: String = "", element: String = "phys") -> void:
+	# 대량 피격 시 일반 숫자는 상한으로 스킵(크리·상성타는 항상 표시)
+	if _dmgnum > 75 and not crit and kind == "":
 		return
 	var d := DamageNum.new()
 	d.amount = amount
 	d.crit = crit
+	d.kind = kind   # ""=기본 / "weak"=약점(속성색·확대) / "resist"=저항(회색·축소)
+	d.tint = ELEMENT_COL.get(element, Color(1, 1, 1)) if kind == "weak" else Color(0.62, 0.64, 0.68)
 	d.position = pos + Vector2(randf_range(-8, 8), -14)
 	d.tree_exited.connect(func() -> void: _dmgnum -= 1)
 	_dmgnum += 1
@@ -4471,6 +4474,17 @@ const GEAR_NOUNS := {
 	"armor": ["갑옷", "로브", "비늘갑주", "망토"],
 	"trinket": ["반지", "부적", "목걸이", "인장"]}
 const GEAR_ADJ := ["맹독의", "불타는", "얼어붙은", "강철의", "고대의", "저주받은", "빛나는", "심연의"]
+# 장비 접두어 → 속성. 무기 슬롯 장비의 이 속성이 곧 내 공격 속성이 된다(상성 판정).
+const GEAR_ADJ_ELEMENT := {
+	"맹독의": "dark", "불타는": "fire", "얼어붙은": "ice", "강철의": "phys",
+	"고대의": "phys", "저주받은": "dark", "빛나는": "holy", "심연의": "dark"}
+# 속성 5종 색(데미지 숫자·연출 공용). phys는 기본 흰색 취급.
+const ELEMENT_COL := {
+	"phys": Color(1, 1, 1), "fire": Color(1.0, 0.5, 0.15), "ice": Color(0.5, 0.85, 1.0),
+	"holy": Color(1.0, 0.95, 0.6), "dark": Color(0.78, 0.5, 1.0)}
+const ELEMENT_NAME := {"phys": "물리", "fire": "화염", "ice": "냉기", "holy": "신성", "dark": "암흑"}
+const WEAK_MULT := 1.5     # 약점 히트 배수
+const RESIST_MULT := 0.6   # 저항 히트 배수
 const GEAR_NOUN_ICON := {
 	"검": "res://assets/items/gear_sword.png", "도끼": "res://assets/items/gear_axe.png",
 	"지팡이": "res://assets/items/gear_staff.png", "단검": "res://assets/items/gear_dagger.png",
@@ -4511,10 +4525,12 @@ func _roll_gear() -> Dictionary:
 		var a: Dictionary = pool[i]
 		var v: float = float(a["per"]) * float(GEAR_POWER[rarity]) * randf_range(0.8, 1.2)
 		affs.append({"stat": a["stat"], "name": a["name"], "value": v, "base_value": v, "pct": bool(a["pct"])})
+	var adj: String = GEAR_ADJ[randi() % GEAR_ADJ.size()]
 	var noun: String = GEAR_NOUNS[slot][randi() % GEAR_NOUNS[slot].size()]
-	var nm := "%s %s" % [GEAR_ADJ[randi() % GEAR_ADJ.size()], noun]
+	var nm := "%s %s" % [adj, noun]
 	# _found: 런 중 주운 표식 → 런 종료 시 이 장비만 마을 보관함으로 이월. lvl: 대장간 강화 레벨.
-	return {"slot": slot, "rarity": rarity, "affixes": affs, "name": nm, "icon": GEAR_NOUN_ICON.get(noun, ""), "_found": true, "gear_id": _new_gear_id(), "lvl": 0}
+	# element: 접두어에서 결정. 무기 슬롯이면 이 속성이 곧 내 공격 속성.
+	return {"slot": slot, "rarity": rarity, "affixes": affs, "name": nm, "icon": GEAR_NOUN_ICON.get(noun, ""), "element": GEAR_ADJ_ELEMENT.get(adj, "phys"), "_found": true, "gear_id": _new_gear_id(), "lvl": 0}
 
 
 # 처치 지점에서 확률적으로 장비 드롭 (엘리트/보스는 높게)
@@ -4583,6 +4599,8 @@ func _apply_equipment() -> void:
 	for stat in totals.keys():
 		_equip_stat(str(stat), float(totals[stat]))
 	_equip_applied = totals
+	# 공격 속성 = 장착한 무기의 속성 (없으면 물리). 상성 판정 기준.
+	attack_element = str(equipped.get("weapon", {}).get("element", "phys"))
 	_refresh_equip_hud()
 
 
@@ -4618,6 +4636,7 @@ func _refresh_equip_hud() -> void:
 	if equip_hud_label == null:
 		return
 	var lines: Array = []
+	lines.append("공격 속성: %s" % str(ELEMENT_NAME.get(attack_element, "물리")))
 	for slot in EQUIP_SLOTS:
 		var it: Dictionary = equipped.get(slot, {})
 		if it.is_empty():
@@ -4941,6 +4960,9 @@ func _normalize_persistent_gear(it: Dictionary) -> Dictionary:
 	normalized["lvl"] = lv
 	if str(normalized.get("gear_id", "")).is_empty():
 		normalized["gear_id"] = _new_gear_id()
+	# 속성 백필: 구 세이브·프리뷰 장비는 element가 없으니 이름 접두어로 보완.
+	if str(normalized.get("element", "")).is_empty():
+		normalized["element"] = GEAR_ADJ_ELEMENT.get(str(normalized.get("name", "")).split(" ")[0], "phys")
 	var affixes: Array = []
 	for raw_affix in normalized.get("affixes", []):
 		if not (raw_affix is Dictionary):

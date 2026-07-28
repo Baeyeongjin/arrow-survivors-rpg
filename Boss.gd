@@ -14,6 +14,8 @@ var _anim_t := 0.0
 var _atk_t := 0.0
 var _atk_play := 0.0   # >0이면 공격 애니 재생 중
 var is_reaper := false  # 사신 피날레 보스 (특별 연출)
+var weak := ""          # 약점 속성 (×1.5). 던전 보스는 던전 테마 속성에 약함 (Phase 2에서 세팅)
+var resist := ""        # 저항 속성 (×0.6)
 # 텔레그래프: 특수공격 전 예비동작(경고). 이 시간 동안 정지+붉게 충전 후 발사.
 const TELE_DUR := 0.85
 var _tele_t := 0.0
@@ -51,15 +53,27 @@ func _process(delta: float) -> void:
 			_dmg_flush = 0.0
 	queue_redraw()
 
-func take_damage(d: float, _crit: bool = true) -> void:
+func take_damage(d: float, _crit: bool = true, element: String = "") -> void:
 	var m := get_parent()
+	# 상성: 공격 속성 미지정이면 플레이어 공격 속성 사용. 약점 ×1.5 / 저항 ×0.6.
+	var elem := element
+	if elem == "" and m and "attack_element" in m:
+		elem = str(m.attack_element)
+	var hit_kind := ""
+	if elem != "" and elem != "phys":
+		if elem == weak:
+			d *= 1.5
+			hit_kind = "weak"
+		elif elem == resist:
+			d *= 0.6
+			hit_kind = "resist"
 	var actual_damage := minf(maxf(0.0, hp), maxf(0.0, d))
 	if m and m.has_method("record_damage_dealt"):
 		m.record_damage_dealt(actual_damage)
 	hp -= d
 	if m and m.has_method("_spawn_dmg_num"):
 		if d >= 1.0:
-			m._spawn_dmg_num(position + Vector2(0, -radius * 0.5), max(1, int(round(d))), true)
+			m._spawn_dmg_num(position + Vector2(0, -radius * 0.5), max(1, int(round(d))), true, hit_kind, elem)
 		else:
 			_dmg_accum += d   # 지속피해(오라·회전검 등)는 누적 후 주기 표시
 	if hp <= 0:

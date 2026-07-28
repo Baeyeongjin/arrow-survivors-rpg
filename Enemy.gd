@@ -14,6 +14,8 @@ var xp_value := 1
 var color := Color(1.0, 0.4, 0.4)
 var tier: Dictionary = {}
 var elite := false   # 엘리트: 크고 강하고 보상 확정
+var weak := ""       # 약점 속성 (이 속성으로 맞으면 ×1.5). 빈 문자열=약점 없음
+var resist := ""     # 저항 속성 (이 속성으로 맞으면 ×0.6)
 
 # 둔화 상태
 var slow_factor := 1.0
@@ -77,6 +79,8 @@ func setup(t: Dictionary, time: float) -> void:
 	# 30분 접촉 피해 기본값 약 24. 플레이어 방어·난이도 체력으로 생존 차이를 만든다.
 	touch_damage = (10.0 + time * 0.008) * float(t.get("dmg_mult", 1.0))
 	behavior = t.get("behavior", "")
+	weak = t.get("weak", "")
+	resist = t.get("resist", "")
 	_shoot_cd = randf_range(0.8, 1.8)
 
 func _process(delta: float) -> void:
@@ -212,8 +216,20 @@ func _process(delta: float) -> void:
 
 # dot=true → 장판·오라 같은 지속피해. 넉백·멈칫 없이 피해만 준다.
 # (매 프레임 틱마다 넉백이 걸리면 적이 장판 밖으로 계속 밀려나 장판이 무의미해짐)
-func take_damage(d: float, crit: bool = false, dot: bool = false) -> void:
+func take_damage(d: float, crit: bool = false, dot: bool = false, element: String = "") -> void:
 	var m := get_parent()
+	# 상성: 공격 속성이 지정 안 되면 플레이어의 현재 공격 속성 사용. 약점 ×1.5 / 저항 ×0.6.
+	var elem := element
+	if elem == "" and m and "attack_element" in m:
+		elem = str(m.attack_element)
+	var hit_kind := ""
+	if elem != "" and elem != "phys":
+		if elem == weak:
+			d *= 1.5
+			hit_kind = "weak"
+		elif elem == resist:
+			d *= 0.6
+			hit_kind = "resist"
 	var actual_damage := minf(maxf(0.0, hp), maxf(0.0, d))
 	if m and m.has_method("record_damage_dealt"):
 		m.record_damage_dealt(actual_damage)
@@ -227,7 +243,7 @@ func take_damage(d: float, crit: bool = false, dot: bool = false) -> void:
 	# 데미지 숫자: 단발 타격(≥1)은 즉시, 지속피해(<1 틱)는 누적 후 주기 표시 (0 표시 방지)
 	if m and m.has_method("_spawn_dmg_num"):
 		if d >= 1.0 or crit:
-			m._spawn_dmg_num(position, max(1, int(round(d))), crit)
+			m._spawn_dmg_num(position, max(1, int(round(d))), crit, hit_kind, elem)
 		else:
 			_dmg_accum += d   # 장판·오라 등 → _process에서 합산해 표시
 	# 넉백 + 멈칫 (플레이어 반대 방향). 엘리트 저항. 쿨다운으로 지속타 잠김 방지.

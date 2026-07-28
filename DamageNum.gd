@@ -4,6 +4,8 @@ extends Node2D
 
 var amount := 0
 var crit := false
+var kind := ""            # ""=기본 / "weak"=약점 / "resist"=저항
+var tint := Color(1, 1, 1)  # 상성 히트 색 (weak=속성색, resist=회색)
 var life := 0.7
 var _vx := 0.0
 static var _font: Font = null
@@ -29,6 +31,13 @@ func _draw() -> void:
 	# 뱀서식 가독성: 일반=밝은 노랑, 크릿=주황. 흰색은 밝은 배경에 묻혀서 폐기.
 	var col := Color(1.0, 0.55, 0.12, a) if crit else Color(1.0, 0.92, 0.35, a)
 	var fs := 26 if crit else 19
+	# 상성 히트: 약점은 속성색으로 더 크게(짜릿함), 저항은 회색으로 작게(먹힌 느낌).
+	if kind == "weak":
+		col = Color(tint.r, tint.g, tint.b, a)
+		fs = 32 if crit else 25
+	elif kind == "resist":
+		col = Color(tint.r, tint.g, tint.b, a)
+		fs = 22 if crit else 15
 	var s := str(amount)
 	# 등장 순간 팝 스케일 (t≈1일 때 1.35배 → 빠르게 1.0) — 뱀서처럼 툭 튀어나옴
 	var pop: float = 1.0 + 0.35 * clamp((t - 0.75) / 0.25, 0.0, 1.0)
