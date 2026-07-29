@@ -168,24 +168,29 @@ static func tier_by_key(key: String) -> Dictionary:
 # --- 스테이지 정의 ---
 static func stages() -> Array:
 	return [
-		{"name": "던전",   "boss": "boss_1", "tint": Color(0.70, 0.70, 0.78),
+		{"name": "던전",   "boss": "boss_1", "boss_name": "묘지 수호자", "tint": Color(0.70, 0.70, 0.78),
 			"element": "phys", "boss_weak": "",
+			"rule": "5분 동안 성장한 뒤 목표 보스를 처치",
 			"field_passives": ["armor", "wings", "magnet", "spinach"],
 			"props": ["res://assets/props/s1_a.png", "res://assets/props/s1_b.png"]},
-		{"name": "지옥",   "boss": "boss_2", "tint": Color(0.85, 0.55, 0.50),
+		{"name": "지옥",   "boss": "boss_2", "boss_name": "화염 군주", "tint": Color(0.85, 0.55, 0.50),
 			"element": "fire", "boss_weak": "ice",
+			"rule": "용암 균열 3개 봉인 · 2:30 용암 집행자 · 화염 갑옷 파괴",
 			"field_passives": ["spinach", "tomato", "candela", "stone_mask"],
 			"props": ["res://assets/props/s2_a.png", "res://assets/props/s2_b.png"]},
-		{"name": "빙하",   "boss": "boss_3", "tint": Color(0.50, 0.65, 0.90),
+		{"name": "빙하",   "boss": "boss_3", "boss_name": "빙결 거상", "tint": Color(0.50, 0.65, 0.90),
 			"element": "ice", "boss_weak": "fire",
+			"rule": "5분 동안 성장한 뒤 목표 보스를 처치",
 			"field_passives": ["tome", "spellbinder", "crown", "armor"],
 			"props": ["res://assets/props/s3_a.png", "res://assets/props/s3_b.png"]},
-		{"name": "공허",   "boss": "boss_4", "tint": Color(0.60, 0.45, 0.85),
+		{"name": "공허",   "boss": "boss_4", "boss_name": "공허 감시자", "tint": Color(0.60, 0.45, 0.85),
 			"element": "dark", "boss_weak": "holy",
+			"rule": "5분 동안 성장한 뒤 목표 보스를 처치",
 			"field_passives": ["duplicator", "keen_eye", "clover", "skull"],
 			"props": ["res://assets/props/s4_a.png", "res://assets/props/s4_b.png"]},
-		{"name": "마왕성", "boss": "boss_5", "tint": Color(0.75, 0.65, 0.55),
+		{"name": "마왕성", "boss": "boss_5", "boss_name": "마왕 아바돈", "tint": Color(0.75, 0.65, 0.55),
 			"element": "dark", "boss_weak": "holy",
+			"rule": "5분 동안 성장한 뒤 목표 보스를 처치",
 			"field_passives": ["vitality", "iron_will", "berserker", "swiftness"],
 			"props": ["res://assets/props/s5_a.png", "res://assets/props/s5_b.png"]},
 	]
@@ -194,6 +199,26 @@ static func stage_info(n: int) -> Dictionary:
 	# 심연 모드(6스테이지+)에서는 테마가 순환
 	var arr := stages()
 	return arr[(n - 1) % arr.size()]
+
+
+# M3 지옥 고유 정예. 일반 웨이브가 아니라 용암 균열과 함께 등장해 목표 전투를 만든다.
+static func hell_elite_tier() -> Dictionary:
+	return {
+		"name": "잿불 추적자", "key": "ember_stalker", "shape": "demon",
+		"color": Color(1.0, 0.42, 0.10), "hp_mult": 2.7, "speed_mult": 1.30,
+		"xp": 10, "radius": 19.0, "behavior": "charge",
+		"sprite": "res://assets/enemies/hellhound.png", "weak": "ice", "resist": "fire",
+	}
+
+
+# M3 지옥 중간보스 전용 티어. 일반 웨이브 풀에 섞지 않아 2:30 전투 리듬을 보장한다.
+static func hell_midboss_tier() -> Dictionary:
+	return {
+		"name": "용암 집행자", "key": "hell_enforcer", "shape": "demon",
+		"color": Color(1.0, 0.30, 0.10), "hp_mult": 4.8, "speed_mult": 0.92,
+		"xp": 18, "radius": 27.0, "behavior": "charge",
+		"sprite": "res://assets/enemies/demon.png", "weak": "ice", "resist": "fire",
+	}
 
 
 # Stage identity is expressed through readable pressure patterns, not hidden stats.

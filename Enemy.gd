@@ -14,6 +14,7 @@ var xp_value := 1
 var color := Color(1.0, 0.4, 0.4)
 var tier: Dictionary = {}
 var elite := false   # 엘리트: 크고 강하고 보상 확정
+var midboss := false # M3 지옥 세로 슬라이스: 용암 집행자 처치 보상/게이트 식별
 var weak := ""       # 약점 속성 (이 속성으로 맞으면 ×1.5). 빈 문자열=약점 없음
 var resist := ""     # 저항 속성 (이 속성으로 맞으면 ×0.6)
 

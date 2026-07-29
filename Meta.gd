@@ -48,7 +48,8 @@ static func load_data() -> Dictionary:
 		"fx_level": int(cf.get_value("opt", "fx_level", 2)),
 		"screen_shake": bool(cf.get_value("opt", "screen_shake", true)),
 		"stash": cf.get_value("gear", "stash", []),
-		"loadout": cf.get_value("gear", "loadout", {"weapon": {}, "armor": {}, "trinket": {}})}
+		"loadout": cf.get_value("gear", "loadout", {"weapon": {}, "armor": {}, "trinket": {}}),
+		"boss_fragments": cf.get_value("craft", "boss_fragments", {})}
 	for u in UPGRADES:
 		d["up"][u["key"]] = int(cf.get_value("up", u["key"], 0))
 	# 업적 (섹션 [ach])
@@ -71,6 +72,8 @@ static func load_data() -> Dictionary:
 		if cf.has_section(section):
 			for k in cf.get_section_keys(section):
 				d[section][k] = bool(cf.get_value(section, k, false))
+	if not (d["boss_fragments"] is Dictionary):
+		d["boss_fragments"] = {}
 	# 신규 프로필은 3명으로 시작한다. 해금 시스템 도입 전 세이브는 기존 8명 접근권을 보존한다.
 	if d["unlocked_chars"].is_empty():
 		var initial_chars := initial_chars_for_save(had_save, saved_version)
@@ -113,6 +116,7 @@ static func save_data(d: Dictionary) -> void:
 		cf.set_value("unlocked_relics", k, d["unlocked_relics"][k])
 	cf.set_value("gear", "stash", d.get("stash", []))
 	cf.set_value("gear", "loadout", d.get("loadout", {"weapon": {}, "armor": {}, "trinket": {}}))
+	cf.set_value("craft", "boss_fragments", d.get("boss_fragments", {}))
 	cf.save(PATH)
 
 static func cost(u: Dictionary, lv: int) -> int:

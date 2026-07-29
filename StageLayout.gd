@@ -11,6 +11,7 @@ var shapes: Array[Dictionary] = []
 var blocked_circles: Array[Dictionary] = []
 var blocked_rects: Array[Rect2] = []
 var item_positions: Array[Vector2] = []
+var objective_positions: Array[Vector2] = []
 var relic_position := Vector2.ZERO
 var landmark_position := Vector2(1400, 1220)
 
@@ -44,6 +45,8 @@ static func make(stage: int, stage_tint: Color) -> StageLayout:
 				Rect2(1780, 880, 140, 440), Rect2(2320, 1420, 140, 460),
 			]
 			layout.item_positions = [Vector2(200, 1400), Vector2(900, 500), Vector2(1890, 2300), Vector2(2650, 1400)]
+			# M3 용암 균열: 중앙 회랑 → 위 벽감 → 아래 벽감 순으로 탐험 동선을 꺾는다.
+			layout.objective_positions = [Vector2(420, 1400), Vector2(900, 580), Vector2(1900, 2240)]
 			layout.relic_position = Vector2(2650, 900)
 			layout.landmark_position = Vector2(1450, 1000)
 		3:

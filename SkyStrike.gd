@@ -30,6 +30,7 @@ var _done := false
 var _vis := 1.0   # 무기 성장 시각 배율 (착탄이 비동기라 생성 시점에 캡처)
 
 func _ready() -> void:
+	add_to_group("floor_runtime")
 	_start = target + Vector2(70, -300)
 	position = _start
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST

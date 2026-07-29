@@ -161,6 +161,12 @@ func _nearest():
 			if d < best_d:
 				best_d = d
 				best = b
+	for objective in get_tree().get_nodes_in_group("hell_objectives"):
+		if is_instance_valid(objective):
+			var d := position.distance_to(objective.position)
+			if d < best_d:
+				best_d = d
+				best = objective
 	# 주변 파괴 오브젝트(관·상자)도 유도 대상 (적 우선 위해 +90 후순위 보정)
 	for br in get_tree().get_nodes_in_group("breakables"):
 		if is_instance_valid(br):

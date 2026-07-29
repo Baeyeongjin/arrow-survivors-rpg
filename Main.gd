@@ -5,7 +5,10 @@ extends Node2D
 #  무기 레벨업/진화 · 난이도 · 티어 몬스터 · 보스
 # =====================================================================
 
-enum State { TITLE, PLAYING, LEVELUP, GAMEOVER, VICTORY, PAUSED }
+enum State { TITLE, PLAYING, LEVELUP, GAMEOVER, VICTORY, PAUSED, ROUTE, EXTRACTION }
+
+const HellFissureScript = preload("res://HellFissure.gd")
+const ExpeditionRulesScript = preload("res://ExpeditionRules.gd")
 
 # 장판 무기는 독안개(poison_cloud) 하나만 남김 — 성수·용암지대 제거.
 # (공허구 void_orb는 VoidZone을 쓰지만 바닥 장판이 아니라 끌어당기는 블랙홀이라 유지)
@@ -175,6 +178,11 @@ const BOSS_TIME := 180.0        # 첫 보스 3분 (1분→3분: 초반에 빌드
 const FINAL_STAGE := 5
 const RUN_TIME := 1800.0     # 30분에 피날레 사신 강림 (레거시 캠페인 모드)
 const DUNGEON_BOSS_TIME := 300.0   # 던전 모드: 5분 생존 후 던전 보스(목표) 출현 → 처치=클리어
+const HELL_STAGE := 2
+const HELL_FISSURE_TIMES := [45.0, 115.0, 190.0]
+const HELL_FISSURE_REQUIRED := 3
+const HELL_MIDBOSS_TIME := 150.0
+const EXPEDITION_FLOORS := ExpeditionRulesScript.FLOOR_COUNT
 const MAX_ENEMIES := 300     # 동시 등장 상한 (뱀서형 밀도 + 내장 GPU 부하 관리. 340은 Iris Xe에서 랙 → 300으로 한 단계 롤백)
 # 무기 진화 레시피 (뱀서식): 무기 만렙(Lv8) + 필수 패시브 보유 → 보스 상자 개봉 시 진화
 # passive=필수 패시브 키, name=진화 무기 이름
@@ -535,6 +543,35 @@ var _boss_is_objective := false  # 던전 모드: 이 보스가 목표 보스인
 var stage_banner_t := 0.0
 var stage_label: Label
 
+# M3 지옥 세로 슬라이스 런 상태.
+var hell_fissures_spawned := 0
+var hell_fissures_sealed := 0
+var hell_midboss_spawned := false
+var hell_midboss_alive := false
+var hell_midboss_defeated := false
+var hell_boss_wait_warned := false
+
+# M4 3층 원정. 총 런 시간은 time_survived에 누적하고, 각 층의 5분 시계는
+# expedition_floor_started_at을 빼서 계산한다.
+var expedition_active := false
+var expedition_floor := 1
+var expedition_floor_started_at := 0.0
+var expedition_start_stage := 1
+var expedition_stage_history: Array[int] = []
+var expedition_route_history: Array[String] = []
+var expedition_pending_routes: Array = []
+var expedition_last_node_result := ""
+var run_boss_fragments: Dictionary = {}
+var expedition_loot_resolved := false
+var expedition_fragments_banked := false
+var extraction_candidates: Array = []
+var extraction_selected_ids: Dictionary = {}
+var extraction_limit := 0
+var extracted_gear_count := 0
+var auto_salvage_gold := 0
+var _pending_end_title := ""
+var _pending_end_win := false
+
 # 맵 조형물 (스테이지별 바위/나무 등 — 순수 장식)
 var decorations: Array = []
 
@@ -568,6 +605,7 @@ var forge_detail_label: Label
 var forge_equip_btn: Button
 var forge_upgrade_btn: Button
 var forge_discard_btn: Button
+var forge_craft_btn: Button
 var forge_loadout_width := 250.0
 var forge_list_item_width := 300.0
 var _forge_sel := -1              # 선택한 보관함 인덱스
@@ -584,7 +622,7 @@ var stage_select_backdrop: ColorRect
 var map_cards: Array[Button] = []
 var map_selection_borders: Array[Panel] = []
 var map_selection_badges: Array[Label] = []
-var map_detail_label: Label
+var map_detail_label: RichTextLabel
 var map_confirm_button: Button
 var map_difficulty_buttons: Array[Button] = []
 var map_blessing_button: Button
@@ -791,6 +829,15 @@ var end_label: Label
 var end_title: Label
 var end_build_box: VBoxContainer
 var title_panel: Control
+var expedition_route_panel: Control
+var expedition_route_title: Label
+var expedition_route_summary: Label
+var expedition_route_buttons: Array[Button] = []
+var extraction_panel: Control
+var extraction_title: Label
+var extraction_summary: Label
+var extraction_list_box: VBoxContainer
+var extraction_confirm_btn: Button
 
 
 func _ready() -> void:
@@ -888,7 +935,7 @@ func _seed_gear_ui_preview() -> void:
 
 
 # [개발 도구] --autoshot: 화면을 캡처해 user://autoshot.png로 저장 후 종료.
-#   --screen=title|char|diff|inventory|forge : 해당 메뉴 화면을 캡처 (기본: 런 시작 후 HUD)
+#   --screen=title|char|diff|inventory|forge|route|extraction : 해당 화면을 캡처
 #   --pause                  : 일시정지 화면 캡처
 func _autoshot() -> void:
 	await get_tree().create_timer(0.5, true, false, true).timeout
@@ -981,11 +1028,16 @@ func _autoshot() -> void:
 	if "--evo-test" in args:
 		meta["loadout"] = {"weapon": {}, "armor": {}, "trinket": {}}
 	var active_preview := ""
+	var hell_preview := ""
 	for arg in args:
 		if arg.begins_with("--active-preview="):
 			var requested_active := arg.trim_prefix("--active-preview=")
 			if WEAPON_ACTIVE_DEFS.has(requested_active):
 				active_preview = requested_active
+		elif arg.begins_with("--hell-preview="):
+			var requested_hell := arg.trim_prefix("--hell-preview=")
+			if requested_hell in ["fissure", "midboss", "boss"]:
+				hell_preview = requested_hell
 	if active_preview != "":
 		var preview_weapon_kind := str({
 			"sword": "cleave", "axe": "axe", "staff": "soul_bolt",
@@ -1004,9 +1056,57 @@ func _autoshot() -> void:
 			"icon": str(preview_active_def["icon"]),
 		}
 		meta["loadout"] = preview_loadout
+	if hell_preview != "":
+		sel_stage = HELL_STAGE
 	title_panel.visible = false
 	sel_modifier = {}
 	_start_game(GameConfig.difficulties()[0])
+	if "--expedition-flow-test" in args:
+		time_survived = DUNGEON_BOSS_TIME
+		var routes := ExpeditionRulesScript.route_options(map_stage, expedition_floor)
+		var expected_stage := int(routes[0]["target_stage"])
+		var stat_before := stat_points
+		_open_expedition_route()
+		_choose_expedition_route(0)
+		await get_tree().process_frame
+		var flow_passed := (expedition_active and expedition_floor == 2
+			and map_stage == expected_stage and int(stage_layout.stage_id) == expected_stage
+			and state == State.PLAYING and not get_tree().paused
+			and expedition_stage_history.size() == 2
+			and expedition_route_history == ["camp"]
+			and stat_points == stat_before + ExpeditionRulesScript.FLOOR_CLEAR_STAT_POINTS)
+		print("EXPEDITION_FLOW_TEST %s floor=%d stage=%d history=%s route=%s" % [
+			"PASS" if flow_passed else "FAIL", expedition_floor, map_stage,
+			expedition_stage_history, expedition_route_history])
+		if not flow_passed:
+			push_error("Expedition route transition regression test failed")
+		get_tree().quit(0 if flow_passed else 1)
+		return
+	if "--screen=route" in args:
+		run_gold = 120
+		expedition_floor = 1
+		_open_expedition_route()
+		await get_tree().create_timer(0.5, true, false, true).timeout
+		var route_image := get_viewport().get_texture().get_image()
+		route_image.save_png("user://autoshot.png")
+		print("AUTOSHOT SAVED: ", ProjectSettings.globalize_path("user://autoshot.png"))
+		get_tree().quit()
+		return
+	if "--screen=extraction" in args:
+		inventory = [
+			_roll_gear_for("weapon", "legendary"),
+			_roll_gear_for("armor", "epic"),
+			_roll_gear_for("trinket", "epic"),
+			_roll_gear_for("weapon", "rare"),
+			_roll_gear_for("armor", "common"),
+		]
+		_begin_extraction("원정 완료", true)
+		await get_tree().create_timer(0.5, true, false, true).timeout
+		var extraction_image := get_viewport().get_texture().get_image()
+		extraction_image.save_png("user://autoshot.png")
+		print("AUTOSHOT SAVED: ", ProjectSettings.globalize_path("user://autoshot.png"))
+		get_tree().quit()
+		return
 
 	# --active-preview=<sword|axe|staff|dagger|spear>: E 스킬과 HUD를 실제 렌더로 검수한다.
 	if active_preview != "":
@@ -1074,6 +1174,60 @@ func _autoshot() -> void:
 		var active_image := get_viewport().get_texture().get_image()
 		active_image.save_png("user://autoshot.png")
 		print("ACTIVE_PREVIEW %s" % active_preview)
+		print("AUTOSHOT SAVED: ", ProjectSettings.globalize_path("user://autoshot.png"))
+		get_tree().quit()
+		return
+
+	# --hell-preview=fissure|midboss|boss: M3 핵심 전투 상태를 실제 렌더로 검수한다.
+	if hell_preview != "":
+		player.invuln = 999.0
+		weapons.clear()
+		wtimer.clear()
+		xp_to_next = 999999
+		for preview_enemy in get_tree().get_nodes_in_group("enemies"):
+			if is_instance_valid(preview_enemy):
+				preview_enemy.queue_free()
+		await get_tree().process_frame
+		match hell_preview:
+			"fissure":
+				time_survived = HELL_FISSURE_TIMES[0]
+				var fissure = _spawn_hell_fissure(0)
+				fissure.position = player.position + Vector2.RIGHT * 180.0
+				fissure._telegraph_t = 0.22
+				fissure.process_mode = Node.PROCESS_MODE_DISABLED
+				fissure.queue_redraw()
+			"midboss":
+				time_survived = HELL_MIDBOSS_TIME
+				_wave_minute = int(time_survived / 60.0)
+				_current_wave = GameConfig.wave_for_minute(_wave_minute, HELL_STAGE)
+				featured_enemy = str(_current_wave.get("primary", "fire_imp"))
+				var enforcer := _spawn_hell_midboss()
+				enforcer.position = player.position + Vector2.RIGHT * 210.0
+				enforcer._cstate = 1
+				enforcer._ctimer = 0.26
+				enforcer._clock = Vector2.LEFT
+				enforcer.process_mode = Node.PROCESS_MODE_DISABLED
+				enforcer.queue_redraw()
+			"boss":
+				time_survived = DUNGEON_BOSS_TIME
+				_wave_minute = int(time_survived / 60.0)
+				_current_wave = GameConfig.wave_for_minute(_wave_minute, HELL_STAGE)
+				featured_enemy = str(_current_wave.get("primary", "demon"))
+				hell_fissures_spawned = HELL_FISSURE_REQUIRED
+				hell_fissures_sealed = HELL_FISSURE_REQUIRED
+				hell_midboss_spawned = true
+				hell_midboss_defeated = true
+				_spawn_dungeon_boss()
+				boss.position = player.position + Vector2.RIGHT * 220.0
+				boss.take_damage(boss.max_hp * 0.31, false, "phys")
+				boss.process_mode = Node.PROCESS_MODE_DISABLED
+				boss.queue_redraw()
+		_update_ui()
+		await get_tree().process_frame
+		await get_tree().process_frame
+		var hell_image := get_viewport().get_texture().get_image()
+		hell_image.save_png("user://autoshot.png")
+		print("HELL_PREVIEW %s" % hell_preview)
 		print("AUTOSHOT SAVED: ", ProjectSettings.globalize_path("user://autoshot.png"))
 		get_tree().quit()
 		return
@@ -1545,6 +1699,7 @@ func _process(delta: float) -> void:
 		return
 
 	time_survived += delta
+	var dungeon_elapsed := _dungeon_elapsed()
 	_blade_angle += delta * 3.2
 	# 업적 토스트 타이머
 	if ach_toast_t > 0.0:
@@ -1575,22 +1730,31 @@ func _process(delta: float) -> void:
 			wtimer[kind] = _weapon_cooldown(kind)
 
 	# 진행 (시간 기반) / 보스
+	if map_stage == HELL_STAGE:
+		_update_hell_encounter()
 	if abyss_mode:
 		# 심연: 예약 시간마다 보스 (무한)
 		if not boss_spawned and time_survived >= next_boss_time:
 			last_boss_stage = stage_num
 			_spawn_boss()
 	elif map_stage > 0:
-		# 던전 모드(B블렌드): 5분 생존 → 단일 목표 보스 → 처치=클리어. 다중보스·사신 없음.
+		# M4 원정: 각 층에서 5분 생존 → 목표 보스. 1·2층은 경로 노드,
+		# 3층 보스는 최종 추출로 이어진다.
 		if not boss_spawned and not _boss_is_objective:
-			if not reaper_warned and time_survived >= DUNGEON_BOSS_TIME - 45.0:
+			if not reaper_warned and dungeon_elapsed >= DUNGEON_BOSS_TIME - 45.0:
 				reaper_warned = true
-				_event_banner("⚠ 곧 던전 보스가 나타난다...")
-			if time_survived >= DUNGEON_BOSS_TIME:
-				_spawn_dungeon_boss()
+				_event_banner("⚠ 곧 %d층 보스가 나타난다..." % expedition_floor)
+			if dungeon_elapsed >= DUNGEON_BOSS_TIME:
+				# 지옥은 중간보스가 살아 있으면 최종 관문이 열리지 않는다.
+				if map_stage == HELL_STAGE and hell_midboss_alive:
+					if not hell_boss_wait_warned:
+						hell_boss_wait_warned = true
+						_event_banner("⚠ 용암 집행자를 먼저 처치해야 한다!")
+				else:
+					_spawn_dungeon_boss()
 
 	# 분 단위 웨이브 표: 적 조합·밀도·엘리트·특수 이벤트를 함께 교체한다.
-	var current_minute := int(time_survived / 60.0)
+	var current_minute := int(dungeon_elapsed / 60.0) if map_stage > 0 else int(time_survived / 60.0)
 	if current_minute != _wave_minute or featured_enemy == "":
 		_wave_minute = current_minute
 		_current_wave = GameConfig.wave_for_minute(current_minute, map_stage)
@@ -1726,6 +1890,18 @@ func _physics_process(delta: float) -> void:
 					a.queue_free()
 				else:
 					a.pierce -= 1
+		# 지옥 용암 균열은 적과 같은 전투 표적이지만 처치·XP 그룹에는 넣지 않는다.
+		if is_instance_valid(a):
+			for objective in get_tree().get_nodes_in_group("hell_objectives"):
+				if not is_instance_valid(objective) or a.hit.has(objective):
+					continue
+				if a.position.distance_to(objective.position) < a.radius + objective.radius:
+					a.hit[objective] = true
+					_apply_arrow_hit(a, objective)
+					if a.pierce <= 0:
+						a.queue_free()
+						break
+					a.pierce -= 1
 		# 파괴 오브젝트 타격 (촛대·항아리·상자)
 		if is_instance_valid(a):
 			for b in get_tree().get_nodes_in_group("breakables"):
@@ -1821,7 +1997,7 @@ func _physics_process(delta: float) -> void:
 			play_sfx("hurt", -8.0, 0.3)
 			_touched = true
 	if player.invuln <= 0.0 and boss and is_instance_valid(boss):
-		if boss.position.distance_to(player.position) < boss.radius + player.radius:
+		if not boss.uses_pattern_damage() and boss.position.distance_to(player.position) < boss.radius + player.radius:
 			var boss_touch := (22.0 + stage_num * 3.0) * sqrt(diff_enemy_hp)
 			apply_player_damage(max(1.0, boss_touch - player.armor))
 			player.invuln = 0.75
@@ -1833,9 +2009,12 @@ func _physics_process(delta: float) -> void:
 			continue
 		if ea.position.distance_to(player.position) < ea.radius + player.radius:
 			if player.invuln <= 0.0:
-				apply_player_damage(max(1.0, ea.damage - player.armor))
-				player.invuln = 0.6
-				player.play_hurt()
+				if ea.fire:
+					apply_hell_boss_damage(ea.damage, ea.position)
+				else:
+					apply_player_damage(max(1.0, ea.damage - player.armor))
+					player.invuln = 0.6
+					player.play_hurt()
 				if ea.chill:
 					player.slow_t = 1.5
 				play_sfx("hurt", -8.0, 0.3)
@@ -3208,6 +3387,9 @@ func _enemies_and_boss() -> Array:
 			arr.append(e)
 	if boss and is_instance_valid(boss):
 		arr.append(boss)
+	for objective in get_tree().get_nodes_in_group("hell_objectives"):
+		if is_instance_valid(objective):
+			arr.append(objective)
 	return arr
 
 
@@ -3301,6 +3483,9 @@ func _explode(pos: Vector2, rad: float, dmg: float, exclude) -> void:
 			e.take_damage(dmg)
 	if boss and is_instance_valid(boss) and boss != exclude and pos.distance_to(boss.position) <= rad:
 		boss.take_damage(dmg)
+	for objective in get_tree().get_nodes_in_group("hell_objectives"):
+		if is_instance_valid(objective) and objective != exclude and pos.distance_to(objective.position) <= rad:
+			objective.take_damage(dmg)
 	for b in get_tree().get_nodes_in_group("breakables"):
 		if is_instance_valid(b) and pos.distance_to(b.position) <= rad:
 			b.take_damage(dmg)
@@ -3367,7 +3552,15 @@ func _nearest_enemy(from: Vector2):
 			best = e
 	if boss and is_instance_valid(boss):
 		if from.distance_to(boss.position) < best_d:
+			best_d = from.distance_to(boss.position)
 			best = boss
+	for objective in get_tree().get_nodes_in_group("hell_objectives"):
+		if not is_instance_valid(objective):
+			continue
+		var objective_distance: float = from.distance_to(objective.position)
+		if objective_distance < best_d:
+			best_d = objective_distance
+			best = objective
 	return best
 
 
@@ -3382,6 +3575,13 @@ func _nearest_unhit_enemy(a):
 		if d < best_d:
 			best_d = d
 			best = e
+	for objective in get_tree().get_nodes_in_group("hell_objectives"):
+		if not is_instance_valid(objective) or a.hit.has(objective):
+			continue
+		var objective_distance: float = a.position.distance_to(objective.position)
+		if objective_distance < best_d:
+			best_d = objective_distance
+			best = objective
 	return best
 
 
@@ -3453,7 +3653,7 @@ func _themed_tier(force_featured := false) -> Dictionary:
 
 # 지정 위치에 적 1마리 생성 (시간강화 + 엘리트 처리). 이벤트/웨이브 공용.
 # despawn>0 이면 그 시간 뒤 자동 소멸, hold=true면 제자리 고정 (정적 포위 원 등).
-func _make_enemy(pos: Vector2, force_elite := false, tier_override = null, despawn := 0.0, hold := false) -> void:
+func _make_enemy(pos: Vector2, force_elite := false, tier_override = null, despawn := 0.0, hold := false) -> Enemy:
 	var e := Enemy.new()
 	var tier: Dictionary = tier_override if tier_override != null else GameConfig.pick_enemy_tier(level, stage_num)
 	e.position = pos
@@ -3473,13 +3673,15 @@ func _make_enemy(pos: Vector2, force_elite := false, tier_override = null, despa
 		e.hold = true
 	e.max_hp = e.hp   # 모든 강화(시간·엘리트) 적용 후 최종 hp를 HP바 기준으로 캡처
 	add_child(e)
+	return e
 
 
 func _apply_enemy_run_scaling(e: Enemy, at_time: float) -> void:
 	# 시간 경과 강화 (30분 기준): 웨이브 티어/밀도와 중복 폭증하지 않는 완만한 마감 보정.
 	var tprog: float = clampf(at_time / RUN_TIME, 0.0, 1.0)
-	e.hp *= diff_enemy_hp * (1.0 + tprog * 0.85) * run_pressure_mult   # 최대 +85% HP
-	e.touch_damage *= (1.0 + tprog * 0.22)                             # 최대 +22% 접촉피해
+	var floor_pressure := _expedition_floor_pressure()
+	e.hp *= diff_enemy_hp * (1.0 + tprog * 0.85) * run_pressure_mult * floor_pressure
+	e.touch_damage *= (1.0 + tprog * 0.22) * sqrt(floor_pressure)
 	e.speed *= diff_enemy_speed * (1.0 + tprog * 0.08 + (run_pressure_mult - 1.0) * 0.5)  # 최대 +8% 속도
 
 
@@ -3768,6 +3970,157 @@ func on_pickup(kind: String) -> void:
 			_open_bonus_chest()
 
 
+# ---------------------------------------------------------------------
+#  M3 지옥 던전 세로 슬라이스
+# ---------------------------------------------------------------------
+func _update_hell_encounter() -> void:
+	if map_stage != HELL_STAGE or state != State.PLAYING:
+		return
+	var elapsed := _dungeon_elapsed()
+	while hell_fissures_spawned < HELL_FISSURE_TIMES.size() \
+			and elapsed >= float(HELL_FISSURE_TIMES[hell_fissures_spawned]):
+		_spawn_hell_fissure(hell_fissures_spawned)
+	if not hell_midboss_spawned and elapsed >= HELL_MIDBOSS_TIME:
+		_spawn_hell_midboss()
+
+
+func _spawn_hell_fissure(index: int) -> Node2D:
+	if index < 0 or index >= HELL_FISSURE_REQUIRED:
+		return null
+	var fissure := HellFissureScript.new()
+	var spawn_pos := player.position + Vector2.RIGHT * 240.0 if player else WORLD * 0.5
+	if stage_layout and index < stage_layout.objective_positions.size():
+		spawn_pos = stage_layout.objective_positions[index]
+	if stage_layout:
+		spawn_pos = stage_layout.nearest_walkable(spawn_pos, 58.0)
+	fissure.position = spawn_pos
+	var health := (150.0 + float(index) * 35.0 + _dungeon_elapsed() * 0.18) \
+		* sqrt(diff_enemy_hp) * _expedition_floor_pressure()
+	var pulse_damage := (16.0 + float(index) * 2.0) \
+		* sqrt(diff_enemy_hp * _expedition_floor_pressure())
+	fissure.configure(index, health, pulse_damage)
+	add_child(fissure)
+	_spawn_hell_elite_guardian(index, spawn_pos)
+	hell_fissures_spawned = maxi(hell_fissures_spawned, index + 1)
+	_event_banner("♨ 용암 균열 + 잿불 추적자! — 냉기로 봉인 (%d/%d)" % [
+		hell_fissures_sealed, HELL_FISSURE_REQUIRED])
+	return fissure
+
+
+func _spawn_hell_elite_guardian(index: int, origin: Vector2) -> Enemy:
+	var offset := Vector2.from_angle(PI * 0.5 * float(index + 1)) * 135.0
+	var guardian_pos := origin + offset
+	if stage_layout:
+		guardian_pos = stage_layout.nearest_walkable(guardian_pos, 34.0)
+	var guardian := _make_enemy(guardian_pos, true, GameConfig.hell_elite_tier())
+	guardian.hp *= 0.82
+	guardian.max_hp = guardian.hp
+	return guardian
+
+
+func _spawn_hell_midboss() -> Enemy:
+	if hell_midboss_spawned:
+		return null
+	hell_midboss_spawned = true
+	hell_midboss_alive = true
+	var spawn_pos := player.position + Vector2.LEFT * 360.0 if player else WORLD * 0.5
+	if stage_layout:
+		spawn_pos = stage_layout.nearest_walkable(spawn_pos, 44.0)
+	var enforcer := _make_enemy(spawn_pos, true, GameConfig.hell_midboss_tier())
+	enforcer.midboss = true
+	enforcer.hp *= 2.4
+	enforcer.max_hp = enforcer.hp
+	enforcer.radius *= 1.08
+	enforcer.touch_damage *= 1.18
+	_event_banner("⚔ 중간보스 — 용암 집행자!  돌진 경로를 피하라")
+	_flash(Color(1.0, 0.28, 0.06, 0.38))
+	shake_t = maxf(shake_t, 0.28)
+	return enforcer
+
+
+func on_hell_fissure_sealed(fissure: Node2D) -> void:
+	hell_fissures_sealed = mini(HELL_FISSURE_REQUIRED, hell_fissures_sealed + 1)
+	run_gold += 12
+	if player:
+		player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.05)
+		if _has_gear_special("sealkeeper"):
+			player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.08)
+			skill_e_cd = maxf(0.0, skill_e_cd - 2.5)
+	_spawn_proc_fx("shatter", fissure.position, 82.0, Color(0.55, 0.90, 1.0), 0.55)
+	_spawn_proc_fx("ring", fissure.position, 118.0, Color(0.55, 0.90, 1.0), 0.48)
+	for i in 4:
+		_spawn_coin(fissure.position + Vector2.from_angle(TAU * float(i) / 4.0) * 24.0, 2)
+	_event_banner("❄ 용암 균열 봉인 %d/%d%s" % [
+		hell_fissures_sealed, HELL_FISSURE_REQUIRED,
+		" — 최종 보스 갑옷 약화!" if hell_fissures_sealed == HELL_FISSURE_REQUIRED else ""])
+	play_sfx("levelup", -8.0)
+
+
+func _hell_objective_damage_multiplier() -> float:
+	return 1.35 if _has_gear_special("riftbreaker") else 1.0
+
+
+func _hell_incoming_damage_multiplier() -> float:
+	return 0.72 if _has_gear_special("cinderward") else 1.0
+
+
+func apply_hell_hazard_damage(amount: float, source: Vector2, danger_radius: float) -> bool:
+	if player == null or player.invuln > 0.0 or player.position.distance_to(source) > danger_radius:
+		return false
+	var damage := maxf(1.0, amount * _hell_incoming_damage_multiplier() - player.armor)
+	apply_player_damage(damage)
+	player.invuln = 0.62
+	player.play_hurt()
+	play_sfx("hurt", -8.0, 0.28)
+	shake_t = maxf(shake_t, 0.14)
+	return true
+
+
+func apply_hell_boss_damage(amount: float, source: Vector2) -> bool:
+	if player == null or player.invuln > 0.0:
+		return false
+	var damage := maxf(1.0, amount * _hell_incoming_damage_multiplier() - player.armor)
+	apply_player_damage(damage)
+	player.invuln = 0.72
+	player.play_hurt()
+	play_sfx("hurt", -7.0, 0.25)
+	shake_t = maxf(shake_t, 0.20)
+	_spawn_proc_fx("burst", player.position, 42.0, Color(1.0, 0.32, 0.08), 0.24,
+		(player.position - source).normalized())
+	return true
+
+
+func hell_boss_slam(origin: Vector2, radius: float, damage: float) -> void:
+	_spawn_proc_fx("ring", origin, radius, Color(1.0, 0.25, 0.05), 0.46)
+	_spawn_proc_fx("burst", origin, radius * 0.48, Color(1.0, 0.68, 0.14), 0.34)
+	spawn_fx("fx_quake_spike", origin, radius * 1.15)
+	shake_t = maxf(shake_t, 0.28)
+	if player and player.position.distance_to(origin) <= radius + player.radius:
+		apply_hell_boss_damage(damage, origin)
+
+
+func spawn_hell_boss_volley(origin: Vector2, count: int, damage: float) -> void:
+	for i in maxi(6, count):
+		var dir := Vector2.from_angle(TAU * float(i) / float(maxi(6, count)))
+		spawn_enemy_arrow(origin + dir * 28.0, dir, damage, false, 255.0, true)
+	_spawn_proc_fx("burst", origin, 72.0, Color(1.0, 0.48, 0.08), 0.34)
+	play_sfx("shoot", -8.0, 0.08)
+
+
+func on_hell_boss_armor_started(cycle: int, armor: float) -> void:
+	_event_banner("🔥 화염 갑옷 %d단계 — 냉기로 파괴!  방어도 %d" % [cycle, int(round(armor))])
+	_flash(Color(1.0, 0.30, 0.05, 0.28))
+	shake_t = maxf(shake_t, 0.24)
+
+
+func on_hell_boss_armor_broken(window: float) -> void:
+	_event_banner("❄ 화염 갑옷 파괴! — %.0f초 집중 공격" % window)
+	_flash(Color(0.50, 0.88, 1.0, 0.36))
+	_slowmo(0.55, 180)
+	shake_t = maxf(shake_t, 0.30)
+	play_sfx("ult", -7.0)
+
+
 func _spawn_boss(forced_key: String = "") -> void:
 	boss_spawned = true
 	play_sfx("boss", -4.0)
@@ -3780,7 +4133,7 @@ func _spawn_boss(forced_key: String = "") -> void:
 		var pool := ["boss_1", "boss_2", "boss_3", "boss_4", "boss_5"]
 		boss.key = pool[randi() % pool.size()]
 	boss.position = player.position + Vector2(0, -280)
-	boss.max_hp = (850.0 + level * 95.0) * diff_enemy_hp
+	boss.max_hp = (850.0 + level * 95.0) * diff_enemy_hp * _expedition_floor_pressure()
 	boss.hp = boss.max_hp
 	boss.move_speed = (58.0 + stage_num * 4.0) * diff_enemy_speed
 	add_child(boss)
@@ -3799,11 +4152,27 @@ func _spawn_dungeon_boss() -> void:
 	_boss_is_objective = true
 	if boss and is_instance_valid(boss):
 		boss.weak = str(GameConfig.stage_info(map_stage).get("boss_weak", ""))
-		boss.max_hp *= 1.6   # 목표 보스는 더 단단하게 (던전 클라이맥스)
+		# 최종층은 원정 전체 빌드를 검증하므로 중간층보다 한 단계 더 단단하다.
+		boss.max_hp *= 1.9 if expedition_active and expedition_floor >= EXPEDITION_FLOORS else 1.6
 		boss.hp = boss.max_hp
+		if map_stage == HELL_STAGE:
+			var unsealed := maxi(0, HELL_FISSURE_REQUIRED - hell_fissures_sealed)
+			for fissure in get_tree().get_nodes_in_group("hell_fissures"):
+				if is_instance_valid(fissure) and fissure.has_method("absorb_without_reward"):
+					fissure.absorb_without_reward()
+			boss.attack_damage = (24.0 + stage_num * 2.5) \
+				* sqrt(diff_enemy_hp * _expedition_floor_pressure())
+			boss.configure_hell_final(unsealed)
 	var wk := str(GameConfig.stage_info(map_stage).get("boss_weak", ""))
 	var hint := "  (약점: %s)" % str(ELEMENT_NAME.get(wk, "")) if wk != "" else ""
-	_event_banner("⚠ 던전 보스 출현! — 처치하면 클리어%s" % hint)
+	var final_prefix := "최종 " if expedition_active and expedition_floor >= EXPEDITION_FLOORS else ""
+	if map_stage == HELL_STAGE:
+		var unsealed_count := maxi(0, HELL_FISSURE_REQUIRED - hell_fissures_sealed)
+		var penalty := " · 미봉인 %d개로 갑옷 강화" % unsealed_count if unsealed_count > 0 else " · 모든 균열 봉인 완료"
+		_event_banner("⚠ %s화염 군주 출현! — 예고 공격 회피 · 갑옷 파괴%s%s" % [
+			final_prefix, hint, penalty])
+	else:
+		_event_banner("⚠ %s던전 보스 출현! — 처치하면 전리품%s" % [final_prefix, hint])
 
 
 const GEM_CAP := 120   # 젬 노드 상한 (성능). 초과 XP는 가까운 젬 병합/먼 젬 재활용으로 총량 유지.
@@ -4010,12 +4379,14 @@ func apply_player_damage(amount: float) -> float:
 
 
 # 사수 몬스터 투사체 (#27)
-func spawn_enemy_arrow(pos: Vector2, dir: Vector2, dmg: float, chill: bool) -> void:
+func spawn_enemy_arrow(pos: Vector2, dir: Vector2, dmg: float, chill: bool,
+		speed: float = 220.0, fire: bool = false) -> void:
 	var ea := EnemyArrow.new()
 	ea.position = pos
-	ea.velocity = dir * 220.0
+	ea.velocity = dir * speed
 	ea.damage = dmg
 	ea.chill = chill
+	ea.fire = fire
 	add_child(ea)
 	play_sfx("hit", -22.0, 0.15)
 
@@ -4031,6 +4402,7 @@ const DEATH_FX := {
 	"ice_wisp": "fx_death_ice", "frost_golem": "fx_death_ice",
 	# 신규 몹 5종 (스테이지 테마)
 	"ghoul": "fx_death_blood", "lava_toad": "fx_death_ember",
+	"ember_stalker": "fx_death_ember", "hell_enforcer": "fx_death_ember",
 	"frost_spider": "fx_death_ice", "eye_mass": "fx_death_soul", "cultist": "fx_death_blood",
 }
 func _death_fx_for(key: String) -> String:
@@ -4043,6 +4415,17 @@ func on_enemy_killed(e: Enemy) -> void:
 	ult_gauge = minf(1.0, ult_gauge + (0.05 if e.elite else 0.008))
 	_refresh_ult_bar()
 	_maybe_drop_gear(e.position, e.elite)   # 장비 드롭 (엘리트 확정급, 일반 저확률)
+	if e.midboss:
+		hell_midboss_alive = false
+		hell_midboss_defeated = true
+		run_gold += 30
+		_spawn_gear_pickup(e.position, _roll_hell_gear(true))
+		if player:
+			player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.22)
+		_event_banner("◆ 용암 집행자 격파! — 지옥 전용 장비 획득")
+		_flash(Color(1.0, 0.64, 0.18, 0.42))
+		_slowmo(0.45, 220)
+		shake_t = maxf(shake_t, 0.30)
 	var enemy_key := str(e.tier.get("key", "unknown"))
 	var enemy_kills: Dictionary = meta.get_or_add("enemy_kills", {})
 	enemy_kills[enemy_key] = int(enemy_kills.get(enemy_key, 0)) + 1
@@ -4210,30 +4593,176 @@ func on_breakable_destroyed(b) -> void:
 		add_child(p)
 
 
+func _roll_boss_reward(stage: int, force_epic: bool) -> Dictionary:
+	if stage == HELL_STAGE:
+		return _roll_hell_gear(force_epic)
+	var slot: String = EQUIP_SLOTS[randi() % EQUIP_SLOTS.size()]
+	var rarity := "epic" if force_epic else _roll_rarity(diff_rarity_luck + 1.5)
+	return _roll_gear_for(slot, rarity)
+
+
+func _award_boss_fragments(stage: int, final_floor: bool) -> void:
+	var fragment: Dictionary = ExpeditionRulesScript.boss_fragment(stage)
+	var key := str(fragment["key"])
+	var amount := ExpeditionRulesScript.fragment_reward(
+		EXPEDITION_FLOORS if final_floor else expedition_floor)
+	run_boss_fragments[key] = int(run_boss_fragments.get(key, 0)) + amount
+	_event_banner("◆ %s +%d · 에픽 장비 확보" % [str(fragment["name"]), amount])
+
+
+func _open_expedition_route() -> void:
+	if not expedition_active or expedition_floor >= EXPEDITION_FLOORS:
+		return
+	expedition_pending_routes = ExpeditionRulesScript.route_options(map_stage, expedition_floor)
+	if expedition_pending_routes.is_empty():
+		return
+	state = State.ROUTE
+	get_tree().paused = true
+	if expedition_route_panel:
+		expedition_route_panel.visible = true
+	_refresh_expedition_route_panel()
+
+
+func _choose_expedition_route(route_index: int) -> void:
+	if state != State.ROUTE or route_index < 0 or route_index >= expedition_pending_routes.size():
+		return
+	var route: Dictionary = expedition_pending_routes[route_index]
+	var node_key := str(route["key"])
+	if not _apply_expedition_node(node_key):
+		_refresh_expedition_route_panel()
+		return
+	expedition_route_history.append(node_key)
+	expedition_floor += 1
+	var target_stage := int(route["target_stage"])
+	expedition_stage_history.append(target_stage)
+	if expedition_route_panel:
+		expedition_route_panel.visible = false
+	_transition_to_expedition_floor(target_stage)
+
+
+func _apply_expedition_node(node_key: String) -> bool:
+	match node_key:
+		"camp":
+			if player:
+				player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.45)
+			_award_stat_points(1)
+			expedition_last_node_result = "캠프: 체력 45% 회복 · 능력치 포인트 +1"
+		"merchant":
+			var cost := ExpeditionRulesScript.MERCHANT_COST
+			if run_gold < cost:
+				expedition_last_node_result = "상인: 골드가 부족합니다."
+				return false
+			run_gold -= cost
+			var rarity := ExpeditionRulesScript.merchant_rarity(expedition_floor)
+			var slot: String = EQUIP_SLOTS[randi() % EQUIP_SLOTS.size()]
+			inventory.append(_roll_gear_for(slot, rarity))
+			expedition_last_node_result = "상인: %d G 지불 · %s 장비 확보" % [
+				cost, "에픽" if rarity == "epic" else "레어"]
+		"event":
+			if player:
+				var sacrifice := player.max_hp * 0.18
+				player.hp = maxf(1.0, player.hp - sacrifice)
+			var event_slot: String = EQUIP_SLOTS[randi() % EQUIP_SLOTS.size()]
+			inventory.append(_roll_gear_for(event_slot, "epic"))
+			run_gold += 70
+			expedition_last_node_result = "저주받은 제단: 체력 희생 · 에픽 장비 · 70 G"
+		_:
+			return false
+	play_sfx("select", -9.0)
+	return true
+
+
+func _clear_floor_runtime() -> void:
+	var groups := [
+		"enemies", "boss", "arrows", "enemy_arrows", "pickups", "landmarks",
+		"breakables", "gems", "coins", "hazards", "hell_fissures",
+		"hell_objectives", "voidzones", "effects", "floor_runtime",
+	]
+	var queued := {}
+	for group_name in groups:
+		for node in get_tree().get_nodes_in_group(group_name):
+			if not is_instance_valid(node) or queued.has(node):
+				continue
+			queued[node] = true
+			node.process_mode = Node.PROCESS_MODE_DISABLED
+			node.queue_free()
+
+
+func _reset_hell_floor_state() -> void:
+	hell_fissures_spawned = 0
+	hell_fissures_sealed = 0
+	hell_midboss_spawned = false
+	hell_midboss_alive = false
+	hell_midboss_defeated = false
+	hell_boss_wait_warned = false
+
+
+func _transition_to_expedition_floor(target_stage: int) -> void:
+	_clear_floor_runtime()
+	boss = null
+	boss_spawned = false
+	_boss_is_objective = false
+	reaper_warned = false
+	_reset_hell_floor_state()
+	if not _prepare_stage(target_stage):
+		push_error("Expedition floor failed to initialize: %d" % target_stage)
+	stage_num = map_stage
+	expedition_floor_started_at = time_survived
+	_wave_minute = -1
+	_current_wave = {}
+	featured_enemy = ""
+	spawn_timer = 0.8
+	pickup_timer = 10.0
+	breakable_timer = 6.0
+	if player:
+		player.position = stage_layout.nearest_walkable(WORLD * 0.5, player.radius)
+		player.invuln = 2.0
+	_spawn_stage_landmarks()
+	_scatter_pickups(int(3 + 5 * diff_loot))
+	var stage_breakables := int(GameConfig.stage_spawn_profile(map_stage).get("breakables", 4))
+	_scatter_breakables(stage_breakables)
+	_gen_decorations()
+	if stage_label:
+		stage_label.text = "[%d/%d층]  %s\n%s" % [
+			expedition_floor, EXPEDITION_FLOORS,
+			str(GameConfig.stage_info(map_stage)["name"]), expedition_last_node_result]
+		stage_label.visible = true
+		stage_banner_t = 3.4
+	state = State.PLAYING
+	get_tree().paused = false
+	_refresh_inventory_ui()
+	_update_ui()
+
+
 func on_boss_killed() -> void:
-	# 던전 목표 보스 처치 = 던전 클리어 (B블렌드 승리조건)
+	# M4 던전 목표 보스: 1·2층은 경로 선택으로, 3층은 전리품 추출로 이어진다.
 	if _boss_is_objective:
 		_boss_is_objective = false
-		var bpos: Vector2 = boss.position if (boss and is_instance_valid(boss)) else player.position
+		var cleared_stage := map_stage
 		boss = null
 		boss_spawned = false
 		run_bosses += 1
-		# 클리어 보상: 확정 장비 2개(_found → 런 종료 시 보관함행) + 골드
-		inventory.append(_roll_gear())
-		inventory.append(_roll_gear())
-		run_gold += 40 * map_stage
-		# M4 훅: 다중층 원정에서 '중간 층 클리어'는 여기서 _award_stat_points(층 보상)를 준다.
-		#   지금은 단일층=목표 보스 처치가 곧 런 종료라 지급해도 리셋되므로 생략.
-		# 다음 던전 해금
-		if not cheated and map_stage >= int(meta.get("stage_unlocked", 1)) and map_stage < FINAL_STAGE:
-			meta["stage_unlocked"] = map_stage + 1
+		var final_floor := not expedition_active or expedition_floor >= EXPEDITION_FLOORS
+		# 모든 층 보스는 에픽 장비를 확정한다. 최종 보스는 추출 후보를 하나 더 준다.
+		inventory.append(_roll_boss_reward(cleared_stage, true))
+		if final_floor:
+			inventory.append(_roll_boss_reward(cleared_stage, false))
+		run_gold += 40 * cleared_stage
+		_award_boss_fragments(cleared_stage, final_floor)
 		_slowmo(0.4, 360)
 		_flash(Color(1.0, 0.9, 0.6, 0.5))
 		shake_t = max(shake_t, 0.35)
+		if expedition_active and not final_floor:
+			_award_stat_points(ExpeditionRulesScript.FLOOR_CLEAR_STAT_POINTS)
+			# deferred UI가 열리기 전 다음 프레임에 같은 보스가 재소환되지 않도록
+			# 전투 상태부터 즉시 닫는다.
+			state = State.ROUTE
+			call_deferred("_open_expedition_route")
+			return
 		if state == State.PLAYING:
 			state = State.VICTORY
 			get_tree().paused = true
-			_show_end("⚔ 던전 클리어! — %s 정복" % str(GameConfig.stage_info(map_stage)["name"]), true)
+			_show_end("⚔ 원정 완료! — 3층 최종 보스 격파", true)
 		return
 	run_gold += 15 * stage_num   # 보스 보상
 	# 보스 = 장비 전리품 확정 2개
@@ -4511,6 +5040,22 @@ const GEAR_AFFIX_COUNT := {"common": 1, "rare": 1, "epic": 2, "legendary": 3}
 const GEAR_POWER := {"common": 1.0, "rare": 1.5, "epic": 2.2, "legendary": 3.2}
 const RARITY_TAG := {"common": "", "rare": "[레어]", "epic": "◆에픽◆", "legendary": "★레전더리★"}
 
+# M3 지옥 전용 장비 효과. 순수 공격력 영구 누적 대신 지옥의 규칙을 다루는 유틸리티다.
+const HELL_GEAR_SPECIALS := {
+	"weapon": {
+		"key": "riftbreaker", "name": "균열 파쇄",
+		"desc": "용암 균열과 화염 갑옷에 주는 파괴 피해 +35%",
+	},
+	"armor": {
+		"key": "cinderward", "name": "잿불 수호",
+		"desc": "용암 균열·화염 군주 패턴 피해 -28%",
+	},
+	"trinket": {
+		"key": "sealkeeper", "name": "봉인의 메아리",
+		"desc": "균열 봉인 시 체력 8% 추가 회복·E 재사용 2.5초 단축",
+	},
+}
+
 # Phase 5 대장간: 장비 하나당 최대 5회, 강화마다 모든 어픽스가 +12%씩 강해진다.
 # 런 골드가 초반 영구 강화와 함께 자연스럽게 소모되도록 등급별 비용을 별도로 둔다.
 const FORGE_MAX_LEVEL := 5
@@ -4523,6 +5068,14 @@ const FORGE_SALVAGE_BASE := {"common": 5, "rare": 12, "epic": 28, "legendary": 6
 func _roll_gear() -> Dictionary:
 	var slot: String = EQUIP_SLOTS[randi() % EQUIP_SLOTS.size()]
 	var rarity := _roll_rarity(diff_rarity_luck)
+	return _roll_gear_for(slot, rarity)
+
+
+func _roll_gear_for(slot: String, rarity: String) -> Dictionary:
+	if not slot in EQUIP_SLOTS:
+		slot = "trinket"
+	if not RARITY_ORDER.has(rarity):
+		rarity = "common"
 	var pool: Array = GEAR_AFFIXES.duplicate()
 	pool.shuffle()
 	var affs: Array = []
@@ -4537,6 +5090,29 @@ func _roll_gear() -> Dictionary:
 	# element: 접두어에서 결정. 무기 슬롯이면 이 속성이 곧 내 공격 속성.
 	# weapon_kind: 무기 슬롯이면 실제 전투 무기 키 (주무기 대체). 다른 슬롯은 "".
 	return {"slot": slot, "rarity": rarity, "affixes": affs, "name": nm, "icon": GEAR_NOUN_ICON.get(noun, ""), "element": GEAR_ADJ_ELEMENT.get(adj, "phys"), "weapon_kind": GEAR_NOUN_ATTACK.get(noun, ""), "_found": true, "gear_id": _new_gear_id(), "lvl": 0}
+
+
+func _roll_hell_gear(force_epic: bool = false, slot_override: String = "") -> Dictionary:
+	var slot := slot_override if slot_override in EQUIP_SLOTS else str(EQUIP_SLOTS[randi() % EQUIP_SLOTS.size()])
+	var rarity := _roll_rarity(diff_rarity_luck + 2.0)
+	if int(RARITY_ORDER.get(rarity, 1)) < 2:
+		rarity = "rare"
+	if force_epic and int(RARITY_ORDER.get(rarity, 1)) < 3:
+		rarity = "epic"
+	var item := _roll_gear_for(slot, rarity)
+	item["dungeon_tag"] = "hell"
+	item["special"] = (HELL_GEAR_SPECIALS[slot] as Dictionary).duplicate(true)
+	item["name"] = "지옥벼림 %s" % str(item["name"])
+	return item
+
+
+func _has_gear_special(key: String) -> bool:
+	for slot in EQUIP_SLOTS:
+		var item: Dictionary = equipped.get(slot, {})
+		var special = item.get("special", {})
+		if special is Dictionary and str((special as Dictionary).get("key", "")) == key:
+			return true
+	return false
 
 
 # 처치 지점에서 확률적으로 장비 드롭 (엘리트/보스는 높게)
@@ -4799,6 +5375,15 @@ func _gear_slot_text(it: Dictionary) -> String:
 	return "%s %s%s" % [str(RARITY_TAG.get(str(it.get("rarity", "")), "")), str(it.get("name", "장비")), forge_tag]
 
 
+func _gear_affix_value_text(affix: Dictionary) -> String:
+	var value := float(affix.get("value", 0.0))
+	if bool(affix.get("pct", false)):
+		return "%d%%" % round(value * 100.0)
+	if is_equal_approx(value, round(value)):
+		return "%d" % round(value)
+	return "%.1f" % value
+
+
 func _gear_detail_text(it: Dictionary) -> String:
 	if it.is_empty():
 		return "비어 있음"
@@ -4807,6 +5392,8 @@ func _gear_detail_text(it: Dictionary) -> String:
 		"%s %s%s" % [str(RARITY_TAG.get(str(it.get("rarity", "")), "")), str(it.get("name", "장비")), forge_tag],
 		"%s" % str(EQUIP_SLOT_NAME.get(str(it.get("slot", "")), "장비")),
 	]
+	if bool(it.get("boss_crafted", false)):
+		lines.append("◆ 보스 파편 제작 장비")
 	if str(it.get("slot", "")) == "weapon":
 		var weapon_kind := str(it.get("weapon_kind", ""))
 		var active_def := _weapon_active_def_for_kind(weapon_kind)
@@ -4824,8 +5411,13 @@ func _gear_detail_text(it: Dictionary) -> String:
 		if not (raw_affix is Dictionary):
 			continue
 		var affix := raw_affix as Dictionary
-		var value_text := "%d%%" % round(float(affix.get("value", 0.0)) * 100.0) if bool(affix.get("pct", false)) else "%d" % round(float(affix.get("value", 0.0)))
+		var value_text := _gear_affix_value_text(affix)
 		lines.append("• %s +%s" % [str(affix.get("name", "효과")), value_text])
+	var special = it.get("special", {})
+	if special is Dictionary and not (special as Dictionary).is_empty():
+		lines.append("")
+		lines.append("◆ [지옥 전용] %s" % str((special as Dictionary).get("name", "특수 효과")))
+		lines.append(str((special as Dictionary).get("desc", "")))
 	return "\n".join(lines)
 
 
@@ -4949,7 +5541,7 @@ func _gear_line(it: Dictionary) -> String:
 		return "—"
 	var parts: Array = []
 	for a in it["affixes"]:
-		var vs := ("%d%%" % round(float(a["value"]) * 100.0)) if bool(a["pct"]) else ("%d" % round(float(a["value"])))
+		var vs := _gear_affix_value_text(a)
 		parts.append("%s+%s" % [str(a["name"]), vs])
 	var lv := _gear_level(it)
 	var forge_tag := " +%d" % lv if lv > 0 else ""
@@ -4998,6 +5590,7 @@ func _normalize_persistent_gear(it: Dictionary) -> Dictionary:
 	if str(normalized.get("gear_id", "")).begins_with("active-preview-"):
 		return {}
 	normalized.erase("_found")
+	normalized.erase("_extract_keep")
 	var lv := _gear_level(normalized)
 	normalized["lvl"] = lv
 	if str(normalized.get("gear_id", "")).is_empty():
@@ -5091,6 +5684,151 @@ func _forge_salvage_value(it: Dictionary) -> int:
 	return value
 
 
+func _run_found_gear() -> Array:
+	var found: Array = []
+	var seen_ids := {}
+	for slot in EQUIP_SLOTS:
+		var equipped_item: Dictionary = equipped.get(slot, {})
+		if not bool(equipped_item.get("_found", false)):
+			continue
+		var equipped_id := str(equipped_item.get("gear_id", ""))
+		if equipped_id != "" and not seen_ids.has(equipped_id):
+			seen_ids[equipped_id] = true
+			found.append(equipped_item)
+	for raw_item in inventory:
+		if not (raw_item is Dictionary):
+			continue
+		var inventory_item := raw_item as Dictionary
+		if not bool(inventory_item.get("_found", false)):
+			continue
+		var inventory_id := str(inventory_item.get("gear_id", ""))
+		if inventory_id == "" or seen_ids.has(inventory_id):
+			continue
+		seen_ids[inventory_id] = true
+		found.append(inventory_item)
+	return found
+
+
+func _gear_extraction_score(it: Dictionary) -> float:
+	var score := float(RARITY_ORDER.get(str(it.get("rarity", "")), 0)) * 100000.0
+	score += float(_gear_level(it)) * 1000.0
+	for affix in it.get("affixes", []):
+		score += absf(float(affix.get("value", 0.0)))
+	return score
+
+
+func _sorted_extraction_candidates() -> Array:
+	var candidates := _run_found_gear()
+	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return _gear_extraction_score(a) > _gear_extraction_score(b))
+	return candidates
+
+
+func _resolve_expedition_loot(selected_ids: Dictionary, won: bool) -> void:
+	if expedition_loot_resolved:
+		return
+	var candidates := _sorted_extraction_candidates()
+	var keep_limit := ExpeditionRulesScript.extraction_limit(won)
+	var keep_ids := {}
+	# 사망 시에는 별도 선택 화면 없이 최고 가치 장비부터 보험 처리한다.
+	if not won and selected_ids.is_empty():
+		for item in candidates:
+			if keep_ids.size() >= keep_limit:
+				break
+			keep_ids[str(item.get("gear_id", ""))] = true
+	else:
+		for item in candidates:
+			var gear_id := str(item.get("gear_id", ""))
+			if selected_ids.has(gear_id) and keep_ids.size() < keep_limit:
+				keep_ids[gear_id] = true
+	extracted_gear_count = 0
+	auto_salvage_gold = 0
+	for slot in EQUIP_SLOTS:
+		var equipped_item: Dictionary = equipped.get(slot, {})
+		if not bool(equipped_item.get("_found", false)):
+			continue
+		var equipped_id := str(equipped_item.get("gear_id", ""))
+		equipped_item["_extract_keep"] = keep_ids.has(equipped_id)
+		equipped[slot] = equipped_item
+	for i in range(inventory.size()):
+		if not (inventory[i] is Dictionary):
+			continue
+		var inventory_item := inventory[i] as Dictionary
+		if not bool(inventory_item.get("_found", false)):
+			continue
+		var inventory_id := str(inventory_item.get("gear_id", ""))
+		inventory_item["_extract_keep"] = keep_ids.has(inventory_id)
+		inventory[i] = inventory_item
+	for item in candidates:
+		if keep_ids.has(str(item.get("gear_id", ""))):
+			extracted_gear_count += 1
+		else:
+			auto_salvage_gold += _forge_salvage_value(item)
+	run_gold += auto_salvage_gold
+	expedition_loot_resolved = true
+
+
+func _begin_extraction(title: String, win: bool) -> bool:
+	extraction_candidates = _sorted_extraction_candidates()
+	if extraction_candidates.is_empty():
+		_resolve_expedition_loot({}, win)
+		return false
+	_pending_end_title = title
+	_pending_end_win = win
+	extraction_limit = mini(
+		ExpeditionRulesScript.extraction_limit(win), extraction_candidates.size())
+	extraction_selected_ids = {}
+	state = State.EXTRACTION
+	get_tree().paused = true
+	if extraction_panel == null:
+		_resolve_expedition_loot({}, win)
+		return false
+	extraction_panel.visible = true
+	_refresh_extraction_panel()
+	return true
+
+
+func _toggle_extraction_item(gear_id: String) -> void:
+	if state != State.EXTRACTION:
+		return
+	if extraction_selected_ids.has(gear_id):
+		extraction_selected_ids.erase(gear_id)
+	elif extraction_selected_ids.size() < extraction_limit:
+		extraction_selected_ids[gear_id] = true
+	_refresh_extraction_panel()
+
+
+func _confirm_extraction() -> void:
+	if state != State.EXTRACTION or extraction_selected_ids.size() != extraction_limit:
+		return
+	if extraction_panel:
+		extraction_panel.visible = false
+	_resolve_expedition_loot(extraction_selected_ids, _pending_end_win)
+	state = State.VICTORY if _pending_end_win else State.GAMEOVER
+	_show_end(_pending_end_title, _pending_end_win)
+
+
+func _total_boss_fragments(source: Dictionary) -> int:
+	var total := 0
+	for amount in source.values():
+		total += maxi(0, int(amount))
+	return total
+
+
+func _bank_run_boss_fragments() -> int:
+	if expedition_fragments_banked:
+		return 0
+	var stored: Dictionary = meta.get_or_add("boss_fragments", {})
+	var banked := 0
+	for key in run_boss_fragments.keys():
+		var amount := maxi(0, int(run_boss_fragments[key]))
+		stored[str(key)] = int(stored.get(str(key), 0)) + amount
+		banked += amount
+	meta["boss_fragments"] = stored
+	expedition_fragments_banked = true
+	return banked
+
+
 # _found 표식이 있는 장비만 런 종료 시 영구 보관한다. 표식은 런타임 장비에서도 제거해
 # 30분 승리 뒤 심연 모드로 이어가도 같은 아이템이 두 번 보관되지 않게 한다.
 func _bank_found_gear() -> int:
@@ -5101,6 +5839,9 @@ func _bank_found_gear() -> int:
 		var equipped_item: Dictionary = equipped.get(slot, {})
 		if not bool(equipped_item.get("_found", false)):
 			continue
+		if expedition_active and expedition_loot_resolved \
+				and not bool(equipped_item.get("_extract_keep", false)):
+			continue
 		var saved := _normalize_persistent_gear(equipped_item)
 		if saved.is_empty():
 			continue
@@ -5110,6 +5851,7 @@ func _bank_found_gear() -> int:
 		else:
 			stash[equipped_idx] = saved
 		equipped_item.erase("_found")
+		equipped_item.erase("_extract_keep")
 		equipped_item["gear_id"] = saved["gear_id"]
 		equipped_item["lvl"] = saved["lvl"]
 		equipped_item["affixes"] = (saved["affixes"] as Array).duplicate(true)
@@ -5118,6 +5860,9 @@ func _bank_found_gear() -> int:
 	for i in range(inventory.size()):
 		var inventory_item: Dictionary = inventory[i]
 		if not bool(inventory_item.get("_found", false)):
+			continue
+		if expedition_active and expedition_loot_resolved \
+				and not bool(inventory_item.get("_extract_keep", false)):
 			continue
 		var saved := _normalize_persistent_gear(inventory_item)
 		if saved.is_empty():
@@ -5128,6 +5873,7 @@ func _bank_found_gear() -> int:
 		else:
 			stash[inventory_idx] = saved
 		inventory_item.erase("_found")
+		inventory_item.erase("_extract_keep")
 		inventory_item["gear_id"] = saved["gear_id"]
 		inventory_item["lvl"] = saved["lvl"]
 		inventory_item["affixes"] = (saved["affixes"] as Array).duplicate(true)
@@ -5164,12 +5910,54 @@ func _forge_item_equipped(it: Dictionary) -> bool:
 	return current is Dictionary and _same_gear(current as Dictionary, it)
 
 
+func _consume_boss_fragments(amount: int) -> bool:
+	var fragments: Dictionary = meta.get_or_add("boss_fragments", {})
+	if amount <= 0 or _total_boss_fragments(fragments) < amount:
+		return false
+	var remaining := amount
+	var keys: Array = fragments.keys()
+	keys.sort_custom(func(a, b) -> bool:
+		return int(fragments[a]) > int(fragments[b]))
+	for key in keys:
+		if remaining <= 0:
+			break
+		var spend := mini(remaining, maxi(0, int(fragments[key])))
+		fragments[key] = int(fragments[key]) - spend
+		remaining -= spend
+	meta["boss_fragments"] = fragments
+	return remaining == 0
+
+
+func _forge_craft_boss_gear() -> void:
+	var cost := ExpeditionRulesScript.BOSS_CRAFT_COST
+	if not _consume_boss_fragments(cost):
+		return
+	var slot: String = EQUIP_SLOTS[randi() % EQUIP_SLOTS.size()]
+	var crafted := _roll_gear_for(slot, "epic")
+	crafted["name"] = "정복자의 %s" % str(crafted.get("name", "장비"))
+	crafted["boss_crafted"] = true
+	crafted = _normalize_persistent_gear(crafted)
+	var stash: Array = meta.get_or_add("stash", [])
+	stash.append(crafted)
+	meta["stash"] = stash
+	_forge_sel = stash.size() - 1
+	Meta.save_data(meta)
+	play_sfx("levelup", -7.0)
+	_refresh_forge()
+
+
 func _refresh_forge() -> void:
 	if forge_panel == null:
 		return
 	_ensure_gear_meta()
 	var stash: Array = meta["stash"]
-	forge_gold_label.text = "보유 골드 %d G  ·  장착 장비는 다음 런부터 적용" % int(meta.get("gold", 0))
+	var fragment_total := _total_boss_fragments(meta.get("boss_fragments", {}))
+	forge_gold_label.text = "보유 골드 %d G  ·  보스 파편 %d개  ·  장착 장비는 다음 런부터 적용" % [
+		int(meta.get("gold", 0)), fragment_total]
+	if forge_craft_btn:
+		forge_craft_btn.disabled = fragment_total < ExpeditionRulesScript.BOSS_CRAFT_COST
+		forge_craft_btn.text = "파편 제작 (%d/%d)" % [
+			fragment_total, ExpeditionRulesScript.BOSS_CRAFT_COST]
 	if forge_stash_label:
 		forge_stash_label.text = "[ 보관함 ]  %d개" % stash.size()
 	for child in forge_loadout_box.get_children():
@@ -5646,7 +6434,14 @@ func _stat_row(box: GridContainer, icon_path: String, sname: String, value: Stri
 	vl.add_theme_font_size_override("font_size", 14)
 	vl.add_theme_constant_override("outline_size", 3)
 	vl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
-	vl.add_theme_color_override("font_color", Color(0.55, 0.55, 0.62) if value == "-" else Color(1.0, 0.9, 0.55))
+	var value_color := Color(1.0, 0.9, 0.55)
+	if value in ["-", "기본", "±0%"]:
+		value_color = Color(0.58, 0.60, 0.68)
+	elif value.begins_with("+"):
+		value_color = Color(0.52, 0.94, 0.66)
+	elif value.begins_with("-"):
+		value_color = Color(1.0, 0.55, 0.52)
+	vl.add_theme_color_override("font_color", value_color)
 	vl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(vl)
 
@@ -6559,8 +7354,8 @@ func _apply_relic_set_effects() -> void:
 		greed_mult *= 1.12
 
 
-func _prepare_selected_stage() -> bool:
-	map_stage = clampi(sel_stage, 1, FINAL_STAGE)
+func _prepare_stage(stage_id: int) -> bool:
+	map_stage = clampi(stage_id, 1, FINAL_STAGE)
 	stage_layout = StageLayoutData.make(map_stage, Color(GameConfig.stage_info(map_stage)["tint"]))
 	# 톤 보정은 렌더러 안에서 경계 타일에만 굽는다. 채움 팩은 이미 어두워 보정하면 뭉개진다.
 	stage_map_texture = StageTiles.build(stage_layout, map_stage, WORLD,
@@ -6568,6 +7363,20 @@ func _prepare_selected_stage() -> bool:
 	if player:
 		player.stage_layout = stage_layout
 	return stage_layout != null and int(stage_layout.stage_id) == map_stage and stage_map_texture != null
+
+
+func _prepare_selected_stage() -> bool:
+	return _prepare_stage(sel_stage)
+
+
+func _dungeon_elapsed() -> float:
+	if expedition_active:
+		return maxf(0.0, time_survived - expedition_floor_started_at)
+	return time_survived
+
+
+func _expedition_floor_pressure() -> float:
+	return ExpeditionRulesScript.floor_pressure(expedition_floor) if expedition_active else 1.0
 
 
 func _apply_difficulty_profile(d: Dictionary) -> void:
@@ -6588,6 +7397,26 @@ func _start_game(d: Dictionary) -> void:
 	if not _prepare_selected_stage():
 		push_error("Selected stage failed to initialize: %d" % sel_stage)
 	decorations.clear()
+	expedition_active = map_stage > 0
+	expedition_floor = 1
+	expedition_floor_started_at = 0.0
+	expedition_start_stage = map_stage
+	expedition_stage_history.clear()
+	if expedition_active:
+		expedition_stage_history.append(map_stage)
+	expedition_route_history.clear()
+	expedition_pending_routes = []
+	expedition_last_node_result = ""
+	run_boss_fragments = {}
+	expedition_loot_resolved = false
+	expedition_fragments_banked = false
+	extraction_candidates = []
+	extraction_selected_ids = {}
+	extraction_limit = 0
+	extracted_gear_count = 0
+	auto_salvage_gold = 0
+	_pending_end_title = ""
+	_pending_end_win = false
 	# 던전 모드: 선택 던전 번호를 난이도 티어로 고정(빙하=3층 몹 등). 캠페인/심연은 1에서 시작.
 	stage_num = map_stage if map_stage > 0 else 1
 	_apply_difficulty_profile(d)
@@ -6690,6 +7519,12 @@ func _start_game(d: Dictionary) -> void:
 	mastery_picks = {}   # M2: 이번 런 숙련 갈림길 미선택 상태로 초기화
 	reaper_warned = false
 	_boss_is_objective = false
+	hell_fissures_spawned = 0
+	hell_fissures_sealed = 0
+	hell_midboss_spawned = false
+	hell_midboss_alive = false
+	hell_midboss_defeated = false
+	hell_boss_wait_warned = false
 	# B블렌드: 장착한 무기 장비가 캐릭터 주무기(weapon1)를 대체. 없으면 캐릭터 기본 무기.
 	# (캐릭터 고유 2번째 무기 weapon2는 유지 → 캐릭터 정체성 일부 보존)
 	var gear_wpn := str(equipped.get("weapon", {}).get("weapon_kind", ""))
@@ -6716,7 +7551,8 @@ func _start_game(d: Dictionary) -> void:
 		stage_breakables = int(GameConfig.stage_spawn_profile(map_stage).get("breakables", stage_breakables))
 	_scatter_breakables(stage_breakables)   # stage-dependent initial placement
 	if stage_label and map_stage > 0:
-		stage_label.text = "[%s]  탐험 시작" % str(GameConfig.stage_info(map_stage)["name"])
+		stage_label.text = "[1/%d층]  %s 원정 시작" % [
+			EXPEDITION_FLOORS, str(GameConfig.stage_info(map_stage)["name"])]
 		stage_label.visible = true
 		stage_banner_t = 3.0
 	_apply_char_growth()   # 캐릭터 성장 특성 (Lv1 시점 — per가 1이면 즉시 반영)
@@ -6792,6 +7628,13 @@ func _game_over() -> void:
 
 
 func _show_end(title: String, win: bool) -> void:
+	# 원정 종료는 즉시 모든 장비를 저장하지 않는다. 클리어는 2개를 직접 고르고,
+	# 사망은 최고 가치 1개를 자동 보험 처리한 뒤 나머지를 골드로 분해한다.
+	if expedition_active and not expedition_loot_resolved:
+		if win and _begin_extraction(title, win):
+			return
+		if not expedition_loot_resolved:
+			_resolve_expedition_loot({}, win)
 	# 승리 관련 업적 판정
 	if win:
 		_grant_ach("first_win")
@@ -6812,17 +7655,20 @@ func _show_end(title: String, win: bool) -> void:
 	# 독립 스테이지 클리어 시 다음 맵 해금. 캠페인(0)은 기존 진행을 보존한다.
 	# 치트 런은 해금·기록·골드 전부 미반영 (cheated).
 	var newly_unlocked := 0
-	if win and map_stage > 0 and map_stage < FINAL_STAGE and not cheated:
+	var record_stage := expedition_start_stage if expedition_active else map_stage
+	if win and record_stage > 0 and record_stage < FINAL_STAGE and not cheated:
 		var current_unlock := int(meta.get("stage_unlocked", 1))
-		if current_unlock <= map_stage:
-			newly_unlocked = map_stage + 1
+		if current_unlock <= record_stage:
+			newly_unlocked = record_stage + 1
 			meta["stage_unlocked"] = newly_unlocked
 	# 난이도별 최고 기록을 런 종료 시점에 갱신한다. (치트 런은 표시만 하고 저장하지 않음)
-	var mode_key := "campaign" if map_stage == 0 else "stage_%d" % map_stage
+	var mode_key := ("campaign" if map_stage == 0 else
+		("expedition_%d" % record_stage if expedition_active else "stage_%d" % map_stage))
 	var record_key := "%s|%s" % [mode_key, diff_label if diff_label != "" else "기본"]
 	var records: Dictionary = meta.get_or_add("records", {})
 	var record: Dictionary = records.get(record_key, {})
 	var banked_gear := 0
+	var banked_fragments := 0
 	if not cheated:
 		record["best_time"] = maxf(float(record.get("best_time", 0.0)), time_survived)
 		record["best_kills"] = maxi(int(record.get("best_kills", 0)), kills)
@@ -6834,10 +7680,11 @@ func _show_end(title: String, win: bool) -> void:
 		# 골드 영구 저장 (심연 모드로 이어가도 중복 적립 안 되게 리셋)
 		meta["gold"] = int(meta["gold"]) + run_gold
 		banked_gear = _bank_found_gear()   # 런 중 주운 장비(_found)를 마을 보관함으로 이월
+		banked_fragments = _bank_run_boss_fragments()
 		Meta.save_data(meta)
 	var earned := run_gold if not cheated else 0
 	run_gold = 0
-	abyss_btn.visible = win
+	abyss_btn.visible = win and not expedition_active
 	play_sfx("win" if win else "lose", -6.0)
 	end_title.text = title
 	end_title.add_theme_color_override("font_color", Color(1.0, 0.88, 0.4) if win else Color(0.95, 0.38, 0.38))
@@ -6845,15 +7692,19 @@ func _show_end(title: String, win: bool) -> void:
 	var ss2 := int(time_survived) % 60
 	var best_time := int(float(record.get("best_time", 0.0)))
 	var run_dps := run_damage_dealt / maxf(1.0, time_survived)
-	var mode_name := "5막 캠페인" if map_stage == 0 else str(GameConfig.stage_info(map_stage)["name"])
+	var mode_name := ("5막 캠페인" if map_stage == 0 else
+		("%s 출발 3층 원정" % str(GameConfig.stage_info(record_stage)["name"])
+			if expedition_active else str(GameConfig.stage_info(map_stage)["name"])))
 	var unlock_text := "   ·   다음 맵 해금!" if newly_unlocked > 0 else ""
 	var forge_text := "   ·   대장간 보관 +%d" % banked_gear if banked_gear > 0 else ""
-	end_label.text = "%s   ·   Lv %d   ·   처치 %d\n생존 %02d:%02d   ·   [%s]   ·   골드 +%d%s%s\n총 피해 %d   ·   DPS %.1f   ·   받은 피해 %d\n최고 %02d:%02d   ·   최고 Lv%d   ·   최고 처치 %d   ·   최고 피해 %d   ·   클리어 %d회\n보유 %d G" % [
+	var extraction_text := "   ·   추출 %d   ·   자동분해 +%d G" % [
+		extracted_gear_count, auto_salvage_gold] if expedition_active else ""
+	var fragment_text := "   ·   보스 파편 +%d" % banked_fragments if banked_fragments > 0 else ""
+	end_label.text = "%s   ·   Lv %d   ·   처치 %d\n생존 %02d:%02d   ·   [%s]   ·   골드 +%d%s\n추출 보상%s%s%s\n총 피해 %d   ·   DPS %.1f   ·   받은 피해 %d\n최고 %02d:%02d   ·   최고 Lv%d   ·   클리어 %d회   ·   보유 %d G" % [
 		mode_name, level, kills, mm2, ss2, diff_label, earned, unlock_text,
-		forge_text,
+		extraction_text, fragment_text, forge_text,
 		int(round(run_damage_dealt)), run_dps, int(round(run_damage_taken)),
 		best_time / 60, best_time % 60, int(record.get("best_level", 0)),
-		int(record.get("best_kills", 0)), int(round(float(record.get("best_damage", 0.0)))),
 		int(record.get("clears", 0)), int(meta["gold"])]
 	_populate_end_build()
 	end_panel.visible = true
@@ -7235,6 +8086,13 @@ func _fire_ultimate() -> void:
 	_refresh_ult_bar()
 
 
+func _damage_hell_objectives(center: Vector2, radius: float, damage: float,
+		crit: bool, element: String) -> void:
+	for objective in get_tree().get_nodes_in_group("hell_objectives"):
+		if is_instance_valid(objective) and center.distance_to(objective.position) <= radius + objective.radius:
+			objective.take_damage(damage, crit, false, element)
+
+
 # 비전 폭발: 화면 전역 균등 대형 폭발 (기본형).
 func _ult_blast(base: float, elem: String, col: Color) -> void:
 	for e in get_tree().get_nodes_in_group("enemies"):
@@ -7243,6 +8101,7 @@ func _ult_blast(base: float, elem: String, col: Color) -> void:
 			e.shove(player.position, 260.0)
 	if boss and is_instance_valid(boss):
 		boss.take_damage(base * 4.0, true, elem)
+	_damage_hell_objectives(player.position, 9999.0, base * 2.0, true, elem)
 	_flash(Color(col.r, col.g, col.b, 0.6))
 	shake_t = maxf(shake_t, 0.4)
 	_slowmo(0.4, 260)
@@ -7265,6 +8124,7 @@ func _ult_meteor(base: float, elem: String, col: Color) -> void:
 				e.take_damage(base * 1.4, true, false, elem)
 		if boss and is_instance_valid(boss) and pos.distance_to(boss.position) <= rad:
 			boss.take_damage(base * 1.4, true, elem)
+		_damage_hell_objectives(pos, rad, base * 1.4, true, elem)
 		_spawn_proc_fx("burst", pos, rad, col, 0.4)
 	_flash(Color(col.r, col.g, col.b, 0.4))
 	shake_t = maxf(shake_t, 0.36)
@@ -7278,6 +8138,7 @@ func _ult_blizzard(base: float, elem: String, col: Color) -> void:
 			e.apply_slow(0.7, 4.0)
 	if boss and is_instance_valid(boss):
 		boss.take_damage(base * 3.0, true, elem)
+	_damage_hell_objectives(player.position, 9999.0, base * 1.5, true, elem)
 	_flash(Color(col.r, col.g, col.b, 0.42))
 	shake_t = maxf(shake_t, 0.3)
 	_spawn_proc_fx("ring", player.position, 660.0, col, 0.7)
@@ -7292,6 +8153,7 @@ func _ult_judgment(base: float, elem: String, col: Color) -> void:
 			e.shove(player.position, 200.0)
 	if boss and is_instance_valid(boss):
 		boss.take_damage(base * 3.5, true, elem)
+	_damage_hell_objectives(player.position, 9999.0, base * 1.6, true, elem)
 	player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.3)   # 심판의 가호: 30% 회복
 	_flash(Color(col.r, col.g, col.b, 0.55))
 	shake_t = maxf(shake_t, 0.34)
@@ -7309,6 +8171,7 @@ func _ult_reap(base: float, elem: String, col: Color) -> void:
 			e.shove(player.position, 240.0)
 	if boss and is_instance_valid(boss):
 		boss.take_damage(base * 4.0, true, elem)
+	_damage_hell_objectives(player.position, 9999.0, base * 1.8, true, elem)
 	player.hp = minf(player.max_hp, player.hp + dealt * 0.15)   # 수확 흡혈: 가한 피해의 15% 회복
 	_flash(Color(col.r, col.g, col.b, 0.58))
 	shake_t = maxf(shake_t, 0.4)
@@ -7610,16 +8473,28 @@ func _refresh_stage_selection() -> void:
 	var mob_themes := ["언데드", "화염", "냉기", "공허", "마족"]
 	if map_detail_label:
 		var wk := str(selected_data.get("boss_weak", ""))
-		var weak_hint := "보스 약점: %s" % str(ELEMENT_NAME.get(wk, "")) if wk != "" else "보스 약점: 없음"
+		var weak_name := str(ELEMENT_NAME.get(wk, "")) if wk != "" else "없음"
 		var spawn_rate := 1.0 / maxf(0.01, float(difficulty.get("spawn", 1.0)))
-		map_detail_label.text = "%d. %s · %s 몹 · %s · 5분 후 보스\n[%s] 적 HP ×%.2f · 출현 ×%.2f  /  골드 ×%.2f · 장비 ×%.2f" % [
-			sel_stage, selected_data["name"], mob_themes[sel_stage - 1], weak_hint,
-			difficulty.get("label", "보통"), difficulty.get("enemy_hp", 1.0), spawn_rate,
-			difficulty.get("gold", 1.0), difficulty.get("gear", 1.0)
+		var objective_summary := str(selected_data.get("rule", "5분 후 목표 보스"))
+		objective_summary = objective_summary.replace(
+			"5분 동안 성장한 뒤 목표 보스를 처치", "5분 성장 후 목표 보스 처치"
+		)
+		if sel_stage == HELL_STAGE:
+			objective_summary = "균열 3개 봉인 → 집행자 격파 → 화염 갑옷 파괴"
+		map_detail_label.text = (
+			"[center][color=#f6d477]%d. %s[/color]  "
+			+ "[color=#a9c3d7]3층 · %s · 약점 %s[/color]\n"
+			+ "[color=#eef1ff]목표  %s[/color]\n"
+			+ "[color=#8edca8]캠프·상인·이벤트 · 추출 2개[/color]  "
+			+ "[color=#c8b8f2]%s · 적 HP×%.2f · 출현×%.2f[/color][/center]"
+		) % [
+			sel_stage, selected_data["name"], mob_themes[sel_stage - 1], weak_name,
+			objective_summary,
+			difficulty.get("label", "보통"), difficulty.get("enemy_hp", 1.0), spawn_rate
 		]
 	if map_confirm_button:
 		map_confirm_button.disabled = sel_stage > unlocked_stage_count
-		map_confirm_button.text = "%s 입장" % str(selected_data["name"])
+		map_confirm_button.text = "3층 원정 시작"
 	var selected_difficulty_key := str(difficulty.get("key", "normal"))
 	for difficulty_index in map_difficulty_buttons.size():
 		var difficulty_button := map_difficulty_buttons[difficulty_index]
@@ -7701,13 +8576,17 @@ func _fill_char_stats(c: Dictionary) -> void:
 	var II := "res://assets/items/"
 	var hp_mul := float(c.get("hp", 1.0))
 	_stat_row(char_stats_box, II + "icon_voidheart.png", "최대 체력", "%d" % int(round(150.0 * hp_mul)))
-	_stat_row(char_stats_box, II + "icon_wings.png", "이동 속도", _stat_pct(float(c.get("speed", 1.0))))
+	var speed_text := _stat_pct(float(c.get("speed", 1.0)))
+	_stat_row(char_stats_box, II + "icon_wings.png", "이동 속도", "기본" if speed_text == "-" else speed_text)
 	# cd는 낮을수록 빠름 → 쿨감으로 환산해 표기
 	var cdv := float(c.get("cd", 1.0))
-	_stat_row(char_stats_box, II + "icon_tome.png", "쿨타임", "-" if is_equal_approx(cdv, 1.0) else "%+d%%" % int(round((cdv - 1.0) * 100.0)))
-	_stat_row(char_stats_box, II + "icon_candela.png", "공격 범위", _stat_pct(float(c.get("range", 1.0))))
-	_stat_row(char_stats_box, II + "icon_spinach.png", "근접 피해", _stat_pct(float(c.get("melee", 1.0))))
-	_stat_row(char_stats_box, II + "icon_keeneye.png", "원거리 피해", _stat_pct(float(c.get("ranged", 1.0))))
+	_stat_row(char_stats_box, II + "icon_tome.png", "쿨타임", "기본" if is_equal_approx(cdv, 1.0) else "%+d%%" % int(round((cdv - 1.0) * 100.0)))
+	var range_text := _stat_pct(float(c.get("range", 1.0)))
+	var melee_text := _stat_pct(float(c.get("melee", 1.0)))
+	var ranged_text := _stat_pct(float(c.get("ranged", 1.0)))
+	_stat_row(char_stats_box, II + "icon_candela.png", "공격 범위", "기본" if range_text == "-" else range_text)
+	_stat_row(char_stats_box, II + "icon_spinach.png", "근접 피해", "기본" if melee_text == "-" else melee_text)
+	_stat_row(char_stats_box, II + "icon_keeneye.png", "원거리 피해", "기본" if ranged_text == "-" else ranged_text)
 	var wk: String = str(c.get("weapon", ""))
 	_stat_row(char_stats_box, WICON.get(wk, ""), "시작 무기", str(WNAMES.get(wk, wk)))
 	if c.has("weapon2"):
@@ -8182,6 +9061,202 @@ func _refresh_inventory_ui() -> void:
 	inv_bg.visible = true
 
 
+func _build_expedition_ui(s: Vector2, overlay: CanvasLayer) -> void:
+	# 층 사이 경로 선택. 기존 수제 맵 5개를 서비스 노드와 함께 연결한다.
+	expedition_route_panel = Control.new()
+	expedition_route_panel.visible = false
+	expedition_route_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay.add_child(expedition_route_panel)
+	var route_dim := ColorRect.new()
+	route_dim.color = Color(0.015, 0.012, 0.028, 0.94)
+	route_dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	expedition_route_panel.add_child(route_dim)
+	var route_modal := _modal_rect(s, Vector2(940, 560), 20.0)
+	var route_frame := Panel.new()
+	route_frame.position = route_modal.position
+	route_frame.size = route_modal.size
+	route_frame.add_theme_stylebox_override("panel", _menu_style())
+	expedition_route_panel.add_child(route_frame)
+	expedition_route_title = Label.new()
+	expedition_route_title.position = Vector2(24, 22)
+	expedition_route_title.size = Vector2(route_modal.size.x - 48, 40)
+	expedition_route_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	expedition_route_title.add_theme_font_size_override("font_size", 28)
+	expedition_route_title.add_theme_color_override("font_color", Color(1.0, 0.83, 0.38))
+	route_frame.add_child(expedition_route_title)
+	expedition_route_summary = Label.new()
+	expedition_route_summary.position = Vector2(34, 69)
+	expedition_route_summary.size = Vector2(route_modal.size.x - 68, 58)
+	expedition_route_summary.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	expedition_route_summary.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	expedition_route_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	expedition_route_summary.add_theme_font_size_override("font_size", 14)
+	expedition_route_summary.add_theme_color_override("font_color", Color(0.78, 0.82, 0.92))
+	expedition_route_summary.add_theme_constant_override("outline_size", 4)
+	expedition_route_summary.add_theme_color_override("font_outline_color", Color(0.02, 0.02, 0.04, 0.96))
+	route_frame.add_child(expedition_route_summary)
+	expedition_route_buttons.clear()
+	var route_gap := 14.0
+	var route_card_w := (route_modal.size.x - 68.0 - route_gap * 2.0) / 3.0
+	for route_index in 3:
+		var route_button := Button.new()
+		route_button.position = Vector2(
+			34.0 + float(route_index) * (route_card_w + route_gap), 142.0)
+		route_button.size = Vector2(route_card_w, route_modal.size.y - 205.0)
+		route_button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		route_button.add_theme_font_size_override("font_size", 16)
+		_style_tile(route_button)
+		route_button.pressed.connect(_choose_expedition_route.bind(route_index))
+		route_frame.add_child(route_button)
+		expedition_route_buttons.append(route_button)
+	var route_footer := Label.new()
+	route_footer.text = "경로 선택은 이번 원정에만 적용됩니다. 장비·숙련·능력치는 다음 층에도 유지됩니다."
+	route_footer.position = Vector2(34, route_modal.size.y - 53)
+	route_footer.size = Vector2(route_modal.size.x - 68, 24)
+	route_footer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	route_footer.add_theme_font_size_override("font_size", 12)
+	route_footer.add_theme_color_override("font_color", Color(0.62, 0.66, 0.76))
+	route_frame.add_child(route_footer)
+
+	# 최종 전리품 추출. 목록이 길어져도 하단 확정 버튼과 겹치지 않도록 스크롤한다.
+	extraction_panel = Control.new()
+	extraction_panel.visible = false
+	extraction_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay.add_child(extraction_panel)
+	var extraction_dim := ColorRect.new()
+	extraction_dim.color = Color(0.012, 0.010, 0.024, 0.96)
+	extraction_dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	extraction_panel.add_child(extraction_dim)
+	var extraction_modal := _modal_rect(s, Vector2(920, 610), 18.0)
+	var extraction_frame := Panel.new()
+	extraction_frame.position = extraction_modal.position
+	extraction_frame.size = extraction_modal.size
+	extraction_frame.add_theme_stylebox_override("panel", _menu_style())
+	extraction_panel.add_child(extraction_frame)
+	extraction_title = Label.new()
+	extraction_title.text = "🎒 전리품 추출"
+	extraction_title.position = Vector2(24, 18)
+	extraction_title.size = Vector2(extraction_modal.size.x - 48, 38)
+	extraction_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	extraction_title.add_theme_font_size_override("font_size", 27)
+	extraction_title.add_theme_color_override("font_color", Color(1.0, 0.83, 0.38))
+	extraction_frame.add_child(extraction_title)
+	extraction_summary = Label.new()
+	extraction_summary.position = Vector2(32, 61)
+	extraction_summary.size = Vector2(extraction_modal.size.x - 64, 50)
+	extraction_summary.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	extraction_summary.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	extraction_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	extraction_summary.add_theme_font_size_override("font_size", 14)
+	extraction_summary.add_theme_constant_override("outline_size", 4)
+	extraction_summary.add_theme_color_override("font_outline_color", Color(0.02, 0.02, 0.04, 0.96))
+	extraction_frame.add_child(extraction_summary)
+	var extraction_scroll := ScrollContainer.new()
+	extraction_scroll.position = Vector2(30, 122)
+	extraction_scroll.size = Vector2(extraction_modal.size.x - 60, extraction_modal.size.y - 202)
+	extraction_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	extraction_frame.add_child(extraction_scroll)
+	extraction_list_box = VBoxContainer.new()
+	extraction_list_box.custom_minimum_size = Vector2(extraction_modal.size.x - 78, 0)
+	extraction_list_box.add_theme_constant_override("separation", 6)
+	extraction_scroll.add_child(extraction_list_box)
+	extraction_confirm_btn = Button.new()
+	extraction_confirm_btn.position = Vector2(
+		extraction_modal.size.x * 0.5 - 145.0, extraction_modal.size.y - 65.0)
+	extraction_confirm_btn.size = Vector2(290, 46)
+	_style_button(extraction_confirm_btn, "res://assets/ui/button.png")
+	extraction_confirm_btn.pressed.connect(_confirm_extraction)
+	extraction_frame.add_child(extraction_confirm_btn)
+
+
+func _refresh_expedition_route_panel() -> void:
+	if expedition_route_panel == null:
+		return
+	expedition_route_title.text = "%d층 정복 — 다음 경로 선택" % expedition_floor
+	expedition_route_summary.text = "현재 %s · HP %d/%d · 골드 %d G · 능력치 포인트 %d\n다음 층의 전장과 휴식 방식을 함께 고릅니다." % [
+		str(GameConfig.stage_info(map_stage)["name"]),
+		int(maxf(0.0, player.hp)) if player else 0,
+		int(player.max_hp) if player else 0,
+		run_gold, stat_points,
+	]
+	for route_index in expedition_route_buttons.size():
+		var button := expedition_route_buttons[route_index]
+		if route_index >= expedition_pending_routes.size():
+			button.visible = false
+			continue
+		button.visible = true
+		var route: Dictionary = expedition_pending_routes[route_index]
+		var node_key := str(route["key"])
+		var target_stage := int(route["target_stage"])
+		var target_data: Dictionary = GameConfig.stage_info(target_stage)
+		button.text = "%s  %s\n\n→ %d층  %s\n%s 속성 · 보스 %s\n\n%s" % [
+			str(route["glyph"]), str(route["name"]),
+			expedition_floor + 1, str(target_data["name"]),
+			str(ELEMENT_NAME.get(str(target_data.get("element", "phys")), "물리")),
+			str(target_data.get("boss_name", target_data["boss"])),
+			str(route["desc"]),
+		]
+		button.modulate = Color(route["color"])
+		button.tooltip_text = "%s\n\n%s" % [
+			str(target_data.get("rule", "5분 뒤 목표 보스")), str(route["desc"])]
+		button.disabled = node_key == "merchant" and run_gold < ExpeditionRulesScript.MERCHANT_COST
+	for button in expedition_route_buttons:
+		if button.visible and not button.disabled:
+			button.grab_focus()
+			break
+
+
+func _refresh_extraction_panel() -> void:
+	if extraction_panel == null or extraction_list_box == null:
+		return
+	for child in extraction_list_box.get_children():
+		child.queue_free()
+	var salvage_preview := 0
+	for item in extraction_candidates:
+		var gear_id := str(item.get("gear_id", ""))
+		if not extraction_selected_ids.has(gear_id):
+			salvage_preview += _forge_salvage_value(item)
+		var selected := extraction_selected_ids.has(gear_id)
+		var effect_parts: Array[String] = []
+		for raw_affix in item.get("affixes", []):
+			if not (raw_affix is Dictionary):
+				continue
+			var affix := raw_affix as Dictionary
+			var affix_value := _gear_affix_value_text(affix)
+			effect_parts.append("%s +%s" % [str(affix.get("name", "효과")), affix_value])
+		var special = item.get("special", {})
+		if special is Dictionary and not (special as Dictionary).is_empty():
+			effect_parts.append("◆ %s" % str((special as Dictionary).get("name", "특수")))
+		var button := Button.new()
+		button.text = "%s  [%s] %s\n%s · %s  ·  미선택 시 +%d G" % [
+			"✓ 추출" if selected else "◇ 선택",
+			str(EQUIP_SLOT_NAME.get(str(item.get("slot", "")), "장비")),
+			str(item.get("name", "장비")),
+			str(RARITY_TAG.get(str(item.get("rarity", "")), "일반")),
+			", ".join(effect_parts),
+			_forge_salvage_value(item),
+		]
+		button.custom_minimum_size = Vector2(0, 62)
+		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		button.add_theme_font_size_override("font_size", 14)
+		button.modulate = (Color(1.18, 1.12, 0.72)
+			if selected else RARITY_COL.get(str(item.get("rarity", "")), Color.WHITE))
+		_style_tile(button)
+		_apply_gear_button_icon(button, item)
+		button.tooltip_text = _gear_detail_text(item)
+		button.pressed.connect(_toggle_extraction_item.bind(gear_id))
+		extraction_list_box.add_child(button)
+	extraction_summary.text = "발견 장비 %d개 중 %d개 선택  (%d/%d)\n미선택 장비는 자동 분해되어 현재 +%d G" % [
+		extraction_candidates.size(), extraction_limit,
+		extraction_selected_ids.size(), extraction_limit, salvage_preview,
+	]
+	extraction_summary.add_theme_color_override("font_color",
+		Color(0.55, 1.0, 0.72) if extraction_selected_ids.size() == extraction_limit
+		else Color(0.92, 0.82, 0.56))
+	extraction_confirm_btn.disabled = extraction_selected_ids.size() != extraction_limit
+	extraction_confirm_btn.text = "선택 장비 %d개 추출 확정" % extraction_limit
+
+
 # ---------------------------------------------------------------------
 #  UI
 # ---------------------------------------------------------------------
@@ -8369,6 +9444,7 @@ func _build_ui(s: Vector2) -> void:
 	overlay.add_child(flash_overlay)
 	_build_inventory_ui(s, overlay)   # 인벤토리 패널 (I 토글)
 	add_child(overlay)
+	_build_expedition_ui(s, overlay)
 
 	# 레벨업 패널
 	levelup_panel = Control.new()
@@ -8700,10 +9776,27 @@ func _build_ui(s: Vector2) -> void:
 	logo.add_theme_color_override("font_color", Color(1.0, 0.85, 0.35))
 	title_panel.add_child(logo)
 
+	var subtitle := Label.new()
+	subtitle.text = "던전 원정 로그라이크 RPG"
+	subtitle.position = Vector2(0, 178)
+	subtitle.size = Vector2(s.x, 30)
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	subtitle.add_theme_font_size_override("font_size", 16)
+	subtitle.add_theme_color_override("font_color", Color(0.90, 0.84, 0.96, 0.88))
+	subtitle.add_theme_constant_override("outline_size", 4)
+	subtitle.add_theme_color_override("font_outline_color", Color(0.05, 0.025, 0.08, 0.92))
+	title_panel.add_child(subtitle)
+
+	var title_center_x := s.x / 2.0
+	var utility_width := 156.0
+	var utility_gap := 16.0
+	var utility_row_width := utility_width * 3.0 + utility_gap * 2.0
+	var utility_x := title_center_x - utility_row_width * 0.5
+	var utility_y := 522.0
 	var start_btn := Button.new()
 	start_btn.text = Loc.t("start")
-	start_btn.position = Vector2(s.x / 2.0 - 140, 360)
-	start_btn.size = Vector2(280, 64)
+	start_btn.position = Vector2(title_center_x - 150.0, 352)
+	start_btn.size = Vector2(300, 64)
 	start_btn.add_theme_font_size_override("font_size", 20)
 	_style_button(start_btn, "res://assets/ui/button.png")
 	start_btn.pressed.connect(func() -> void: _goto_screen(char_panel))
@@ -8711,7 +9804,7 @@ func _build_ui(s: Vector2) -> void:
 
 	var shop_btn := Button.new()
 	shop_btn.text = Loc.t("shop")
-	shop_btn.position = Vector2(s.x / 2.0 - 250, 450)
+	shop_btn.position = Vector2(title_center_x - 250.0, 442)
 	shop_btn.size = Vector2(240, 52)
 	_style_button(shop_btn, "res://assets/ui/button.png")
 	shop_btn.pressed.connect(_open_shop)
@@ -8719,7 +9812,7 @@ func _build_ui(s: Vector2) -> void:
 
 	var forge_btn := Button.new()
 	forge_btn.text = "대장간"
-	forge_btn.position = Vector2(s.x / 2.0 + 10, 450)
+	forge_btn.position = Vector2(title_center_x + 10.0, 442)
 	forge_btn.size = Vector2(240, 52)
 	_style_button(forge_btn, "res://assets/ui/button.png")
 	forge_btn.pressed.connect(_open_forge)
@@ -8727,24 +9820,24 @@ func _build_ui(s: Vector2) -> void:
 
 	var collection_btn := Button.new()
 	collection_btn.text = "도감"
-	collection_btn.position = Vector2(s.x / 2.0 - 250, 514)
-	collection_btn.size = Vector2(240, 52)
+	collection_btn.position = Vector2(utility_x, utility_y)
+	collection_btn.size = Vector2(utility_width, 52)
 	_style_button(collection_btn, "res://assets/ui/button.png")
 	collection_btn.pressed.connect(_open_collection)
 	title_panel.add_child(collection_btn)
 
 	var opt_btn := Button.new()
 	opt_btn.text = Loc.t("options")
-	opt_btn.position = Vector2(s.x / 2.0 + 10, 514)
-	opt_btn.size = Vector2(240, 52)
+	opt_btn.position = Vector2(utility_x + (utility_width + utility_gap) * 2.0, utility_y)
+	opt_btn.size = Vector2(utility_width, 52)
 	_style_button(opt_btn, "res://assets/ui/button.png")
 	opt_btn.pressed.connect(func() -> void: options_panel.visible = true)
 	title_panel.add_child(opt_btn)
 
 	var ach_btn := Button.new()
 	ach_btn.text = "업적"
-	ach_btn.position = Vector2(s.x / 2.0 - 120, 578)
-	ach_btn.size = Vector2(240, 52)
+	ach_btn.position = Vector2(utility_x + utility_width + utility_gap, utility_y)
+	ach_btn.size = Vector2(utility_width, 52)
 	_style_button(ach_btn, "res://assets/ui/button.png")
 	ach_btn.pressed.connect(_open_achievements)
 	title_panel.add_child(ach_btn)
@@ -8756,8 +9849,8 @@ func _build_ui(s: Vector2) -> void:
 
 	var ver := Label.new()
 	ver.text = "v0.9 prototype"
-	ver.position = Vector2(0, s.y - 34)
-	ver.size = Vector2(s.x - 16, 24)
+	ver.position = Vector2(0, s.y - 42)
+	ver.size = Vector2(s.x - 24, 24)
 	ver.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	ver.add_theme_font_size_override("font_size", 11)
 	ver.add_theme_color_override("font_color", Color(1, 1, 1, 0.45))
@@ -8772,39 +9865,61 @@ func _build_ui(s: Vector2) -> void:
 	cdim.size = s
 	char_panel.add_child(cdim)
 
+	# 좌측 스탯은 고정 폭, 로스터·상세는 남은 가로 공간을 모두 사용한다.
+	# 기존 644px 고정 폭은 16:9 화면에서 우측 약 300px를 비워 두었다.
+	var char_safe_margin := 24.0
+	var char_stats_width := 244.0
+	var char_column_gap := 18.0
+	var char_main_x := char_safe_margin + char_stats_width + char_column_gap
+	var char_main_right := s.x - char_safe_margin
+	var char_main_width := maxf(420.0, char_main_right - char_main_x)
+	var char_grid_top := 62.0
+	var char_grid_height := 396.0
+	var char_detail_top := 470.0
+	var char_detail_height := 148.0
+
 	# 좌측: 선택 캐릭터의 세부 스탯 패널
 	var st_bg := Panel.new()
-	st_bg.position = Vector2(18, 84)
-	st_bg.size = Vector2(252, 552)
+	st_bg.position = Vector2(char_safe_margin, char_grid_top)
+	st_bg.size = Vector2(char_stats_width, char_grid_height)
 	st_bg.add_theme_stylebox_override("panel", _slot_style())
 	st_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	char_panel.add_child(st_bg)
 	var st_ttl := Label.new()
 	st_ttl.text = "[ 세부 스탯 ]"
-	st_ttl.position = Vector2(34, 96)
-	st_ttl.size = Vector2(220, 24)
+	st_ttl.position = Vector2(char_safe_margin + 16.0, char_grid_top + 16.0)
+	st_ttl.size = Vector2(char_stats_width - 32.0, 24)
 	st_ttl.add_theme_font_size_override("font_size", 15)
 	st_ttl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
 	char_panel.add_child(st_ttl)
 	char_stats_box = GridContainer.new()
 	char_stats_box.columns = 3
-	char_stats_box.position = Vector2(34, 126)
+	char_stats_box.position = Vector2(char_safe_margin + 16.0, char_grid_top + 46.0)
 	char_stats_box.add_theme_constant_override("h_separation", 8)
 	char_stats_box.add_theme_constant_override("v_separation", 6)
 	char_stats_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	char_panel.add_child(char_stats_box)
 
-	# 중앙: 그리드 패널. 큰 오르네이트 창틀은 4×2 타일의 내부를 덮으므로 사용하지 않는다.
+	var stat_hint := Label.new()
+	stat_hint.text = "초록 상승  ·  붉은 감소\n타일을 선택해 능력 비교"
+	stat_hint.position = Vector2(char_safe_margin + 16.0, char_grid_top + char_grid_height - 54.0)
+	stat_hint.size = Vector2(char_stats_width - 32.0, 40)
+	stat_hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	stat_hint.add_theme_font_size_override("font_size", 11)
+	stat_hint.add_theme_color_override("font_color", Color(0.62, 0.64, 0.72))
+	char_panel.add_child(stat_hint)
+
+	# 중앙: 남은 폭을 채우는 로스터 패널.
 	var grid_bg := Panel.new()
-	grid_bg.position = Vector2(292, 62)
-	grid_bg.size = Vector2(644, 396)
+	grid_bg.position = Vector2(char_main_x, char_grid_top)
+	grid_bg.size = Vector2(char_main_width, char_grid_height)
 	grid_bg.add_theme_stylebox_override("panel", _hud_style())
 	grid_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	char_panel.add_child(grid_bg)
 	var cttl := Label.new()
 	cttl.text = Loc.t("char_select")
-	cttl.position = Vector2(292, 84)
-	cttl.size = Vector2(644, 40)
+	cttl.position = Vector2(char_main_x, char_grid_top + 16.0)
+	cttl.size = Vector2(char_main_width, 40)
 	cttl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	cttl.add_theme_font_size_override("font_size", 28)
 	cttl.add_theme_color_override("font_color", Color(1.0, 0.88, 0.45))
@@ -8814,15 +9929,15 @@ func _build_ui(s: Vector2) -> void:
 
 	# 저주 다이얼이 있던 자리는 선택 영웅의 정체성을 보여주는 RPG 상세 패널로 사용한다.
 	var char_detail_bg := Panel.new()
-	char_detail_bg.position = Vector2(292, 470)
-	char_detail_bg.size = Vector2(644, 148)
+	char_detail_bg.position = Vector2(char_main_x, char_detail_top)
+	char_detail_bg.size = Vector2(char_main_width, char_detail_height)
 	char_detail_bg.add_theme_stylebox_override("panel", _slot_style())
 	char_detail_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	char_panel.add_child(char_detail_bg)
 
 	char_det_spr = TextureRect.new()
-	char_det_spr.position = Vector2(310, 482)
-	char_det_spr.size = Vector2(92, 118)
+	char_det_spr.position = Vector2(char_main_x + 16.0, char_detail_top + 12.0)
+	char_det_spr.size = Vector2(108, 124)
 	char_det_spr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	char_det_spr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	char_det_spr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -8830,8 +9945,8 @@ func _build_ui(s: Vector2) -> void:
 	char_panel.add_child(char_det_spr)
 
 	char_det_name = Label.new()
-	char_det_name.position = Vector2(420, 480)
-	char_det_name.size = Vector2(410, 34)
+	char_det_name.position = Vector2(char_main_x + 140.0, char_detail_top + 10.0)
+	char_det_name.size = Vector2(char_main_width - 276.0, 34)
 	char_det_name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	char_det_name.add_theme_font_size_override("font_size", 22)
 	char_det_name.add_theme_constant_override("outline_size", 4)
@@ -8839,8 +9954,8 @@ func _build_ui(s: Vector2) -> void:
 	char_panel.add_child(char_det_name)
 
 	char_det_desc = Label.new()
-	char_det_desc.position = Vector2(420, 518)
-	char_det_desc.size = Vector2(410, 82)
+	char_det_desc.position = Vector2(char_main_x + 140.0, char_detail_top + 48.0)
+	char_det_desc.size = Vector2(char_main_width - 276.0, 86)
 	char_det_desc.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	char_det_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	char_det_desc.add_theme_font_size_override("font_size", 14)
@@ -8849,43 +9964,61 @@ func _build_ui(s: Vector2) -> void:
 	char_det_desc.add_theme_color_override("font_outline_color", Color(0.02, 0.02, 0.03))
 	char_panel.add_child(char_det_desc)
 
+	var char_weapon_box := Panel.new()
+	char_weapon_box.position = Vector2(char_main_right - 112.0, char_detail_top + 14.0)
+	char_weapon_box.size = Vector2(96, 116)
+	char_weapon_box.add_theme_stylebox_override("panel", _slot_style())
+	char_weapon_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	char_panel.add_child(char_weapon_box)
+
 	char_det_wicon = TextureRect.new()
-	char_det_wicon.position = Vector2(850, 500)
+	char_det_wicon.position = Vector2(19, 10)
 	char_det_wicon.size = Vector2(58, 58)
 	char_det_wicon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	char_det_wicon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	char_det_wicon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	char_det_wicon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	char_panel.add_child(char_det_wicon)
+	char_weapon_box.add_child(char_det_wicon)
 	var char_weapon_caption := Label.new()
 	char_weapon_caption.text = "시작 무기"
-	char_weapon_caption.position = Vector2(830, 564)
-	char_weapon_caption.size = Vector2(98, 24)
+	char_weapon_caption.position = Vector2(4, 76)
+	char_weapon_caption.size = Vector2(88, 24)
 	char_weapon_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	char_weapon_caption.add_theme_font_size_override("font_size", 13)
 	char_weapon_caption.add_theme_color_override("font_color", Color(1.0, 0.84, 0.45))
-	char_panel.add_child(char_weapon_caption)
+	char_weapon_box.add_child(char_weapon_caption)
 
-	# 뱀서식 타일 그리드: 4열, 타일 = 금테 프레임 + 이름 + 스프라이트 + 시작무기 아이콘.
+	# 타일 = 금테 프레임 + 이름 + 스프라이트 + 시작무기 아이콘.
 	# 타일을 누르면 좌측 스탯 패널과 하단 상세가 갱신됨 (확정은 [확인]).
 	var chars := GameConfig.characters()
 	var n := chars.size()
-	# 타일은 창틀(menu_panel 9-slice, 테두리 ~58px) 안쪽에 들어가야 금장식이 가려지지 않음
-	# 로스터가 늘며 열을 확장 (11종부터 5열도 3줄 → 6열). 3줄이 되면 하단 상세 패널을 침범한다.
+	# 11종은 6+5 두 줄로 배치하되, 마지막 불완전 행도 패널 중앙에 맞춘다.
 	var cols := 6
-	var tw := 100.0
+	var tgap := 10.0
+	var tile_side_padding := 18.0
+	var available_tile_width := (
+		char_main_width - tile_side_padding * 2.0 - tgap * float(cols - 1)
+	) / float(cols)
+	var tw := clampf(floorf(available_tile_width), 92.0, 132.0)
 	var th := 118.0
-	var tgap := 8.0
-	var gx0 := 292.0 + (644.0 - (cols * tw + (cols - 1) * tgap)) / 2.0
-	var gy0 := 140.0
+	var gy0 := char_grid_top + 78.0
 	for i in n:
 		var c: Dictionary = chars[i]
 		var ckey: String = c["key"]
 		var unlocked := _is_char_unlocked(c)
 		var col: Color = GameConfig.char_stages(ckey)[0]["color"]
+		var row_index := floori(float(i) / float(cols))
+		var col_index := i % cols
+		var row_items := mini(cols, n - row_index * cols)
+		var char_row_width := float(row_items) * tw + float(row_items - 1) * tgap
+		var char_row_x := char_main_x + (char_main_width - char_row_width) * 0.5
 		var cb := Button.new()
-		cb.position = Vector2(gx0 + (i % cols) * (tw + tgap), gy0 + (i / cols) * (th + tgap))
+		cb.position = Vector2(
+			char_row_x + float(col_index) * (tw + tgap),
+			gy0 + float(row_index) * (th + tgap)
+		)
 		cb.size = Vector2(tw, th)
+		cb.clip_contents = true
 		cb.focus_mode = Control.FOCUS_ALL
 		cb.disabled = not unlocked
 		_style_tile(cb)
@@ -8944,15 +10077,23 @@ func _build_ui(s: Vector2) -> void:
 			cb.add_child(lock_icon)
 			# 자물쇠 아이콘이 잠금을 알리므로 라벨은 해금 조건만.
 			var lock_label := Label.new()
-			lock_label.text = str(c.get("unlock_desc", "업적 달성으로 해금"))
-			lock_label.position = Vector2(5, 74)
-			lock_label.size = Vector2(tw - 10, 40)
+			var unlock_text := str(c.get("unlock_desc", "업적 달성으로 해금"))
+			if unlock_text == "유니온 무기 1개 완성":
+				unlock_text = "유니온 무기\n1개 완성"
+			elif unlock_text == "한 판에서 보스 4마리 처치":
+				unlock_text = "한 판에서 보스\n4마리 처치"
+			lock_label.text = unlock_text
+			lock_label.position = Vector2(7, 72)
+			lock_label.size = Vector2(tw - 14, 42)
 			lock_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			lock_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 			lock_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			lock_label.add_theme_font_size_override("font_size", 11)
+			lock_label.clip_text = true
+			lock_label.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+			lock_label.add_theme_font_size_override("font_size", 10)
+			lock_label.add_theme_constant_override("line_spacing", 0)
 			lock_label.add_theme_color_override("font_color", Color(1.0, 0.84, 0.48))
-			lock_label.add_theme_constant_override("outline_size", 6)
+			lock_label.add_theme_constant_override("outline_size", 4)
 			lock_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 1))
 			lock_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			cb.add_child(lock_label)
@@ -8964,7 +10105,7 @@ func _build_ui(s: Vector2) -> void:
 
 	var cback := Button.new()
 	cback.text = Loc.t("back")
-	cback.position = Vector2(30, s.y - 76)
+	cback.position = Vector2(char_safe_margin, s.y - 76)
 	cback.size = Vector2(140, 48)
 	_style_button(cback, "res://assets/ui/button.png")
 	cback.pressed.connect(func() -> void: _goto_screen(title_panel))
@@ -8973,7 +10114,7 @@ func _build_ui(s: Vector2) -> void:
 	# 던전 준비 화면으로 이동한다. 난이도와 가호는 다음 화면에서 함께 확정한다.
 	var cok := Button.new()
 	cok.text = "맵 선택 ▶"
-	cok.position = Vector2(s.x - 210.0, s.y - 76)
+	cok.position = Vector2(char_main_right - 180.0, s.y - 76)
 	cok.size = Vector2(180, 48)
 	_style_button(cok, "res://assets/ui/button.png")
 	cok.pressed.connect(func() -> void: _select_char(sel_char))
@@ -9085,7 +10226,8 @@ func _build_ui(s: Vector2) -> void:
 		selection_border.position = Vector2(1, 1) * frame_scale
 		selection_border.size = slot.size * frame_scale - Vector2(2, 2) * frame_scale
 		var border_style := StyleBoxFlat.new()
-		border_style.bg_color = Color(1.0, 0.78, 0.18, 0.24)
+		# 선택 상태는 테두리 중심으로 표시해 미니맵과 보스 아트를 가리지 않는다.
+		border_style.bg_color = Color(1.0, 0.78, 0.18, 0.09)
 		border_style.border_color = Color(1.0, 0.82, 0.28, 1.0)
 		border_style.set_border_width_all(maxi(4, int(5.0 * frame_scale)))
 		border_style.corner_radius_top_left = maxi(4, int(6.0 * frame_scale))
@@ -9097,11 +10239,11 @@ func _build_ui(s: Vector2) -> void:
 		stage_button.add_child(selection_border)
 		map_selection_borders.append(selection_border)
 		var selected_badge := Label.new()
-		selected_badge.text = "✓ 선택됨"
-		selected_badge.position = Vector2(8, 75) * frame_scale
-		selected_badge.size = Vector2(slot.size.x - 16, 24) * frame_scale
-		selected_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		selected_badge.add_theme_font_size_override("font_size", maxi(12, int(14.0 * frame_scale)))
+		selected_badge.text = "✓ 선택"
+		selected_badge.position = Vector2(slot.size.x - 53.0, 8) * frame_scale
+		selected_badge.size = Vector2(48, 20) * frame_scale
+		selected_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		selected_badge.add_theme_font_size_override("font_size", maxi(10, int(11.0 * frame_scale)))
 		selected_badge.add_theme_color_override("font_color", Color(1.0, 0.88, 0.30))
 		selected_badge.add_theme_constant_override("outline_size", 5)
 		selected_badge.add_theme_color_override("font_outline_color", Color(0.06, 0.035, 0.01))
@@ -9119,8 +10261,21 @@ func _build_ui(s: Vector2) -> void:
 	# 던전과 같은 화면에서 난이도를 확정한다. spawn은 낮을수록 출현이 빠르다.
 	map_difficulty_buttons.clear()
 	var difficulty_options := GameConfig.difficulties()
+	var difficulty_label := Label.new()
+	difficulty_label.text = "난이도"
+	difficulty_label.position = frame_pos + Vector2(55, 238) * frame_scale
+	difficulty_label.size = Vector2(51, 23) * frame_scale
+	difficulty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	difficulty_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	difficulty_label.add_theme_font_size_override("font_size", maxi(10, int(11.0 * frame_scale)))
+	difficulty_label.add_theme_color_override("font_color", Color(0.96, 0.79, 0.46))
+	difficulty_label.add_theme_constant_override("outline_size", 3)
+	difficulty_label.add_theme_color_override("font_outline_color", Color(0.05, 0.035, 0.06))
+	difficulty_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stage_select_panel.add_child(difficulty_label)
 	var difficulty_gap := 6.0
-	var difficulty_row_width := 576.0
+	var difficulty_row_x := 112.0
+	var difficulty_row_width := 519.0
 	var difficulty_button_width := (
 		difficulty_row_width - difficulty_gap * float(difficulty_options.size() - 1)
 	) / float(difficulty_options.size())
@@ -9128,7 +10283,7 @@ func _build_ui(s: Vector2) -> void:
 		var difficulty_data: Dictionary = difficulty_options[difficulty_index]
 		var difficulty_button := Button.new()
 		difficulty_button.position = frame_pos + Vector2(
-			55.0 + difficulty_index * (difficulty_button_width + difficulty_gap), 238.0
+			difficulty_row_x + difficulty_index * (difficulty_button_width + difficulty_gap), 238.0
 		) * frame_scale
 		difficulty_button.size = Vector2(difficulty_button_width, 23.0) * frame_scale
 		difficulty_button.add_theme_font_size_override("font_size", maxi(10, int(12.0 * frame_scale)))
@@ -9152,14 +10307,17 @@ func _build_ui(s: Vector2) -> void:
 		stage_select_panel.add_child(difficulty_button)
 		map_difficulty_buttons.append(difficulty_button)
 
-	map_detail_label = Label.new()
-	map_detail_label.position = frame_pos + Vector2(55, 263) * frame_scale
-	map_detail_label.size = Vector2(576, 62) * frame_scale
-	map_detail_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	map_detail_label = RichTextLabel.new()
+	map_detail_label.position = frame_pos + Vector2(65, 263) * frame_scale
+	map_detail_label.size = Vector2(556, 62) * frame_scale
+	map_detail_label.bbcode_enabled = true
+	map_detail_label.scroll_active = false
+	map_detail_label.clip_contents = true
 	map_detail_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	map_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	map_detail_label.add_theme_font_size_override("font_size", maxi(11, int(12.0 * frame_scale)))
-	map_detail_label.add_theme_color_override("font_color", Color(0.90, 0.93, 1.0))
+	map_detail_label.add_theme_font_size_override("normal_font_size", maxi(11, int(11.0 * frame_scale)))
+	map_detail_label.add_theme_color_override("default_color", Color(0.90, 0.93, 1.0))
+	map_detail_label.add_theme_constant_override("line_separation", maxi(0, int(1.0 * frame_scale)))
 	map_detail_label.add_theme_constant_override("outline_size", 3)
 	map_detail_label.add_theme_color_override("font_outline_color", Color(0.04, 0.04, 0.06))
 	stage_select_panel.add_child(map_detail_label)
@@ -9332,7 +10490,7 @@ func _build_ui(s: Vector2) -> void:
 	forge_loadout_box.add_theme_constant_override("separation", 4)
 	loadout_panel.add_child(forge_loadout_box)
 	var ftip := Label.new()
-	ftip.text = "[ 영구 장비 ]\n장착 효과는 다음 런부터 적용됩니다.\n\n강화는 최대 5단계이며\n모든 어픽스가 단계마다 +12% 강해집니다."
+	ftip.text = "[ 영구 장비 ]\n장착 효과는 다음 런부터 적용됩니다.\n\n강화는 최대 5단계이며\n모든 어픽스가 단계마다 +12% 강해집니다.\n\n보스 파편 5개로 에픽 장비를 제작할 수 있습니다."
 	ftip.position = Vector2(12, 142)
 	ftip.size = Vector2(left_w - 24.0, maxf(100.0, content_h - 154.0))
 	ftip.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -9393,6 +10551,13 @@ func _build_ui(s: Vector2) -> void:
 	_style_button(forge_equip_btn, "res://assets/ui/button.png")
 	forge_equip_btn.pressed.connect(_forge_toggle_equip)
 	fbg.add_child(forge_equip_btn)
+	forge_craft_btn = Button.new()
+	forge_craft_btn.position = Vector2(178, footer_y + 6.0)
+	forge_craft_btn.size = Vector2(maxf(110.0, forge_equip_btn.position.x - 188.0), 44)
+	forge_craft_btn.tooltip_text = "보스 파편 5개를 소모해 에픽 장비를 제작합니다."
+	_style_button(forge_craft_btn, "res://assets/ui/button.png")
+	forge_craft_btn.pressed.connect(_forge_craft_boss_gear)
+	fbg.add_child(forge_craft_btn)
 	forge_upgrade_btn = Button.new()
 	forge_upgrade_btn.position = Vector2(forge_modal.size.x - 18.0 - 154.0 - 10.0 - 160.0, footer_y + 6.0)
 	forge_upgrade_btn.size = Vector2(160, 44)
@@ -9948,6 +11113,24 @@ func _refresh_achievements() -> void:
 
 
 func _nearest_landmark_hint() -> String:
+	if map_stage == HELL_STAGE:
+		if boss and is_instance_valid(boss) and boss.hell_final:
+			if boss.armor_hp > 0.0:
+				var armor_pct := int(round(100.0 * boss.armor_hp / maxf(1.0, boss.armor_max)))
+				return "화염 갑옷 %d%% · 냉기 파괴 ↑" % armor_pct
+			if boss.vulnerable_t > 0.0:
+				return "갑옷 파괴! 집중 공격 %.1f초" % boss.vulnerable_t
+			return "화염 군주 페이즈 %d" % boss.hell_phase
+		var progress := "균열 봉인 %d/%d" % [hell_fissures_sealed, HELL_FISSURE_REQUIRED]
+		if hell_midboss_alive:
+			progress += " · 용암 집행자"
+		elif hell_midboss_defeated:
+			progress += " · 최종 관문 준비"
+		return progress
+	if expedition_active:
+		var remaining := maxi(0, int(ceil(DUNGEON_BOSS_TIME - _dungeon_elapsed())))
+		return "%d/%d층 · 보스까지 %02d:%02d" % [
+			expedition_floor, EXPEDITION_FLOORS, remaining / 60, remaining % 60]
 	return ""
 
 
@@ -9966,10 +11149,12 @@ func _update_ui() -> void:
 		hp_text.text = "%d / %d" % [int(max(0.0, player.hp)), int(player.max_hp)]
 	xp_bar.max_value = xp_to_next
 	xp_bar.value = xp
-	var mm := int(time_survived) / 60
-	var ss := int(time_survived) % 60
+	var visible_time := _dungeon_elapsed() if expedition_active else time_survived
+	var mm := int(visible_time) / 60
+	var ss := int(visible_time) % 60
 	# 타이머: 상단 중앙 대형. 국면은 그 아래 한 줄.
-	timer_label.text = "%02d:%02d" % [mm, ss]
+	timer_label.text = ("F%d/%d  %02d:%02d" % [expedition_floor, EXPEDITION_FLOORS, mm, ss]
+		if expedition_active else "%02d:%02d" % [mm, ss])
 	if lv_label:
 		lv_label.text = "LV %d" % level
 	var phase := ""
@@ -9984,7 +11169,11 @@ func _update_ui() -> void:
 	skill_label.add_theme_color_override("font_color",
 		Color(1.0, 0.4, 0.4) if boss_spawned else Color(0.8, 0.65, 1.0))
 	var map_name := "캠페인" if map_stage == 0 else str(GameConfig.stage_info(map_stage)["name"])
-	info_label.text = "%s · 위험도 %d · [%s]\n처치 %d\n골드 %d" % [map_name, stage_num, diff_label, kills, run_gold]
+	var fragment_count := _total_boss_fragments(run_boss_fragments)
+	info_label.text = "%s · 위험도 %d · [%s]\n처치 %d · 총 %02d:%02d\n골드 %d%s" % [
+		map_name, stage_num, diff_label, kills,
+		int(time_survived) / 60, int(time_survived) % 60,
+		run_gold, " · 파편 %d" % fragment_count if expedition_active else ""]
 
 
 # 바닥 장식물 텍스처(있는 것만) 1회 로드 후 캐시
