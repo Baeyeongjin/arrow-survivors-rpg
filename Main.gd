@@ -133,32 +133,43 @@ const MAX_WLEVEL := 8   # 뱀서식: 무기 만렙 Lv8
 const MAX_PLEVEL := 5
 const EVO_START_TIME := 600.0 # 일반 런 진화 상자는 10:00 이후부터 활성화
 const FREE_WEAPON_SLOTS := 1   # M2 무기 숙련: 주무기 외 신규무기는 25% 확률로만 제시 (주무기 집중)
-# M2 무기 숙련 분기: 주무기가 숙련 4단계에 도달하면 전투 스타일 갈림길 1회.
+# M2 무기 숙련 분기: 주무기가 숙련 4·6단계에 도달하면 전투 스타일 갈림길 2회.
+# Lv4=공격 형태(집중형 단일 vs 확산형 다발), Lv6=극공(더 센 공격) vs 생존(체력·방어·재생).
 # 한쪽을 고르면 다른 쪽은 잠긴다(빌드 정체성). 아키타입(sword/axe/staff/dagger/spear)별 flavored.
-# ponytail: 지금은 효과가 player 가산 스탯(집중형=단일 위력·치명 / 확산형=범위·다발) 수준의
-#   숙련 MVP. 무기별 실제 발사 패턴이 바뀌는 깊은 분기는 M3 지옥 던전 세로 슬라이스에서 추가.
-const MASTERY_FORK_LEVEL := 4
+# 이 2회 갈림길이 주무기 레벨링의 반복 수치 카드를 대체한다(레벨업 = 스탯 스팸이 아니라 분기 선택).
+# ponytail: 효과는 player 가산 스탯 수준의 MVP. 무기별 실제 발사 패턴 변경은 M3 세로 슬라이스에서.
+const MASTERY_FORK_LEVELS := [4, 6]
 const MASTERY_FORK := {
-	"sword": {
-		"a": {"name": "관통 숙련", "desc": "위력 +25% · 치명 +8%", "eff": {"dmg": 0.25, "crit": 0.08}},
-		"b": {"name": "광풍 숙련", "desc": "효과 범위 +30% · 추가 발사 +1", "eff": {"area": 0.30, "amount": 1}},
-	},
-	"axe": {
-		"a": {"name": "분쇄 숙련", "desc": "위력 +30% · 쿨감 +6%", "eff": {"dmg": 0.30, "haste": 0.06}},
-		"b": {"name": "지진 숙련", "desc": "효과 범위 +35% · 추가 발사 +1", "eff": {"area": 0.35, "amount": 1}},
-	},
-	"staff": {
-		"a": {"name": "정밀 숙련", "desc": "위력 +25% · 치명 +10%", "eff": {"dmg": 0.25, "crit": 0.10}},
-		"b": {"name": "폭풍 숙련", "desc": "추가 발사 +1 · 범위 +15%", "eff": {"amount": 1, "area": 0.15}},
-	},
-	"dagger": {
-		"a": {"name": "암살 숙련", "desc": "치명 +14% · 위력 +15%", "eff": {"crit": 0.14, "dmg": 0.15}},
-		"b": {"name": "난무 숙련", "desc": "추가 발사 +1 · 쿨감 +6%", "eff": {"amount": 1, "haste": 0.06}},
-	},
-	"spear": {
-		"a": {"name": "관통 숙련", "desc": "위력 +28% · 치명 +6%", "eff": {"dmg": 0.28, "crit": 0.06}},
-		"b": {"name": "질풍 숙련", "desc": "쿨감 +9% · 범위 +12%", "eff": {"haste": 0.09, "area": 0.12}},
-	},
+	"sword": [
+		{"a": {"name": "관통 숙련", "desc": "위력 +25% · 치명 +8%", "eff": {"dmg": 0.25, "crit": 0.08}},
+		 "b": {"name": "광풍 숙련", "desc": "효과 범위 +30% · 추가 발사 +1", "eff": {"area": 0.30, "amount": 1}}},
+		{"a": {"name": "처형 숙련", "desc": "위력 +30% · 치명 +10%", "eff": {"dmg": 0.30, "crit": 0.10}},
+		 "b": {"name": "불굴 숙련", "desc": "최대체력 +40 · 방어 +2", "eff": {"hp": 40.0, "armor": 2.0}}},
+	],
+	"axe": [
+		{"a": {"name": "분쇄 숙련", "desc": "위력 +30% · 쿨감 +6%", "eff": {"dmg": 0.30, "haste": 0.06}},
+		 "b": {"name": "지진 숙련", "desc": "효과 범위 +35% · 추가 발사 +1", "eff": {"area": 0.35, "amount": 1}}},
+		{"a": {"name": "파멸 숙련", "desc": "위력 +35% · 치명 +8%", "eff": {"dmg": 0.35, "crit": 0.08}},
+		 "b": {"name": "거암 숙련", "desc": "최대체력 +50 · 방어 +2", "eff": {"hp": 50.0, "armor": 2.0}}},
+	],
+	"staff": [
+		{"a": {"name": "정밀 숙련", "desc": "위력 +25% · 치명 +10%", "eff": {"dmg": 0.25, "crit": 0.10}},
+		 "b": {"name": "폭풍 숙련", "desc": "추가 발사 +1 · 범위 +15%", "eff": {"amount": 1, "area": 0.15}}},
+		{"a": {"name": "천벌 숙련", "desc": "위력 +30% · 쿨감 +8%", "eff": {"dmg": 0.30, "haste": 0.08}},
+		 "b": {"name": "수호 숙련", "desc": "최대체력 +35 · 재생 +1.5/초", "eff": {"hp": 35.0, "regen": 1.5}}},
+	],
+	"dagger": [
+		{"a": {"name": "암살 숙련", "desc": "치명 +14% · 위력 +15%", "eff": {"crit": 0.14, "dmg": 0.15}},
+		 "b": {"name": "난무 숙련", "desc": "추가 발사 +1 · 쿨감 +6%", "eff": {"amount": 1, "haste": 0.06}}},
+		{"a": {"name": "급소 숙련", "desc": "치명 +16% · 위력 +18%", "eff": {"crit": 0.16, "dmg": 0.18}},
+		 "b": {"name": "잔영 숙련", "desc": "최대체력 +30 · 재생 +1.5/초", "eff": {"hp": 30.0, "regen": 1.5}}},
+	],
+	"spear": [
+		{"a": {"name": "관통 숙련", "desc": "위력 +28% · 치명 +6%", "eff": {"dmg": 0.28, "crit": 0.06}},
+		 "b": {"name": "질풍 숙련", "desc": "쿨감 +9% · 범위 +12%", "eff": {"haste": 0.09, "area": 0.12}}},
+		{"a": {"name": "돌파 숙련", "desc": "위력 +32% · 추가 발사 +1", "eff": {"dmg": 0.32, "amount": 1}},
+		 "b": {"name": "철벽 숙련", "desc": "최대체력 +45 · 방어 +2", "eff": {"hp": 45.0, "armor": 2.0}}},
+	],
 }
 const BOSS_TIME := 180.0        # 첫 보스 3분 (1분→3분: 초반에 빌드 쌓을 여유)
 const FINAL_STAGE := 5
@@ -699,7 +710,7 @@ var wtimer := {}      # 쿨다운 무기 -> 남은 시간
 var passives := {}    # kind -> level
 var evolved := {}     # 진화한 무기 kind -> true
 var primary_weapon := ""   # M2: 이번 런 주무기(숙련 트리 대상). _start_game에서 sw로 확정.
-var mastery_branch := ""    # M2: 주무기 숙련 분기 선택("arch:a"/"arch:b"), 미선택은 "".
+var mastery_picks := {}     # M2: 주무기 숙련 갈림길 선택 {fork_level:int -> "a"/"b"}. 리셋 대상.
 var combos := {}      # (구) 조합 — 유니온으로 대체, 미사용
 var unions := {}      # 획득한 유니온 key -> true (합체 신규 무기)
 
@@ -5878,27 +5889,30 @@ func _weapon_time_cap() -> int:
 	return clampi(2 + int(time_survived / per), 2, MAX_WLEVEL)
 
 
-# M2 무기 숙련 분기: 주무기가 숙련 4단계 직전(Lv3)이고 아직 분기를 안 골랐으면 갈림길 2장 반환.
+# M2 무기 숙련 분기: 주무기가 다음 갈림길 레벨 직전이고 아직 그 갈림길을 안 골랐으면 2장 반환.
 func _pending_mastery_fork() -> Array:
-	if mastery_branch != "" or primary_weapon == "":
-		return []
-	if int(weapons.get(primary_weapon, 0)) != MASTERY_FORK_LEVEL - 1:
+	if primary_weapon == "":
 		return []
 	var arch := _weapon_active_archetype(primary_weapon)
-	var fork: Dictionary = MASTERY_FORK.get(arch, {})
-	if fork.is_empty():
-		return []
-	var out: Array = []
-	for bkey in ["a", "b"]:
-		var b: Dictionary = fork[bkey]
-		var ar := arch
-		var bk: String = bkey
-		out.append({"r": "epic", "t": "fork", "new": true,
-			"title": "[숙련] %s" % str(b["name"]),
-			"desc": "%s — %s 숙련 분기 (1회 선택, 반대편 잠김)" % [str(b["desc"]), WNAMES.get(primary_weapon, primary_weapon)],
-			"icon": WICON.get(primary_weapon, ""),
-			"act": func() -> void: _take_mastery_branch(ar, bk)})
-	return out
+	var forks: Array = MASTERY_FORK.get(arch, [])
+	var lv := int(weapons.get(primary_weapon, 0))
+	for i in forks.size():
+		var flevel: int = MASTERY_FORK_LEVELS[i]
+		if lv != flevel - 1 or mastery_picks.has(flevel):
+			continue
+		var fork: Dictionary = forks[i]
+		var out: Array = []
+		for bkey in ["a", "b"]:
+			var b: Dictionary = fork[bkey]
+			var fl := flevel
+			var bk: String = bkey
+			out.append({"r": "epic", "t": "fork", "new": true,
+				"title": "[숙련] %s" % str(b["name"]),
+				"desc": "%s — %s 숙련 분기 (1회 선택, 반대편 잠김)" % [str(b["desc"]), WNAMES.get(primary_weapon, primary_weapon)],
+				"icon": WICON.get(primary_weapon, ""),
+				"act": func() -> void: _take_mastery_branch(fl, bk)})
+		return out
+	return []
 
 
 # 숙련 갈림길 화면의 3번째 필러: 주무기 강화가 아닌 일반 옵션 하나(없으면 리밋 브레이크).
@@ -5909,12 +5923,17 @@ func _fork_filler_card() -> Dictionary:
 	return _limit_break_card({})
 
 
-# 숙련 분기 확정: 효과(가산 스탯) 적용 + 분기 잠금 + 주무기를 숙련 단계로 진행.
-func _take_mastery_branch(arch: String, bkey: String) -> void:
-	if mastery_branch != "":
+# 숙련 분기 확정: 효과(가산 스탯) 적용 + 해당 갈림길 잠금 + 주무기를 그 숙련 단계로 진행.
+func _take_mastery_branch(flevel: int, bkey: String) -> void:
+	if mastery_picks.has(flevel):
 		return   # 중복 적용 방지(카드 등급 보너스 재호출 등)
-	mastery_branch = "%s:%s" % [arch, bkey]
-	var eff: Dictionary = (MASTERY_FORK.get(arch, {}).get(bkey, {}) as Dictionary).get("eff", {})
+	mastery_picks[flevel] = bkey
+	var arch := _weapon_active_archetype(primary_weapon)
+	var idx := MASTERY_FORK_LEVELS.find(flevel)
+	var forks: Array = MASTERY_FORK.get(arch, [])
+	if idx < 0 or idx >= forks.size():
+		return
+	var eff: Dictionary = (forks[idx][bkey] as Dictionary).get("eff", {})
 	if player:
 		player.damage_mult += float(eff.get("dmg", 0.0))
 		player.area_mult += float(eff.get("area", 0.0))
@@ -5922,9 +5941,15 @@ func _take_mastery_branch(arch: String, bkey: String) -> void:
 		player.amount += int(eff.get("amount", 0))
 		if eff.has("haste"):
 			player.cooldown_mult = maxf(0.35, player.cooldown_mult - float(eff["haste"]))
-	# 숙련 단계 진행: 주무기를 분기 레벨로 올린다(정상 진행 유지).
-	if int(weapons.get(primary_weapon, 0)) < MASTERY_FORK_LEVEL:
-		weapons[primary_weapon] = MASTERY_FORK_LEVEL
+		if eff.has("hp"):
+			var add: float = float(eff["hp"])
+			player.max_hp += add
+			player.hp += add
+		player.regen += float(eff.get("regen", 0.0))
+		player.armor += float(eff.get("armor", 0.0))
+	# 숙련 단계 진행: 주무기를 갈림길 레벨로 올린다(정상 진행 유지).
+	if int(weapons.get(primary_weapon, 0)) < flevel:
+		weapons[primary_weapon] = flevel
 
 
 # M2 숙련 최종 노드: 주무기가 만렙(Lv8)이고 아직 진화 안 했으면 진화 카드를 반환({}=없음).
@@ -6662,7 +6687,7 @@ func _start_game(d: Dictionary) -> void:
 	evolved = {}
 	combos = {}
 	unions = {}
-	mastery_branch = ""   # M2: 이번 런 숙련 분기 미선택 상태로 초기화
+	mastery_picks = {}   # M2: 이번 런 숙련 갈림길 미선택 상태로 초기화
 	reaper_warned = false
 	_boss_is_objective = false
 	# B블렌드: 장착한 무기 장비가 캐릭터 주무기(weapon1)를 대체. 없으면 캐릭터 기본 무기.
