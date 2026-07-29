@@ -55,6 +55,13 @@ func _process(delta: float) -> void:
 	var b = get_tree().get_first_node_in_group("boss")
 	if b and is_instance_valid(b) and position.distance_to(b.position) < radius:
 		b.take_damage(dps * 0.5 * delta)
+	# 독안개·공허구도 지옥 균열과 빙하 화로를 실제로 타격한다.
+	# 조준 목록에 목표만 넣고 피해 루프에서 빠뜨리면 특정 무기로 진행이 막힌다.
+	if main and main.has_method("_combat_objectives"):
+		for objective in main._combat_objectives():
+			if is_instance_valid(objective) \
+					and position.distance_to(objective.position) < radius + objective.radius:
+				objective.take_damage(dps * delta, false, true)
 	# 파괴 오브젝트(관·항아리 등)도 장판으로 부술 수 있게
 	for br in get_tree().get_nodes_in_group("breakables"):
 		if is_instance_valid(br) and position.distance_to(br.position) < radius + br.radius:

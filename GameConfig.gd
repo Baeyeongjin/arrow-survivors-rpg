@@ -180,7 +180,7 @@ static func stages() -> Array:
 			"props": ["res://assets/props/s2_a.png", "res://assets/props/s2_b.png"]},
 		{"name": "빙하",   "boss": "boss_3", "boss_name": "빙결 거상", "tint": Color(0.50, 0.65, 0.90),
 			"element": "ice", "boss_weak": "fire",
-			"rule": "5분 동안 성장한 뒤 목표 보스를 처치",
+			"rule": "얼어붙은 화로 3곳 점화 · 누적 냉기 관리 · 빙결 거상 얼음 갑옷 파괴",
 			"field_passives": ["tome", "spellbinder", "crown", "armor"],
 			"props": ["res://assets/props/s3_a.png", "res://assets/props/s3_b.png"]},
 		{"name": "공허",   "boss": "boss_4", "boss_name": "공허 감시자", "tint": Color(0.60, 0.45, 0.85),
@@ -239,6 +239,26 @@ static func graveyard_midboss_tier() -> Dictionary:
 		"color": Color(0.55, 0.70, 0.88), "hp_mult": 4.4, "speed_mult": 0.96,
 		"xp": 16, "radius": 26.0, "behavior": "charge",
 		"sprite": "res://assets/enemies/dark_knight.png", "weak": "", "resist": "",
+	}
+
+
+# M5-B 빙하 화로를 지키는 원거리 정예. 투사체 둔화와 화로 해빙을 동시에 판단하게 한다.
+static func glacier_elite_tier() -> Dictionary:
+	return {
+		"name": "서리 감시자", "key": "frost_sentry", "shape": "demon",
+		"color": Color(0.58, 0.84, 1.0), "hp_mult": 3.0, "speed_mult": 1.08,
+		"xp": 11, "radius": 18.0, "behavior": "ranged", "shot_chill": true,
+		"sprite": "res://assets/enemies/ice_wisp.png", "weak": "fire", "resist": "ice",
+	}
+
+
+# M5-B 빙하 중간보스. 일반 로스터와 분리해 2:35의 돌진 전투를 보장한다.
+static func glacier_midboss_tier() -> Dictionary:
+	return {
+		"name": "빙벽 골렘", "key": "icewall_golem", "shape": "orc",
+		"color": Color(0.48, 0.72, 0.98), "hp_mult": 5.2, "speed_mult": 0.78,
+		"xp": 20, "radius": 29.0, "behavior": "charge",
+		"sprite": "res://assets/enemies/frost_golem.png", "weak": "fire", "resist": "ice",
 	}
 
 

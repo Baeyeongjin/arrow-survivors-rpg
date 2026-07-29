@@ -75,6 +75,9 @@ static func make(stage: int, stage_tint: Color) -> StageLayout:
 				Rect2(1130, 1520, 150, 150), Rect2(1520, 1520, 150, 150),
 			]
 			layout.item_positions = [Vector2(350, 350), Vector2(2450, 350), Vector2(350, 2450), Vector2(2450, 2450)]
+			# M5-B 얼어붙은 화로: 북쪽 스포크 → 동쪽 회랑 → 남서 회랑.
+			# 중앙에서 출발해 순환로를 한 바퀴 탐색하면 온기 거점이 자연스럽게 늘어난다.
+			layout.objective_positions = [Vector2(1400, 800), Vector2(2445, 1400), Vector2(740, 2445)]
 			layout.relic_position = Vector2(1400, 350)
 			layout.landmark_position = Vector2(1400, 1400)
 		4:

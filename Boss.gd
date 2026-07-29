@@ -68,6 +68,27 @@ var _grave_lock_dir := Vector2.DOWN
 var _grave_charge_hit := false
 var _grave_explode_pos := Vector2.ZERO
 
+# M5-B 빙하 최종 보스: 고드름 부채·빙결 파동·지연 분출의 3개 예고 패턴과
+# 70%/35% 얼음 갑옷. 화염이 빠르지만 모든 속성으로 갑옷을 파괴할 수 있다.
+const GLACIER_ARMOR_THRESHOLDS := [0.70, 0.35]
+const GLACIER_VULNERABLE_TIME := 5.0
+const GLACIER_RING_RADIUS := 190.0
+const GLACIER_RING_WIDTH := 34.0
+const GLACIER_ERUPT_RADIUS := 132.0
+enum GlacierState { CHASE, SHARD_WINDUP, RING_WINDUP, ERUPT_WINDUP, RECOVERY, STUNNED }
+
+var glacier_final := false
+var glacier_phase := 1
+var lit_braziers := 0
+var unlit_braziers := 3
+
+var _glacier_state: int = GlacierState.CHASE
+var _glacier_t := 1.25
+var _glacier_attack_index := 0
+var _glacier_lock_dir := Vector2.DOWN
+var _glacier_erupt_pos := Vector2.ZERO
+var _glacier_armor_index := 0
+
 func _ready() -> void:
 	add_to_group("boss")
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -89,7 +110,7 @@ func configure_hell_final(unsealed: int) -> void:
 
 
 func uses_pattern_damage() -> bool:
-	return hell_final or grave_final
+	return hell_final or grave_final or glacier_final
 
 
 func hell_armor_element_multiplier(element: String) -> float:
@@ -103,6 +124,33 @@ func hell_armor_element_multiplier(element: String) -> float:
 	return 1.0
 
 
+func glacier_armor_element_multiplier(element: String) -> float:
+	match element:
+		"fire":
+			return 2.5
+		"ice":
+			return 0.55
+		"dark":
+			return 0.85
+	return 1.0
+
+
+func configure_glacier_final(lit: int) -> void:
+	glacier_final = true
+	lit_braziers = clampi(lit, 0, 3)
+	unlit_braziers = maxi(0, 3 - lit_braziers)
+	weak = "fire"
+	resist = "ice"
+	glacier_phase = 1
+	armor_max = 0.0
+	armor_hp = 0.0
+	vulnerable_t = 0.0
+	_glacier_state = GlacierState.CHASE
+	_glacier_t = 2.45
+	_glacier_attack_index = 0
+	_glacier_armor_index = 0
+
+
 func _process(delta: float) -> void:
 	_anim_t += delta
 	var pl := get_tree().get_first_node_in_group("player") as Player
@@ -111,6 +159,8 @@ func _process(delta: float) -> void:
 			_process_hell(delta, pl)
 		elif grave_final:
 			_process_grave(delta, pl)
+		elif glacier_final:
+			_process_glacier(delta, pl)
 		else:
 			var to: Vector2 = pl.position - position
 			# 일반 보스는 기존 추격형 동작을 보존한다. 지옥 보스만 패턴 전투를 사용한다.
@@ -222,6 +272,85 @@ func _start_next_hell_attack(pl: Player) -> void:
 			_hell_state = HellState.VOLLEY_WINDUP
 			_hell_t = maxf(0.62, 0.86 - (hell_phase - 1) * 0.06)
 
+
+func _process_glacier(delta: float, pl: Player) -> void:
+	var main := get_parent()
+	if _glacier_state == GlacierState.STUNNED:
+		vulnerable_t = maxf(0.0, vulnerable_t - delta)
+		if vulnerable_t <= 0.0:
+			_glacier_state = GlacierState.CHASE
+			_glacier_t = maxf(0.74, 1.34 - glacier_phase * 0.14)
+		return
+	_glacier_t -= delta
+	match _glacier_state:
+		GlacierState.CHASE:
+			var to := pl.position - position
+			if to.length() > radius + 62.0:
+				if main and main.has_method("stage_enemy_step"):
+					position = main.stage_enemy_step(position, pl.position,
+						move_speed * (0.92 + (glacier_phase - 1) * 0.08) * delta, radius)
+				else:
+					position += to.normalized() * move_speed * delta
+				_atk_play = maxf(_atk_play, 0.32)
+			if _glacier_t <= 0.0:
+				_start_next_glacier_attack(pl)
+		GlacierState.SHARD_WINDUP:
+			_atk_play = maxf(_atk_play, 0.25)
+			if _glacier_t <= 0.0:
+				if main and main.has_method("glacier_boss_shards"):
+					main.glacier_boss_shards(position, _glacier_lock_dir, 6 + glacier_phase,
+						attack_damage * 0.68)
+				_glacier_state = GlacierState.RECOVERY
+				_glacier_t = 0.66
+				_atk_play = 0.5
+				_atk_t = 0.0
+		GlacierState.RING_WINDUP:
+			_atk_play = maxf(_atk_play, 0.25)
+			if _glacier_t <= 0.0:
+				if main and main.has_method("glacier_boss_ring"):
+					main.glacier_boss_ring(position,
+						GLACIER_RING_RADIUS + (glacier_phase - 1) * 13.0,
+						GLACIER_RING_WIDTH, attack_damage * 1.02)
+				_glacier_state = GlacierState.RECOVERY
+				_glacier_t = 0.62
+				_atk_play = 0.5
+				_atk_t = 0.0
+		GlacierState.ERUPT_WINDUP:
+			_atk_play = maxf(_atk_play, 0.25)
+			if _glacier_t <= 0.0:
+				if main and main.has_method("glacier_boss_eruption"):
+					main.glacier_boss_eruption(_glacier_erupt_pos,
+						GLACIER_ERUPT_RADIUS + (glacier_phase - 1) * 12.0,
+						attack_damage * 1.08)
+				_glacier_state = GlacierState.RECOVERY
+				_glacier_t = 0.64
+				_atk_play = 0.5
+				_atk_t = 0.0
+		GlacierState.RECOVERY:
+			if _glacier_t <= 0.0:
+				_glacier_state = GlacierState.CHASE
+				_glacier_t = maxf(0.74, 1.38 - glacier_phase * 0.14)
+
+
+func _start_next_glacier_attack(pl: Player) -> void:
+	var pattern := _glacier_attack_index % 3
+	_glacier_attack_index += 1
+	match pattern:
+		0:
+			_glacier_lock_dir = (pl.position - position).normalized()
+			if _glacier_lock_dir == Vector2.ZERO:
+				_glacier_lock_dir = Vector2.DOWN
+			_glacier_state = GlacierState.SHARD_WINDUP
+			_glacier_t = maxf(0.64, 0.90 - (glacier_phase - 1) * 0.06)
+		1:
+			_glacier_state = GlacierState.RING_WINDUP
+			_glacier_t = maxf(0.70, 0.98 - (glacier_phase - 1) * 0.06)
+		_:
+			_glacier_erupt_pos = pl.position
+			_glacier_state = GlacierState.ERUPT_WINDUP
+			_glacier_t = maxf(0.66, 0.94 - (glacier_phase - 1) * 0.05)
+
+
 func take_damage(d: float, _crit: bool = true, element: String = "") -> void:
 	var m := get_parent()
 	# 상성: 공격 속성 미지정이면 플레이어 공격 속성 사용. 약점 ×1.5 / 저항 ×0.6.
@@ -230,6 +359,9 @@ func take_damage(d: float, _crit: bool = true, element: String = "") -> void:
 		elem = str(m.attack_element)
 	if grave_final:
 		_take_damage_grave(d, _crit, elem, m)
+		return
+	if glacier_final:
+		_take_damage_glacier(d, _crit, elem, m)
 		return
 	# 화염 군주의 갑옷은 체력과 별도다. 냉기는 빠르게 파괴하고 화염은 거의 통하지 않는다.
 	# 전용 무기 어픽스는 이 파괴량에만 적용해 일반 DPS 영구 누적을 만들지 않는다.
@@ -495,11 +627,94 @@ func _take_damage_grave(d: float, crit: bool, elem: String, m) -> void:
 		queue_free()
 
 
+func _start_glacier_armor() -> void:
+	_glacier_armor_index += 1
+	glacier_phase = _glacier_armor_index + 1
+	var cycle_bonus := float(_glacier_armor_index - 1) * 0.04
+	armor_max = max_hp * (0.16 + cycle_bonus + float(unlit_braziers) * 0.03)
+	armor_hp = armor_max
+	vulnerable_t = 0.0
+	_glacier_state = GlacierState.CHASE
+	_glacier_t = 2.30
+	var main := get_parent()
+	if main and main.has_method("on_glacier_boss_armor_started"):
+		main.on_glacier_boss_armor_started(_glacier_armor_index, armor_max)
+
+
+func _break_glacier_armor() -> void:
+	armor_hp = 0.0
+	vulnerable_t = GLACIER_VULNERABLE_TIME
+	_glacier_state = GlacierState.STUNNED
+	_glacier_t = vulnerable_t
+	var main := get_parent()
+	if main and main.has_method("on_glacier_boss_armor_broken"):
+		main.on_glacier_boss_armor_broken(vulnerable_t)
+
+
+# 빙결 거상 피해: 갑옷은 화염 2.5배·냉기 0.55배지만 어떤 속성도 피해를 준다.
+# 체력은 70%/35% 게이트에서 정확히 멈춰 갑옷 국면을 건너뛸 수 없다.
+func _take_damage_glacier(d: float, crit: bool, elem: String, m) -> void:
+	if armor_hp > 0.0:
+		var armor_damage := d * glacier_armor_element_multiplier(elem)
+		if m and m.has_method("_glacier_objective_damage_multiplier"):
+			armor_damage *= float(m._glacier_objective_damage_multiplier())
+		var actual_armor := minf(armor_hp, maxf(0.0, armor_damage))
+		armor_hp -= armor_damage
+		if m and m.has_method("record_damage_dealt"):
+			m.record_damage_dealt(actual_armor)
+		if m and m.has_method("_spawn_dmg_num") and armor_damage >= 1.0:
+			var armor_kind := "weak" if elem == "fire" else ("resist" if elem == "ice" else "")
+			m._spawn_dmg_num(position + Vector2(0, -radius * 0.5),
+				maxi(1, int(round(armor_damage))), crit, armor_kind, elem)
+		if armor_hp <= 0.0:
+			_break_glacier_armor()
+		queue_redraw()
+		return
+
+	var hit_kind := ""
+	if elem != "" and elem != "phys":
+		if elem == weak:
+			d *= 1.5
+			hit_kind = "weak"
+		elif elem == resist:
+			d *= 0.6
+			hit_kind = "resist"
+	if vulnerable_t > 0.0:
+		d *= 1.70
+	if _glacier_armor_index < GLACIER_ARMOR_THRESHOLDS.size():
+		var threshold_hp := max_hp * float(GLACIER_ARMOR_THRESHOLDS[_glacier_armor_index])
+		if hp > threshold_hp and hp - d <= threshold_hp:
+			d = maxf(0.0, hp - threshold_hp)
+	var actual := minf(maxf(0.0, hp), maxf(0.0, d))
+	if m and m.has_method("record_damage_dealt"):
+		m.record_damage_dealt(actual)
+	hp -= d
+	if m and m.has_method("_spawn_dmg_num"):
+		if d >= 1.0:
+			m._spawn_dmg_num(position + Vector2(0, -radius * 0.5),
+				maxi(1, int(round(d))), crit, hit_kind, elem)
+		else:
+			_dmg_accum += d
+	if _glacier_armor_index < GLACIER_ARMOR_THRESHOLDS.size():
+		var reached_threshold := max_hp * float(GLACIER_ARMOR_THRESHOLDS[_glacier_armor_index])
+		if hp <= reached_threshold + 0.01:
+			hp = reached_threshold
+			_start_glacier_armor()
+			queue_redraw()
+			return
+	if hp <= 0.0:
+		if m and m.has_method("on_boss_killed"):
+			m.on_boss_killed()
+		queue_free()
+
+
 func _draw() -> void:
 	if hell_final:
 		_draw_hell_warning()
 	elif grave_final:
 		_draw_grave_warning()
+	elif glacier_final:
+		_draw_glacier_warning()
 	var tex: Texture2D = null
 	if _atk_play > 0.0:
 		var fa: Array = Assets.frames("res://assets/anim/%s_attack" % key)
@@ -538,6 +753,10 @@ func _draw() -> void:
 			tint = Color(0.72, 0.86, 1.22)
 		elif grave_final and vulnerable_t > 0.0:
 			tint = Color(0.70, 1.12, 0.86)
+		elif glacier_final and armor_hp > 0.0:
+			tint = Color(0.68, 0.88, 1.28)
+		elif glacier_final and vulnerable_t > 0.0:
+			tint = Color(1.18, 0.88, 0.54)
 		# 충전 중엔 붉게 달아오름 (맥동)
 		if _tele_t > 0.0:
 			var tp: float = clamp(1.0 - _tele_t / TELE_DUR, 0.0, 1.0)
@@ -587,6 +806,69 @@ func _draw() -> void:
 		for ci in grave_shield_cores:
 			draw_rect(Rect2(Vector2(-w2 * 0.5 + ci * 10.0, -radius - 46), Vector2(7, 7)),
 				Color(0.72, 0.92, 1.0))
+	if glacier_final and armor_max > 0.0 and armor_hp > 0.0:
+		var glacier_armor_ratio := clampf(armor_hp / armor_max, 0.0, 1.0)
+		draw_rect(Rect2(Vector2(-w2 / 2.0, -radius - 34), Vector2(w2, 7)),
+			Color(0.04, 0.08, 0.13, 0.94))
+		draw_rect(Rect2(Vector2(-w2 / 2.0, -radius - 34), Vector2(w2 * glacier_armor_ratio, 7)),
+			Color(0.42, 0.82, 1.0))
+		# 불꽃 모양 마커로 화염 특효를 보여 주되 갑옷 자체는 모든 속성으로 파괴 가능하다.
+		draw_colored_polygon(PackedVector2Array([
+			Vector2(-w2 * 0.5 - 11.0, -radius - 27.0),
+			Vector2(-w2 * 0.5 - 8.0, -radius - 41.0),
+			Vector2(-w2 * 0.5 - 3.0, -radius - 33.0),
+			Vector2(-w2 * 0.5, -radius - 43.0),
+			Vector2(-w2 * 0.5 + 3.0, -radius - 27.0),
+		]), Color(1.0, 0.58, 0.16))
+
+
+func _draw_glacier_warning() -> void:
+	var danger := Color(0.46, 0.82, 1.0)
+	match _glacier_state:
+		GlacierState.SHARD_WINDUP:
+			var duration := maxf(0.64, 0.90 - (glacier_phase - 1) * 0.06)
+			var progress := clampf(1.0 - _glacier_t / duration, 0.0, 1.0)
+			var spread := 1.18
+			var base := _glacier_lock_dir.angle()
+			for i in 5:
+				var angle := base - spread * 0.5 + spread * float(i) / 4.0
+				var dir := Vector2.from_angle(angle)
+				draw_line(dir * (radius + 8.0), dir * (245.0 + progress * 65.0),
+					Color(danger.r, danger.g, danger.b, 0.30 + progress * 0.55), 3.0)
+		GlacierState.RING_WINDUP:
+			var duration := maxf(0.70, 0.98 - (glacier_phase - 1) * 0.06)
+			var progress := clampf(1.0 - _glacier_t / duration, 0.0, 1.0)
+			var rr := GLACIER_RING_RADIUS + (glacier_phase - 1) * 13.0
+			var closing := lerpf(rr * 1.22, rr, progress)
+			draw_arc(Vector2.ZERO, closing, 0.0, TAU, 56,
+				Color(0.58, 0.88, 1.0, 0.42 + progress * 0.45), GLACIER_RING_WIDTH * 0.35)
+			draw_arc(Vector2.ZERO, rr - GLACIER_RING_WIDTH, 0.0, TAU, 56,
+				Color(0.72, 0.94, 1.0, 0.24 + progress * 0.30), 2.0)
+			draw_arc(Vector2.ZERO, rr + GLACIER_RING_WIDTH, 0.0, TAU, 56,
+				Color(0.72, 0.94, 1.0, 0.24 + progress * 0.30), 2.0)
+		GlacierState.ERUPT_WINDUP:
+			var duration := maxf(0.66, 0.94 - (glacier_phase - 1) * 0.05)
+			var progress := clampf(1.0 - _glacier_t / duration, 0.0, 1.0)
+			var local := _glacier_erupt_pos - position
+			var rr := GLACIER_ERUPT_RADIUS + (glacier_phase - 1) * 12.0
+			draw_circle(local, rr, Color(danger.r, danger.g, danger.b, 0.07 + progress * 0.13))
+			draw_arc(local, lerpf(rr * 1.45, rr, progress), 0.0, TAU, 48,
+				Color(0.68, 0.92, 1.0, 0.45 + progress * 0.45), 3.0 + progress * 2.0)
+	if armor_hp > 0.0:
+		var pulse := 0.5 + 0.5 * sin(_anim_t * 8.0)
+		draw_circle(Vector2.ZERO, radius * 1.50, Color(0.35, 0.72, 1.0, 0.08 + pulse * 0.05))
+		draw_arc(Vector2.ZERO, radius * 1.50, 0.0, TAU, 44,
+			Color(0.52, 0.86, 1.0, 0.60 + pulse * 0.26), 4.0)
+		for i in 6:
+			var angle := TAU * float(i) / 6.0
+			var center := Vector2.from_angle(angle) * radius * 1.48
+			draw_line(center - Vector2.from_angle(angle) * 7.0,
+				center + Vector2.from_angle(angle) * 7.0,
+				Color(0.78, 0.96, 1.0, 0.82), 3.0)
+	elif vulnerable_t > 0.0:
+		var pulse := 0.5 + 0.5 * sin(_anim_t * 10.0)
+		draw_arc(Vector2.ZERO, radius * (1.30 + pulse * 0.10), 0.0, TAU, 40,
+			Color(1.0, 0.68, 0.28, 0.72), 4.0)
 
 
 func _draw_grave_warning() -> void:

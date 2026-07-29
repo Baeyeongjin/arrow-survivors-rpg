@@ -1,19 +1,19 @@
-# Claude 다음 작업 인수인계 — M5 던전 확장
+# Claude 다음 작업 인수인계 — 탐사 맵 확대와 M5-C 공허
 
 > 작성일: 2026-07-29
 > 기준 브랜치: `master`
-> 기준 커밋: `82ebadb feat: 픽셀 UI와 원정 경로 화면 개편`
+> 기준 커밋: `c51c259 docs: Codex 인수인계 갱신`
 > 저장소: `Baeyeongjin/arrow-survivors-rpg`
 
 ## Claude에게 바로 전달할 요청문
 
 아래 문장을 Claude에게 그대로 전달하면 된다.
 
-> `CLAUDE_NEXT_WORK.md`를 처음부터 끝까지 읽고, **1순위 작업인 M5-A 묘지 던전 세로 슬라이스만** 구현해줘. 한 번에 나머지 던전까지 확장하지 말고, 기존 지옥 던전을 깨뜨리지 않는 구조로 만들어. 테스트와 실제 렌더 스크린샷 검증까지 끝낸 뒤 `feat: M5 묘지 던전 세로 슬라이스`로 커밋하고 `origin/master`에 푸시해줘.
+> `CLAUDE_NEXT_WORK.md`를 처음부터 끝까지 읽고, M5-B 빙하 완료 상태를 보존하면서 **1순위 작업인 던전 탐사 맵 크기 확대만** 구현해줘. 이번 커밋에서 M5-C 공허까지 동시에 시작하지 말고, 5개 맵의 연결성과 목표 좌표를 자동 테스트한 뒤 실제 맵 렌더 스크린샷으로 이동 밀도까지 확인해줘. 완료하면 `feat: 던전 탐사 맵 확장`으로 커밋하고 `origin/master`에 푸시해줘.
 
 ---
 
-## ✅ 완료 (2026-07-29, Claude) — M5-A 묘지 세로 슬라이스
+## 완료 기반 요약 — M5-A 묘지 이후의 누적 상태
 
 1순위 작업만 구현했다. 지옥 슬라이스는 건드리지 않았다(HellSliceTest 회귀 통과).
 
@@ -30,7 +30,25 @@
 
 ---
 
-## 📌 Codex 인수인계 (2026-07-29 갱신) — 다음 작업은 여기부터
+## ✅ 완료 (2026-07-29, Codex) — M5-B 빙하 세로 슬라이스
+
+묘지의 수명주기를 템플릿으로 사용하되, 빙하는 “안전 거점을 직접 늘리며 환경 압박을 관리”하는 던전으로 분리했다.
+
+- **얼어붙은 화로**(`GlacierBrazier.gd`): 00:45/01:45/03:25에 3곳 등장. 모든 무기·속성으로 해빙 가능하고 화염만 2.5배, 냉기도 0.55배로 진행 가능하다. 점화 후 사라지지 않고 반경 184의 온기 지대로 남는다. 64px `brazier.png`를 정수 2배로 렌더한다.
+- **누적 냉기**: 온기 밖에서 초당 1.05 상승, 안에서 초당 24 감소. 40/75에서 이동속도가 90%/78%로 낮아지고 100에서는 최대 체력 5%의 동상 피해 후 82로 내려간다. 층 전환 시 이동 배수까지 완전 초기화된다.
+- **서리 감시자·빙벽 골렘**: 화로마다 둔화 투사체 정예가 동반되고, 02:35에 돌진형 중간보스가 등장한다. 중간보스 생존 중에는 최종 관문이 잠기며 처치 시 빙하 전용 장비를 확정한다.
+- **빙결 거상**(`Boss.gd::configure_glacier_final`): 접촉 피해 대신 고드름 부채·빙결 고리·지연 분출 3개 예고 패턴을 순환한다. 체력 70%/35%에서 얼음 갑옷이 생기며 화염 2.5배, 냉기 0.55배, 나머지 1배로 모두 파쇄 가능하다. 파쇄 후 5초 동안 피해 1.7배. 미점화 화로는 갑옷을 강화하고, 보스전 중 늦게 점화해도 현재·다음 갑옷이 즉시 약해진다.
+- **빙하 전용 장비 3종**: 해빙의 칼날(`thawbreaker`), 설원의 수호(`winterward`), 난롯불의 메아리(`hearth_echo`). `dungeon_tag="glacier"`와 `[빙하 전용]` 상세를 사용하고, 파괴 피해·냉기/보스 피해·화로 보상에 실제 연결했다.
+- **전투 목표 공통화**: 투사체뿐 아니라 오라·회전검·범위기·E·궁극기도 지옥 균열과 빙하 화로를 모두 타격한다. 화염 캐릭터나 특정 무기 없이는 진행할 수 없는 상황을 막았다.
+- **HUD/텔레메트리/프리뷰**: 화로 n/3·냉기 %·온기 여부·중간보스·갑옷 %·취약 시간을 기존 상단 HUD에 표시한다. 층 기록은 `glacier_braziers`, 피해 원인은 `glacier_cold`/`glacier_boss`로 남긴다. `--glacier-preview=brazier|midboss|boss`를 추가했다.
+
+검증: 신규 `tests/GlacierSliceTest.gd` 포함 독립 테스트 19개 전부 통과 · `--telemetry-test`/`--map-selection-test`/`--expedition-flow-test` PASS · 화로/중간보스/보스 실제 1280×720 렌더 캡처 확인 · 기존 `GRAVEYARD_SLICE_OK`/`HELL_SLICE_OK` 유지.
+
+이월(ponytail): 냉기 누적률·온기 반경·갑옷 HP는 아직 수동 원정 표본이 없으므로 대폭 조정하지 않았다. 빙벽 골렘은 기존의 읽기 쉬운 돌진 1패턴으로 시작한다. 맵 확대 뒤 화로 사이 이동 시간이 달라지므로 냉기 수치는 그때 다시 플레이테스트한다.
+
+---
+
+## 📌 다음 작업 인수인계 (2026-07-29 갱신) — 여기부터 시작
 
 ### 이번 세션에서 완료된 것 (전부 master 푸시됨)
 
@@ -40,6 +58,7 @@
 | `8d61805` | 던전 목표 오브젝트 4종 아트 (화로·봉인비·공허닻·성문), 64px 규격 |
 | `9707f47` | **던전 지형 5종 RPG형 재설계** (방+복도) + `tests/StageLayoutTest.gd` |
 | `16b472f` | 던전 조형물 8종 64px 고전 도트 교체 + 정수배 확대 렌더 |
+| `이번 커밋` | **M5-B 빙하 세로 슬라이스** + `tests/GlacierSliceTest.gd` |
 
 **아트 규격(중요, 앞으로 이걸 지킬 것)**: 맵은 `CELL=32` 격자, 몹 32×32.
 맵 오브젝트·조형물은 **64px 캔버스 + low detail + flat shading + single color outline**으로
@@ -49,27 +68,17 @@ PixelLab 생성하고, 코드에서 **정수배 확대**해 얹는다. 128px로 
 
 ### 다음 작업 우선순위
 
-**1순위 — M5-B 빙하 세로 슬라이스** (묘지를 템플릿으로 미러링)
-- 화로/온기 지역 + 누적 냉기: 플레이어 냉기 스택이 쌓이고 화로 범위에서 해제.
-  화염 속성은 빠른 해결책이지만 **다른 속성도 진행 가능해야 함**(묘지처럼 정답 강제 금지).
-- 아트 준비됨: `assets/maps/glacier/brazier.png` (64px)
-- 지형 준비됨: 빙하 = 외곽 순환 회랑 + 중앙 결정실(스포크 4). 화로를 스포크 입구나
-  중앙에 두면 "돌 것인가 들어갈 것인가"가 갈린다. `objective_positions`는 아직 비어 있으니
-  `StageLayout.make(3)`에 3개 추가 필요(추가하면 `StageLayoutTest`가 자동 검증).
-- 중간보스 + 얼음 갑옷 파쇄 보스: `Boss.gd`의 `configure_grave_final`/`_process_grave`를
-  템플릿으로 복제. 묘지 = 영혼 방패(핵 파괴), 지옥 = 화염 갑옷(냉기 파괴) 참고.
-- 전용 장비 3종: `GRAVE_GEAR_SPECIALS` 구조 그대로, `dungeon_tag="glacier"`.
-- `tests/GraveyardSliceTest.gd`를 복제해 `tests/GlacierSliceTest.gd` 작성.
-
-**2순위 — 맵 크기 확대 (사장님 요청, 미착수)**
+**1순위 — 맵 크기 확대 (사장님 요청, 미착수)**
 "맵이 탐사하기엔 좀 작다, RPG 느낌 살리려면 더 크게". 현재 `StageLayout.WORLD = 2800×2800`.
 - 권장: `WORLD`를 키우고 `make()` 좌표를 같은 비율로 스케일(예: 1.4배 → 3920).
   좌표를 손으로 다 고치기보다 `make()` 끝에서 일괄 스케일하는 편이 안전.
 - 반드시 `StageLayoutTest` 통과 확인(목표 좌표 walkable + 전 구역 연결성).
 - 맵이 커지면 몹 스폰 밀도·이동 시간이 같이 늘어나므로 `stage_spawn_profile`과
   `DUNGEON_BOSS_TIME`(현재 300초) 재검토 필요.
+- 빙하 화로 간격이 넓어지면 현재 냉기 초당 1.05가 과해질 수 있다. 먼저 지형만 비례 확대하고,
+  실제 한 바퀴 이동 시간을 측정한 뒤 냉기율·화로 등장 시각을 함께 판단한다.
 
-**3순위 이후** — M5-C 공허(닻·중력장), M5-D 마왕성(성문 관문), M5-E 통계 기반 밸런스.
+**2순위 이후** — M5-C 공허(닻·중력장), M5-D 마왕성(성문 관문), M5-E 통계 기반 밸런스.
 공허 닻(`void_anchor.png`)·마왕성 성문(`castle_gate.png`) 아트는 이미 준비돼 있다.
 
 ### 하지 말 것
@@ -91,9 +100,10 @@ PixelLab 생성하고, 코드에서 **정수배 확대**해 얹는다. 128px로 
 | M3 지옥 세로 슬라이스 | 완료 | 균열, 전용 정예/중간보스, 패턴 보스, 지옥 장비 |
 | M4 전리품과 원정 | 완료 | 3층 원정, 경로 선택, 2개 추출, 자동 분해, 보스 파편 |
 | M5 로컬 통계 | 완료 | 피해 비중, 사망 원인, 층 기록, 경로, 추출 결과 저장 |
+| M5 던전 확장 | 진행 중 | 지옥·묘지·빙하 세로 슬라이스 완료, 공허·마왕성 남음 |
 | UI 정리 | 완료 | 데미지 폰트로 통일, 이모지 제거, PixelLab 아이콘/경로 UI |
 
-기준 커밋에서 독립 테스트 16개와 메인 흐름 테스트 3개가 모두 통과했다.
+M5-B 완료 기준으로 독립 테스트 19개와 메인 흐름 테스트 3개가 모두 통과했다.
 Claude 작업 후에도 최소한 이 기준을 유지해야 한다.
 
 다음 핵심은 신규 캐릭터나 무기 추가가 아니다.
@@ -104,24 +114,14 @@ Claude 작업 후에도 최소한 이 기준을 유지해야 한다.
 
 ## 2. 코드 기준으로 확인한 실제 미완료
 
-### 2.1 지옥만 완성형 던전이다
+### 2.1 공허와 마왕성은 아직 완성형 던전이 아니다
 
-- `Main.gd`에서 고유 원정 진행 분기는 사실상 `map_stage == HELL_STAGE`뿐이다.
-- 지옥에는 다음이 모두 있다.
-  - `HellFissure.gd`
-  - 고정 이벤트 시간표
-  - `잿불 추적자`
-  - `용암 집행자`
-  - 화염 군주의 예고 공격/갑옷/딜타임
-  - `HELL_GEAR_SPECIALS`
-  - `tests/HellSliceTest.gd`
-- 묘지·빙하·공허·마왕성은 현재 다음 수준이다.
-  - 서로 다른 맵 레이아웃
-  - 몬스터 로스터와 배경
-  - 보스 스프라이트와 약점
-  - 5분 생존 후 등장하는 단순 추격형 보스
-
-`Boss.gd`도 지옥 보스만 패턴 피해를 사용하고, 나머지는 플레이어를 추격하며 접촉 피해를 준다.
+- 지옥·묘지·빙하는 각각 고유 목표, 고정 시간표, 전용 정예·중간보스,
+  전조형 최종보스, 던전 장비와 회귀 테스트까지 갖춘 세로 슬라이스다.
+- 공허·마왕성은 서로 다른 레이아웃·로스터·배경·보스 스프라이트와 약점은 있지만,
+  아직 5분 생존 뒤 등장하는 단순 추격형 보스 단계다.
+- 다음 던전 구현은 `GraveSeal.gd`, `GlacierBrazier.gd`처럼 목표 노드를 분리하고,
+  `Boss.gd`에는 해당 보스의 작은 상태 머신만 추가하는 구조를 따른다.
 
 ### 2.2 지금은 통계 기반 수치 조정을 할 때가 아니다
 
@@ -136,16 +136,18 @@ Claude 작업 후에도 최소한 이 기준을 유지해야 한다.
 
 지옥 코드를 그대로 복사해 `grave_*`, `glacier_*`, `void_*`, `castle_*` 분기를 모두 `Main.gd`에 넣으면 유지보수가 급격히 나빠진다.
 
-이번 묘지 작업에서 다음 던전들이 따를 수 있는 작은 실행 단위를 만든다.
+묘지와 빙하 작업에서 다음 던전들이 따를 수 있는 작은 실행 단위를 만들었다.
 
-권장 파일 구성:
+이미 적용된 파일 구성:
 
-- `GraveyardEncounter.gd`: 시간표, 봉인 목표, 중간보스 상태
 - `GraveSeal.gd`: 점령형 목표 노드
-- `GraveyardBossPattern.gd`: 묘지 수호자 상태 머신과 전조
+- `GlacierBrazier.gd`: 파괴·점화형 목표 및 온기 지역
+- `Boss.gd`: 묘지·빙하 수호자의 상태 머신과 전조
+- `Main.gd`: 각 층의 시간표와 공통 수명주기 연결
 - `tests/GraveyardSliceTest.gd`: 묘지 규칙 회귀 검사
+- `tests/GlacierSliceTest.gd`: 빙하 규칙 회귀 검사
 
-정확한 클래스 구성은 코드에 맞게 조정해도 되지만, 묘지 로직 전체를 `Main.gd`에 길게 복사하는 방식은 피한다.
+공허와 마왕성도 목표 노드·테스트를 분리하고, 던전 로직 전체를 `Main.gd`에 길게 복사하는 방식은 피한다.
 
 ---
 
@@ -355,14 +357,12 @@ Claude 작업 후에도 최소한 이 기준을 유지해야 한다.
 
 ---
 
-## 8. 묘지 이후 작업 순서
+## 8. 현재 이후 작업 순서
 
-묘지 세로 슬라이스가 검증된 뒤에만 다음으로 넘어간다.
-
-1. **M5-B 빙하**
-   - 화로/온기 지역과 누적 냉기
-   - 화염은 빠른 해결책이지만 다른 속성도 진행 가능
-   - 고드름 경로, 빙결 파동, 얼음 갑옷 파쇄 보스
+1. **던전 탐사 맵 크기 확대**
+   - `StageLayout.WORLD`와 모든 지형·목표 좌표를 같은 비율로 확대
+   - 연결성·목표 접근성 자동 테스트와 실제 이동 밀도 렌더 확인
+   - 이동 시간 측정 뒤에만 몹 밀도·빙하 냉기율·보스 시간을 조정
 2. **M5-C 공허**
    - 공허 닻과 중력장
    - 위치 선정과 이동 경로 왜곡
@@ -395,6 +395,7 @@ $godotExe = 'C:\Users\kpo02\Downloads\Godot_v4.7-stable_win64.exe\Godot_v4.7-sta
 
 ```powershell
 & $godotExe --headless --path . --script res://tests/GraveyardSliceTest.gd
+& $godotExe --headless --path . --script res://tests/GlacierSliceTest.gd
 ```
 
 핵심 메인 흐름:
@@ -411,6 +412,9 @@ $godotExe = 'C:\Users\kpo02\Downloads\Godot_v4.7-stable_win64.exe\Godot_v4.7-sta
 & $godotExe --path . --rendering-method gl_compatibility -- --autoshot --graveyard-preview=seal
 & $godotExe --path . --rendering-method gl_compatibility -- --autoshot --graveyard-preview=midboss
 & $godotExe --path . --rendering-method gl_compatibility -- --autoshot --graveyard-preview=boss
+& $godotExe --path . --rendering-method gl_compatibility -- --autoshot --glacier-preview=brazier
+& $godotExe --path . --rendering-method gl_compatibility -- --autoshot --glacier-preview=midboss
+& $godotExe --path . --rendering-method gl_compatibility -- --autoshot --glacier-preview=boss
 ```
 
 주의:
@@ -419,4 +423,4 @@ $godotExe = 'C:\Users\kpo02\Downloads\Godot_v4.7-stable_win64.exe\Godot_v4.7-sta
 - 기존 `_retro_backup` 중복 UID 경고와 종료 시 일부 리소스 leak 경고는 현재도 존재한다.
 - 새 파서 오류나 새 리소스 누락과 기존 경고를 구분한다.
 - 커밋 전 `git diff --check`와 `git status -sb`를 확인한다.
-- `RPG_ROGUELIKE_EVOLUTION_PLAN.md`의 M5 전체 체크는 묘지 하나만 끝났다고 완료 처리하지 않는다.
+- `RPG_ROGUELIKE_EVOLUTION_PLAN.md`의 M5 전체 체크는 공허·마왕성·1차 밸런스까지 끝나기 전에 완료 처리하지 않는다.

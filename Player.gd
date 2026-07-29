@@ -25,6 +25,7 @@ var radius := BASE_RADIUS
 var invuln := 0.0           # 피격 무적 시간
 var magnet_t := 0.0         # 자석 아이템 버프 남은 시간
 var slow_t := 0.0           # 빙결 둔화 남은 시간 (아이스 퀸)
+var environment_speed_mult := 1.0   # 빙하 누적 냉기처럼 환경이 주는 비누적 이동 배수
 var dodge_t := 0.0          # 공용 회피 이동 남은 시간
 var dodge_cd := 0.0         # 공용 회피 재사용 대기시간
 var cam: Camera2D
@@ -181,7 +182,7 @@ func _process(delta: float) -> void:
 		dodge_cd = maxf(0.0, dodge_cd - delta)
 	if magnet_t > 0.0:
 		magnet_t = maxf(0.0, magnet_t - delta)
-	var eff_speed := speed * (0.55 if slow_t > 0.0 else 1.0)
+	var eff_speed := speed * clampf(environment_speed_mult, 0.25, 1.0) * (0.55 if slow_t > 0.0 else 1.0)
 	if dodge_t > 0.0:
 		# 프레임이 크게 끊겨도 총 회피 거리가 DODGE_DISTANCE를 넘지 않게 남은 시간만 적분한다.
 		var dodge_motion_time := minf(delta, dodge_t)

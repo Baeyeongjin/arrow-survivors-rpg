@@ -9,6 +9,7 @@ enum State { TITLE, PLAYING, LEVELUP, GAMEOVER, VICTORY, PAUSED, ROUTE, EXTRACTI
 
 const HellFissureScript = preload("res://HellFissure.gd")
 const GraveSealScript = preload("res://GraveSeal.gd")
+const GlacierBrazierScript = preload("res://GlacierBrazier.gd")
 const ExpeditionRulesScript = preload("res://ExpeditionRules.gd")
 const RunTelemetryScript = preload("res://RunTelemetry.gd")
 const UiTypographyScript = preload("res://UiTypography.gd")
@@ -199,6 +200,14 @@ const GRAVE_SEAL_TIMES := [40.0, 95.0, 200.0]   # 00:40 / 01:35 / 03:20
 const GRAVE_SEAL_REQUIRED := 3
 const GRAVE_SEAL_DURATION := 10.0   # 봉인비 1곳당 누적 점령 시간
 const GRAVE_MIDBOSS_TIME := 150.0   # 02:30 무덤 기사
+# M5-B 빙하 세로 슬라이스: 얼어붙은 화로 3곳 · 2:35 빙벽 골렘 · 5:00 빙결 거상.
+const GLACIER_STAGE := 3
+const GLACIER_BRAZIER_TIMES := [45.0, 105.0, 205.0]   # 00:45 / 01:45 / 03:25
+const GLACIER_BRAZIER_REQUIRED := 3
+const GLACIER_MIDBOSS_TIME := 155.0   # 02:35 빙벽 골렘
+const GLACIER_CHILL_MAX := 100.0
+const GLACIER_CHILL_RATE := 1.05
+const GLACIER_WARMTH_DRAIN := 24.0
 const EXPEDITION_FLOORS := ExpeditionRulesScript.FLOOR_COUNT
 const MAX_ENEMIES := 300     # 동시 등장 상한 (뱀서형 밀도 + 내장 GPU 부하 관리. 340은 Iris Xe에서 랙 → 300으로 한 단계 롤백)
 # 무기 진화 레시피 (뱀서식): 무기 만렙(Lv8) + 필수 패시브 보유 → 보스 상자 개봉 시 진화
@@ -577,6 +586,17 @@ var grave_midboss_defeated := false
 var grave_boss_wait_warned := false
 var grave_shroud_used := false   # 수의의 가호: 층마다 처음 치명 피해 1회 방어
 var grave_requiem_cd := 0.0      # 장송의 무기: 전조 취소 쿨다운(8초)
+
+# M5-B 빙하 인카운터 상태 (층 전환 시 초기화)
+var glacier_braziers_spawned := 0
+var glacier_braziers_lit := 0
+var glacier_midboss_spawned := false
+var glacier_midboss_alive := false
+var glacier_midboss_defeated := false
+var glacier_boss_wait_warned := false
+var glacier_chill := 0.0
+var glacier_in_warmth := false
+var glacier_cold_tick_cd := 0.0
 
 # M4 3층 원정. 총 런 시간은 time_survived에 누적하고, 각 층의 5분 시계는
 # expedition_floor_started_at을 빼서 계산한다.
@@ -1072,6 +1092,7 @@ func _autoshot() -> void:
 	var active_preview := ""
 	var hell_preview := ""
 	var grave_preview := ""
+	var glacier_preview := ""
 	for arg in args:
 		if arg.begins_with("--active-preview="):
 			var requested_active := arg.trim_prefix("--active-preview=")
@@ -1085,6 +1106,10 @@ func _autoshot() -> void:
 			var requested_grave := arg.trim_prefix("--graveyard-preview=")
 			if requested_grave in ["seal", "midboss", "boss"]:
 				grave_preview = requested_grave
+		elif arg.begins_with("--glacier-preview="):
+			var requested_glacier := arg.trim_prefix("--glacier-preview=")
+			if requested_glacier in ["brazier", "midboss", "boss"]:
+				glacier_preview = requested_glacier
 	if active_preview != "":
 		var preview_weapon_kind := str({
 			"sword": "cleave", "axe": "axe", "staff": "soul_bolt",
@@ -1107,6 +1132,8 @@ func _autoshot() -> void:
 		sel_stage = HELL_STAGE
 	if grave_preview != "":
 		sel_stage = GRAVE_STAGE
+	if glacier_preview != "":
+		sel_stage = GLACIER_STAGE
 	title_panel.visible = false
 	sel_modifier = {}
 	_start_game(GameConfig.difficulties()[0])
@@ -1388,6 +1415,76 @@ func _autoshot() -> void:
 		var grave_image := get_viewport().get_texture().get_image()
 		grave_image.save_png("user://autoshot.png")
 		print("GRAVEYARD_PREVIEW %s" % grave_preview)
+		print("AUTOSHOT SAVED: ", ProjectSettings.globalize_path("user://autoshot.png"))
+		get_tree().quit()
+		return
+
+	# --glacier-preview=brazier|midboss|boss: M5-B 핵심 전투 상태를 실제 렌더로 검수한다.
+	if glacier_preview != "":
+		player.invuln = 999.0
+		weapons.clear()
+		wtimer.clear()
+		xp_to_next = 999999
+		for preview_enemy in get_tree().get_nodes_in_group("enemies"):
+			if is_instance_valid(preview_enemy):
+				preview_enemy.queue_free()
+		await get_tree().process_frame
+		match glacier_preview:
+			"brazier":
+				time_survived = GLACIER_BRAZIER_TIMES[0]
+				glacier_braziers_spawned = 1
+				glacier_chill = 68.0
+				var frozen := GlacierBrazierScript.new()
+				frozen.position = player.position + Vector2.RIGHT * 205.0
+				frozen.configure(0, 180.0)
+				add_child(frozen)
+				frozen.hp = frozen.max_hp * 0.48
+				frozen.process_mode = Node.PROCESS_MODE_DISABLED
+				frozen.queue_redraw()
+				var warm := GlacierBrazierScript.new()
+				warm.position = player.position + Vector2.LEFT * 170.0
+				warm.configure(1, 180.0)
+				add_child(warm)
+				warm.light_for_preview()
+				warm.process_mode = Node.PROCESS_MODE_DISABLED
+				warm.queue_redraw()
+				glacier_in_warmth = true
+			"midboss":
+				time_survived = GLACIER_MIDBOSS_TIME
+				glacier_braziers_spawned = 2
+				_wave_minute = int(time_survived / 60.0)
+				_current_wave = GameConfig.wave_for_minute(_wave_minute, GLACIER_STAGE)
+				featured_enemy = str(_current_wave.get("primary", "frost_golem"))
+				glacier_chill = 72.0
+				var golem := _spawn_glacier_midboss()
+				golem.position = player.position + Vector2.RIGHT * 210.0
+				golem._cstate = 1
+				golem._ctimer = 0.26
+				golem._clock = Vector2.LEFT
+				golem.process_mode = Node.PROCESS_MODE_DISABLED
+				golem.queue_redraw()
+			"boss":
+				time_survived = DUNGEON_BOSS_TIME
+				_wave_minute = int(time_survived / 60.0)
+				_current_wave = GameConfig.wave_for_minute(_wave_minute, GLACIER_STAGE)
+				featured_enemy = str(_current_wave.get("primary", "frost_golem"))
+				glacier_braziers_spawned = GLACIER_BRAZIER_REQUIRED
+				glacier_braziers_lit = 2
+				glacier_midboss_spawned = true
+				glacier_midboss_defeated = true
+				glacier_chill = 81.0
+				_spawn_dungeon_boss()
+				boss.position = player.position + Vector2.RIGHT * 220.0
+				boss.take_damage(boss.max_hp * 0.31, false, "phys")
+				boss.process_mode = Node.PROCESS_MODE_DISABLED
+				boss.queue_redraw()
+		_update_glacier_speed_penalty()
+		_update_ui()
+		await get_tree().process_frame
+		await get_tree().process_frame
+		var glacier_image := get_viewport().get_texture().get_image()
+		glacier_image.save_png("user://autoshot.png")
+		print("GLACIER_PREVIEW %s" % glacier_preview)
 		print("AUTOSHOT SAVED: ", ProjectSettings.globalize_path("user://autoshot.png"))
 		get_tree().quit()
 		return
@@ -1918,6 +2015,8 @@ func _process(delta: float) -> void:
 		_update_hell_encounter()
 	elif map_stage == GRAVE_STAGE:
 		_update_grave_encounter()
+	elif map_stage == GLACIER_STAGE:
+		_update_glacier_encounter(delta)
 	if grave_requiem_cd > 0.0:
 		grave_requiem_cd = maxf(0.0, grave_requiem_cd - delta)
 	if abyss_mode:
@@ -1933,7 +2032,7 @@ func _process(delta: float) -> void:
 				reaper_warned = true
 				_event_banner("[경고] 곧 %d층 보스가 나타난다..." % expedition_floor)
 			if dungeon_elapsed >= DUNGEON_BOSS_TIME:
-				# 지옥·묘지는 중간보스가 살아 있으면 최종 관문이 열리지 않는다.
+				# 고유 인카운터 던전은 중간보스가 살아 있으면 최종 관문이 열리지 않는다.
 				if map_stage == HELL_STAGE and hell_midboss_alive:
 					if not hell_boss_wait_warned:
 						hell_boss_wait_warned = true
@@ -1942,6 +2041,10 @@ func _process(delta: float) -> void:
 					if not grave_boss_wait_warned:
 						grave_boss_wait_warned = true
 						_event_banner("[경고] 무덤 기사를 먼저 처치해야 한다!")
+				elif map_stage == GLACIER_STAGE and glacier_midboss_alive:
+					if not glacier_boss_wait_warned:
+						glacier_boss_wait_warned = true
+						_event_banner("[경고] 빙벽 골렘을 먼저 처치해야 한다!")
 				else:
 					_spawn_dungeon_boss()
 
@@ -2082,9 +2185,9 @@ func _physics_process(delta: float) -> void:
 					a.queue_free()
 				else:
 					a.pierce -= 1
-		# 지옥 용암 균열은 적과 같은 전투 표적이지만 처치·XP 그룹에는 넣지 않는다.
+		# 던전 목표는 적과 같은 전투 표적이지만 처치·XP 그룹에는 넣지 않는다.
 		if is_instance_valid(a):
-			for objective in get_tree().get_nodes_in_group("hell_objectives"):
+			for objective in _combat_objectives():
 				if not is_instance_valid(objective) or a.hit.has(objective):
 					continue
 				if a.position.distance_to(objective.position) < a.radius + objective.radius:
@@ -2134,6 +2237,9 @@ func _physics_process(delta: float) -> void:
 			boss.take_damage(dps * delta)
 			if evolved.get("aura", false) and _aura_pulse_t > 1.15:
 				boss.take_damage(dps * 0.55)
+		for objective in _combat_objectives():
+			if is_instance_valid(objective) and player.position.distance_to(objective.position) < ar + objective.radius:
+				objective.take_damage(dps * delta, false, true)
 		# 오라로 파괴 오브젝트도 부숨
 		for br in get_tree().get_nodes_in_group("breakables"):
 			if is_instance_valid(br) and player.position.distance_to(br.position) < ar + br.radius:
@@ -2154,6 +2260,9 @@ func _physics_process(delta: float) -> void:
 					e.take_damage(dpsb * delta)
 			if boss and is_instance_valid(boss) and bpos.distance_to(boss.position) < 16.0 + boss.radius:
 				boss.take_damage(dpsb * delta)
+			for objective in _combat_objectives():
+				if is_instance_valid(objective) and bpos.distance_to(objective.position) < 16.0 + objective.radius:
+					objective.take_damage(dpsb * delta, false, true)
 			# 회전 검으로 파괴 오브젝트도 부숨
 			for br in get_tree().get_nodes_in_group("breakables"):
 				if is_instance_valid(br) and bpos.distance_to(br.position) < 16.0 + br.radius:
@@ -2173,6 +2282,12 @@ func _physics_process(delta: float) -> void:
 					var tob2: Vector2 = boss.position - player.position
 					if tob2.length() <= sweep_rad + boss.radius and abs(tob2.angle_to(sweep_dir)) < 0.95:
 						boss.take_damage(dpsb * 0.65)
+				for objective in _combat_objectives():
+					if not is_instance_valid(objective):
+						continue
+					var too: Vector2 = objective.position - player.position
+					if too.length() <= sweep_rad + objective.radius and abs(too.angle_to(sweep_dir)) < 0.95:
+						objective.take_damage(dpsb * 0.65)
 				_spawn_proc_fx("slash", player.position, sweep_rad, Color(1.0, 0.22, 0.12), 0.28,
 					sweep_dir, player.position + sweep_dir * sweep_rad)
 		telemetry_restore_damage_source(blade_previous_source)
@@ -2205,12 +2320,17 @@ func _physics_process(delta: float) -> void:
 			continue
 		if ea.position.distance_to(player.position) < ea.radius + player.radius:
 			if player.invuln <= 0.0:
-				if ea.fire:
-					apply_hell_boss_damage(ea.damage, ea.position)
-				else:
-					apply_player_damage(max(1.0, ea.damage - player.armor), "enemy_projectile")
-					player.invuln = 0.6
-					player.play_hurt()
+				match str(ea.damage_source):
+					"hell_boss":
+						apply_hell_boss_damage(ea.damage, ea.position)
+					"grave_boss":
+						apply_grave_boss_damage(ea.damage, ea.position)
+					"glacier_boss":
+						apply_glacier_boss_damage(ea.damage, ea.position, 10.0)
+					_:
+						apply_player_damage(max(1.0, ea.damage - player.armor), "enemy_projectile")
+						player.invuln = 0.6
+						player.play_hurt()
 				if ea.chill:
 					player.slow_t = 1.5
 				play_sfx("hurt", -8.0, 0.3)
@@ -2504,6 +2624,9 @@ func _fire_cyclone() -> void:
 	var b = get_tree().get_first_node_in_group("boss")
 	if b and is_instance_valid(b) and player.position.distance_to(b.position) <= rad:
 		b.take_damage(dmg)
+	for objective in _combat_objectives():
+		if is_instance_valid(objective) and player.position.distance_to(objective.position) <= rad + objective.radius:
+			objective.take_damage(dmg)
 	spawn_fx("fx_whirl", player.position, rad * 2.0)
 
 
@@ -2550,6 +2673,9 @@ func _fire_blade_dance() -> void:
 	var b = get_tree().get_first_node_in_group("boss")
 	if b and is_instance_valid(b) and player.position.distance_to(b.position) <= rad:
 		b.take_damage(dmg)
+	for objective in _combat_objectives():
+		if is_instance_valid(objective) and player.position.distance_to(objective.position) <= rad + objective.radius:
+			objective.take_damage(dmg)
 	spawn_fx("fx_inferno", player.position, rad * 2.0)
 
 
@@ -3306,6 +3432,13 @@ func _fire_whip() -> void:
 		var tob: Vector2 = boss.position - player.position
 		if tob.length() <= reach + boss.radius and abs(tob.angle_to(dir)) < halfarc:
 			boss.take_damage(dmg)
+	for objective in _combat_objectives():
+		if not is_instance_valid(objective):
+			continue
+		var objective_delta: Vector2 = objective.position - player.position
+		if objective_delta.length() <= reach + objective.radius \
+				and abs(objective_delta.angle_to(dir)) < halfarc:
+			objective.take_damage(dmg)
 	_break_near(player.position + dir * reach * 0.5, reach * 0.6, dmg)   # 채찍 범위 내 파괴물도 부숨
 	# 채찍 모션: 검기와 같은 tbbk 크레센트를 응용 — 아트를 가로로 구워두고(90°)
 	# stretch로 세로를 강하게 눌러 '길고 얇은 가닥'으로 만든다. 같은 소스지만
@@ -3556,6 +3689,9 @@ func _fire_frost() -> void:
 		if evo:
 			_spawn_proc_fx("shatter", boss.position, 68.0, Color(0.62, 0.9, 1.0), 0.34)
 			spawn_fx("fx_glacialshatter", boss.position, 68.0)
+	for objective in _combat_objectives():
+		if is_instance_valid(objective) and player.position.distance_to(objective.position) <= rad + objective.radius:
+			objective.take_damage(dmg)
 	var fx := Effect.new()
 	fx.kind = "ring"
 	fx.position = player.position
@@ -3578,6 +3714,17 @@ func _spawn_bolt(pos: Vector2) -> void:
 	add_child(fx)
 
 
+func _combat_objectives() -> Array:
+	var objectives: Array = []
+	var seen := {}
+	for group_name in ["hell_objectives", "glacier_objectives"]:
+		for objective in get_tree().get_nodes_in_group(group_name):
+			if is_instance_valid(objective) and not seen.has(objective):
+				seen[objective] = true
+				objectives.append(objective)
+	return objectives
+
+
 func _enemies_and_boss() -> Array:
 	var arr: Array = []
 	for e in get_tree().get_nodes_in_group("enemies"):
@@ -3585,7 +3732,7 @@ func _enemies_and_boss() -> Array:
 			arr.append(e)
 	if boss and is_instance_valid(boss):
 		arr.append(boss)
-	for objective in get_tree().get_nodes_in_group("hell_objectives"):
+	for objective in _combat_objectives():
 		if is_instance_valid(objective):
 			arr.append(objective)
 	return arr
@@ -3685,7 +3832,7 @@ func _explode(pos: Vector2, rad: float, dmg: float, exclude, source: String = ""
 			e.take_damage(dmg)
 	if boss and is_instance_valid(boss) and boss != exclude and pos.distance_to(boss.position) <= rad:
 		boss.take_damage(dmg)
-	for objective in get_tree().get_nodes_in_group("hell_objectives"):
+	for objective in _combat_objectives():
 		if is_instance_valid(objective) and objective != exclude and pos.distance_to(objective.position) <= rad:
 			objective.take_damage(dmg)
 	for b in get_tree().get_nodes_in_group("breakables"):
@@ -3757,7 +3904,7 @@ func _nearest_enemy(from: Vector2):
 		if from.distance_to(boss.position) < best_d:
 			best_d = from.distance_to(boss.position)
 			best = boss
-	for objective in get_tree().get_nodes_in_group("hell_objectives"):
+	for objective in _combat_objectives():
 		if not is_instance_valid(objective):
 			continue
 		var objective_distance: float = from.distance_to(objective.position)
@@ -3778,7 +3925,7 @@ func _nearest_unhit_enemy(a):
 		if d < best_d:
 			best_d = d
 			best = e
-	for objective in get_tree().get_nodes_in_group("hell_objectives"):
+	for objective in _combat_objectives():
 		if not is_instance_valid(objective) or a.hit.has(objective):
 			continue
 		var objective_distance: float = a.position.distance_to(objective.position)
@@ -4305,7 +4452,7 @@ func hell_boss_slam(origin: Vector2, radius: float, damage: float) -> void:
 func spawn_hell_boss_volley(origin: Vector2, count: int, damage: float) -> void:
 	for i in maxi(6, count):
 		var dir := Vector2.from_angle(TAU * float(i) / float(maxi(6, count)))
-		spawn_enemy_arrow(origin + dir * 28.0, dir, damage, false, 255.0, true)
+		spawn_enemy_arrow(origin + dir * 28.0, dir, damage, false, 255.0, true, "hell_boss")
 	_spawn_proc_fx("burst", origin, 72.0, Color(1.0, 0.48, 0.08), 0.34)
 	play_sfx("shoot", -8.0, 0.08)
 
@@ -4422,7 +4569,7 @@ func grave_boss_fan(origin: Vector2, aim_dir: Vector2, count: int, damage: float
 	for i in n:
 		var a := base - spread * 0.5 + spread * float(i) / float(n - 1)
 		var dir := Vector2.from_angle(a)
-		spawn_enemy_arrow(origin + dir * 28.0, dir, damage, false, 245.0, true)
+		spawn_enemy_arrow(origin + dir * 28.0, dir, damage, false, 245.0, false, "grave_boss")
 	_spawn_proc_fx("burst", origin, 64.0, Color(0.60, 0.80, 1.0), 0.30)
 	play_sfx("shoot", -8.0, 0.08)
 
@@ -4466,6 +4613,236 @@ func _reset_grave_floor_state() -> void:
 	grave_boss_wait_warned = false
 	grave_shroud_used = false
 	grave_requiem_cd = 0.0
+
+
+# ── M5-B 빙하 세로 슬라이스 ────────────────────────────────────────────
+func _update_glacier_encounter(delta: float) -> void:
+	if map_stage != GLACIER_STAGE or state != State.PLAYING:
+		return
+	var elapsed := _dungeon_elapsed()
+	while glacier_braziers_spawned < GLACIER_BRAZIER_TIMES.size() \
+			and elapsed >= float(GLACIER_BRAZIER_TIMES[glacier_braziers_spawned]):
+		_spawn_glacier_brazier(glacier_braziers_spawned)
+	if not glacier_midboss_spawned and elapsed >= GLACIER_MIDBOSS_TIME:
+		_spawn_glacier_midboss()
+	_tick_glacier_chill(delta, _player_in_glacier_warmth())
+
+
+func _player_in_glacier_warmth() -> bool:
+	if player == null:
+		return false
+	for brazier in get_tree().get_nodes_in_group("glacier_braziers"):
+		if is_instance_valid(brazier) and brazier.has_method("is_warming") \
+				and brazier.is_warming(player.position):
+			return true
+	return false
+
+
+# 테스트도 직접 호출하는 누적 냉기 규칙. 온기 안에서는 빠르게 해제되고, 밖에서는
+# 천천히 쌓여 40/75 단계에서 이동을 압박한다. 100 도달 시 체력 5% 피해 후 82로 후퇴한다.
+func _tick_glacier_chill(delta: float, in_warmth: bool) -> void:
+	glacier_in_warmth = in_warmth
+	glacier_cold_tick_cd = maxf(0.0, glacier_cold_tick_cd - delta)
+	if in_warmth:
+		glacier_chill = maxf(0.0, glacier_chill - GLACIER_WARMTH_DRAIN * delta)
+	else:
+		glacier_chill = minf(GLACIER_CHILL_MAX,
+			glacier_chill + GLACIER_CHILL_RATE * _glacier_chill_rate_multiplier() * delta)
+	_update_glacier_speed_penalty()
+	if player and glacier_chill >= GLACIER_CHILL_MAX - 0.01 and glacier_cold_tick_cd <= 0.0:
+		var cold_damage := maxf(1.0, player.max_hp * 0.05 * _glacier_incoming_damage_multiplier())
+		apply_player_damage(cold_damage, "glacier_cold")
+		player.play_hurt()
+		player.invuln = maxf(player.invuln, 0.35)
+		glacier_chill = 82.0
+		glacier_cold_tick_cd = 4.0
+		_flash(Color(0.48, 0.78, 1.0, 0.34))
+		_event_banner("[동상] 냉기가 한계에 도달했다 — 점화된 화로로 이동")
+
+
+func _update_glacier_speed_penalty() -> void:
+	if player == null:
+		return
+	if glacier_chill >= 75.0:
+		player.environment_speed_mult = 0.78
+	elif glacier_chill >= 40.0:
+		player.environment_speed_mult = 0.90
+	else:
+		player.environment_speed_mult = 1.0
+
+
+func _spawn_glacier_brazier(index: int) -> Node2D:
+	if index < 0 or index >= GLACIER_BRAZIER_REQUIRED:
+		return null
+	var brazier := GlacierBrazierScript.new()
+	var spawn_pos := player.position + Vector2.RIGHT * 240.0 if player else WORLD * 0.5
+	if stage_layout and index < stage_layout.objective_positions.size():
+		spawn_pos = stage_layout.objective_positions[index]
+	if stage_layout:
+		spawn_pos = stage_layout.nearest_walkable(spawn_pos, 58.0)
+	var health := (180.0 + float(index) * 42.0 + _dungeon_elapsed() * 0.16) \
+		* sqrt(diff_enemy_hp) * _expedition_floor_pressure()
+	brazier.position = spawn_pos
+	brazier.configure(index, health)
+	add_child(brazier)
+	_spawn_glacier_elite_guardian(index, spawn_pos)
+	glacier_braziers_spawned = maxi(glacier_braziers_spawned, index + 1)
+	_event_banner("[빙하] 화로 해빙 — 화염 특효")
+	return brazier
+
+
+func _spawn_glacier_elite_guardian(index: int, origin: Vector2) -> Enemy:
+	var offset := Vector2.from_angle(PI * 0.5 * float(index + 1)) * 145.0
+	var guardian_pos := origin + offset
+	if stage_layout:
+		guardian_pos = stage_layout.nearest_walkable(guardian_pos, 34.0)
+	var guardian := _make_enemy(guardian_pos, true, GameConfig.glacier_elite_tier())
+	guardian.hp *= 0.86
+	guardian.max_hp = guardian.hp
+	return guardian
+
+
+func _spawn_glacier_midboss() -> Enemy:
+	if glacier_midboss_spawned:
+		return null
+	glacier_midboss_spawned = true
+	glacier_midboss_alive = true
+	var spawn_pos := player.position + Vector2.LEFT * 360.0 if player else WORLD * 0.5
+	if stage_layout:
+		spawn_pos = stage_layout.nearest_walkable(spawn_pos, 46.0)
+	var golem := _make_enemy(spawn_pos, true, GameConfig.glacier_midboss_tier())
+	golem.midboss = true
+	golem.hp *= 2.5
+	golem.max_hp = golem.hp
+	golem.radius *= 1.08
+	golem.touch_damage *= 1.16
+	_event_banner("[중간 보스] 빙벽 골렘 — 돌진 경로 회피")
+	_flash(Color(0.42, 0.72, 1.0, 0.36))
+	shake_t = maxf(shake_t, 0.27)
+	return golem
+
+
+func on_glacier_brazier_lit(brazier: Node2D) -> void:
+	glacier_braziers_lit = mini(GLACIER_BRAZIER_REQUIRED, glacier_braziers_lit + 1)
+	run_gold += 10
+	glacier_chill = maxf(0.0, glacier_chill - 18.0)
+	if player:
+		player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.05)
+	_glacier_hearth_echo_on_light()
+	_update_glacier_speed_penalty()
+	# 보스전 중 늦게 점화해도 의미가 남도록 현재·다음 얼음 갑옷을 즉시 약화한다.
+	if boss and is_instance_valid(boss) and boss.glacier_final:
+		boss.lit_braziers = glacier_braziers_lit
+		boss.unlit_braziers = maxi(0, GLACIER_BRAZIER_REQUIRED - glacier_braziers_lit)
+		if boss.armor_hp > 0.0:
+			var armor_reduction: float = float(boss.max_hp) * 0.03
+			boss.armor_max = maxf(1.0, boss.armor_max - armor_reduction)
+			boss.armor_hp = maxf(0.0, boss.armor_hp - armor_reduction)
+			if boss.armor_hp <= 0.0:
+				boss._break_glacier_armor()
+			boss.queue_redraw()
+	_spawn_proc_fx("shatter", brazier.position, 86.0, Color(0.62, 0.90, 1.0), 0.50)
+	_spawn_proc_fx("ring", brazier.position, 132.0, Color(1.0, 0.62, 0.18), 0.54)
+	for i in 4:
+		_spawn_coin(brazier.position + Vector2.from_angle(TAU * float(i) / 4.0) * 25.0, 2)
+	_event_banner("[온기] 화로 점화 %d/%d · 냉기 감소%s" % [
+		glacier_braziers_lit, GLACIER_BRAZIER_REQUIRED,
+		" · 빙결 거상 갑옷 약화" if glacier_braziers_lit == GLACIER_BRAZIER_REQUIRED else ""])
+	play_sfx("levelup", -8.0)
+
+
+func _glacier_hearth_echo_on_light() -> void:
+	if not _has_gear_special("hearth_echo"):
+		return
+	glacier_chill = maxf(0.0, glacier_chill - 30.0)
+	skill_e_cd = maxf(0.0, skill_e_cd - 2.5)
+
+
+func _glacier_objective_damage_multiplier() -> float:
+	return 1.35 if _has_gear_special("thawbreaker") else 1.0
+
+
+func _glacier_incoming_damage_multiplier() -> float:
+	return 0.74 if _has_gear_special("winterward") else 1.0
+
+
+func _glacier_chill_rate_multiplier() -> float:
+	return 0.65 if _has_gear_special("winterward") else 1.0
+
+
+func apply_glacier_boss_damage(amount: float, source: Vector2, chill_gain: float = 8.0) -> bool:
+	if player == null or player.invuln > 0.0:
+		return false
+	var damage := maxf(1.0, amount * _glacier_incoming_damage_multiplier() - player.armor)
+	apply_player_damage(damage, "glacier_boss")
+	glacier_chill = minf(GLACIER_CHILL_MAX,
+		glacier_chill + chill_gain * _glacier_chill_rate_multiplier())
+	_update_glacier_speed_penalty()
+	player.invuln = 0.70
+	player.play_hurt()
+	play_sfx("hurt", -7.0, 0.25)
+	shake_t = maxf(shake_t, 0.20)
+	_spawn_proc_fx("shatter", player.position, 46.0, Color(0.58, 0.86, 1.0), 0.28,
+		(player.position - source).normalized())
+	return true
+
+
+func glacier_boss_shards(origin: Vector2, aim_dir: Vector2, count: int, damage: float) -> void:
+	var base := aim_dir.angle() if aim_dir != Vector2.ZERO else 0.0
+	var spread := 1.18
+	var n := maxi(5, count)
+	for i in n:
+		var angle := base - spread * 0.5 + spread * float(i) / float(n - 1)
+		var dir := Vector2.from_angle(angle)
+		spawn_enemy_arrow(origin + dir * 30.0, dir, damage, true, 265.0, false, "glacier_boss")
+	_spawn_proc_fx("burst", origin, 68.0, Color(0.55, 0.84, 1.0), 0.32)
+	play_sfx("shoot", -8.0, 0.08)
+
+
+func glacier_boss_ring(origin: Vector2, radius: float, width: float, damage: float) -> void:
+	_spawn_proc_fx("ring", origin, radius, Color(0.45, 0.78, 1.0), 0.48)
+	shake_t = maxf(shake_t, 0.22)
+	if player:
+		var distance := player.position.distance_to(origin)
+		if absf(distance - radius) <= width + player.radius:
+			apply_glacier_boss_damage(damage, origin, 14.0)
+
+
+func glacier_boss_eruption(origin: Vector2, radius: float, damage: float) -> void:
+	_spawn_proc_fx("ring", origin, radius, Color(0.48, 0.76, 1.0), 0.44)
+	_spawn_proc_fx("shatter", origin, radius * 0.62, Color(0.72, 0.94, 1.0), 0.38)
+	spawn_fx("fx_absolzero", origin, radius * 1.2)
+	shake_t = maxf(shake_t, 0.26)
+	if player and player.position.distance_to(origin) <= radius + player.radius:
+		apply_glacier_boss_damage(damage, origin, 16.0)
+
+
+func on_glacier_boss_armor_started(cycle: int, _armor: float) -> void:
+	_event_banner("[보스] 얼음 갑옷 %d단계 — 화염 특효" % cycle)
+	_flash(Color(0.45, 0.74, 1.0, 0.30))
+	shake_t = maxf(shake_t, 0.24)
+
+
+func on_glacier_boss_armor_broken(window: float) -> void:
+	_event_banner("[기회] 얼음 갑옷 파쇄 — %.0f초 집중 공격" % window)
+	_flash(Color(1.0, 0.68, 0.24, 0.34))
+	_slowmo(0.55, 180)
+	shake_t = maxf(shake_t, 0.30)
+	play_sfx("ult", -7.0)
+
+
+func _reset_glacier_floor_state() -> void:
+	glacier_braziers_spawned = 0
+	glacier_braziers_lit = 0
+	glacier_midboss_spawned = false
+	glacier_midboss_alive = false
+	glacier_midboss_defeated = false
+	glacier_boss_wait_warned = false
+	glacier_chill = 0.0
+	glacier_in_warmth = false
+	glacier_cold_tick_cd = 0.0
+	if player:
+		player.environment_speed_mult = 1.0
 
 
 func _spawn_boss(forced_key: String = "") -> void:
@@ -4517,6 +4894,10 @@ func _spawn_dungeon_boss() -> void:
 			boss.attack_damage = (20.0 + stage_num * 2.0) \
 				* sqrt(diff_enemy_hp * _expedition_floor_pressure())
 			boss.configure_grave_final(grave_seals_completed)
+		elif map_stage == GLACIER_STAGE:
+			boss.attack_damage = (22.0 + stage_num * 2.2) \
+				* sqrt(diff_enemy_hp * _expedition_floor_pressure())
+			boss.configure_glacier_final(glacier_braziers_lit)
 	var wk := str(GameConfig.stage_info(map_stage).get("boss_weak", ""))
 	var hint := "  (약점: %s)" % str(ELEMENT_NAME.get(wk, "")) if wk != "" else ""
 	var final_prefix := "최종 " if expedition_active and expedition_floor >= EXPEDITION_FLOORS else ""
@@ -4529,6 +4910,9 @@ func _spawn_dungeon_boss() -> void:
 		var cores := maxi(1, 4 - grave_seals_completed)
 		_event_banner("[보스] %s묘지 수호자 출현 — 예고 패턴 회피 · 영혼 방패 핵 %d개 파괴%s" % [
 			final_prefix, cores, hint])
+	elif map_stage == GLACIER_STAGE:
+		_event_banner("[보스] %s빙결 거상 — 얼음 갑옷 파쇄 · 화로 %d/%d" % [
+			final_prefix, glacier_braziers_lit, GLACIER_BRAZIER_REQUIRED])
 	else:
 		_event_banner("[보스] %s던전 보스 출현 — 처치하면 전리품%s" % [final_prefix, hint])
 
@@ -4772,13 +5156,14 @@ func apply_player_damage(amount: float, source: String = "unknown") -> float:
 
 # 사수 몬스터 투사체 (#27)
 func spawn_enemy_arrow(pos: Vector2, dir: Vector2, dmg: float, chill: bool,
-		speed: float = 220.0, fire: bool = false) -> void:
+		speed: float = 220.0, fire: bool = false, damage_source: String = "enemy_projectile") -> void:
 	var ea := EnemyArrow.new()
 	ea.position = pos
 	ea.velocity = dir * speed
 	ea.damage = dmg
 	ea.chill = chill
 	ea.fire = fire
+	ea.damage_source = damage_source
 	add_child(ea)
 	play_sfx("hit", -22.0, 0.15)
 
@@ -4797,6 +5182,7 @@ const DEATH_FX := {
 	"ember_stalker": "fx_death_ember", "hell_enforcer": "fx_death_ember",
 	"frost_spider": "fx_death_ice", "eye_mass": "fx_death_soul", "cultist": "fx_death_blood",
 	"grave_warden": "fx_death_soul", "tomb_knight": "fx_death_soul",
+	"frost_sentry": "fx_death_ice", "icewall_golem": "fx_death_ice",
 }
 func _death_fx_for(key: String) -> String:
 	return DEATH_FX.get(key, "fx_death_blood")
@@ -4820,6 +5206,12 @@ func on_enemy_killed(e: Enemy) -> void:
 			_spawn_gear_pickup(e.position, _roll_graveyard_gear(true))
 			_event_banner("[획득] 무덤 기사 격파 — 묘지 전용 장비")
 			_flash(Color(0.50, 0.65, 1.0, 0.40))
+		elif map_stage == GLACIER_STAGE:
+			glacier_midboss_alive = false
+			glacier_midboss_defeated = true
+			_spawn_gear_pickup(e.position, _roll_glacier_gear(true))
+			_event_banner("[획득] 빙벽 골렘 격파 — 빙하 전용 장비")
+			_flash(Color(0.46, 0.76, 1.0, 0.40))
 		else:
 			hell_midboss_alive = false
 			hell_midboss_defeated = true
@@ -5000,6 +5392,8 @@ func _roll_boss_reward(stage: int, force_epic: bool) -> Dictionary:
 		return _roll_hell_gear(force_epic)
 	if stage == GRAVE_STAGE:
 		return _roll_graveyard_gear(force_epic)
+	if stage == GLACIER_STAGE:
+		return _roll_glacier_gear(force_epic)
 	var slot: String = EQUIP_SLOTS[randi() % EQUIP_SLOTS.size()]
 	var rarity := "epic" if force_epic else _roll_rarity(diff_rarity_luck + 1.5)
 	return _roll_gear_for(slot, rarity)
@@ -5081,6 +5475,7 @@ func _clear_floor_runtime() -> void:
 		"enemies", "boss", "arrows", "enemy_arrows", "pickups", "landmarks",
 		"breakables", "gems", "coins", "hazards", "hell_fissures",
 		"hell_objectives", "grave_seals", "grave_objectives",
+		"glacier_braziers", "glacier_objectives",
 		"voidzones", "effects", "floor_runtime",
 	]
 	var queued := {}
@@ -5110,6 +5505,7 @@ func _transition_to_expedition_floor(target_stage: int) -> void:
 	reaper_warned = false
 	_reset_hell_floor_state()
 	_reset_grave_floor_state()
+	_reset_glacier_floor_state()
 	if not _prepare_stage(target_stage):
 		push_error("Expedition floor failed to initialize: %d" % target_stage)
 	stage_num = map_stage
@@ -5482,6 +5878,22 @@ const GRAVE_GEAR_SPECIALS := {
 	},
 }
 
+# M5-B 빙하 전용 어픽스. 해빙 속도·환경 압박·화로 보상을 다루며 일반 DPS 누적은 피한다.
+const GLACIER_GEAR_SPECIALS := {
+	"weapon": {
+		"key": "thawbreaker", "name": "해빙의 칼날",
+		"desc": "얼어붙은 화로와 얼음 갑옷에 주는 파괴 피해 +35%",
+	},
+	"armor": {
+		"key": "winterward", "name": "설원의 수호",
+		"desc": "누적 냉기 속도 -35% · 동상·빙결 거상 패턴 피해 -26%",
+	},
+	"trinket": {
+		"key": "hearth_echo", "name": "난롯불의 메아리",
+		"desc": "화로 점화 시 냉기 30 추가 제거·E 재사용 2.5초 단축",
+	},
+}
+
 # Phase 5 대장간: 장비 하나당 최대 5회, 강화마다 모든 어픽스가 +12%씩 강해진다.
 # 런 골드가 초반 영구 강화와 함께 자연스럽게 소모되도록 등급별 비용을 별도로 둔다.
 const FORGE_MAX_LEVEL := 5
@@ -5546,6 +5958,20 @@ func _roll_graveyard_gear(force_epic: bool = false, slot_override: String = "") 
 	return item
 
 
+func _roll_glacier_gear(force_epic: bool = false, slot_override: String = "") -> Dictionary:
+	var slot := slot_override if slot_override in EQUIP_SLOTS else str(EQUIP_SLOTS[randi() % EQUIP_SLOTS.size()])
+	var rarity := _roll_rarity(diff_rarity_luck + 2.0)
+	if int(RARITY_ORDER.get(rarity, 1)) < 2:
+		rarity = "rare"
+	if force_epic and int(RARITY_ORDER.get(rarity, 1)) < 3:
+		rarity = "epic"
+	var item := _roll_gear_for(slot, rarity)
+	item["dungeon_tag"] = "glacier"
+	item["special"] = (GLACIER_GEAR_SPECIALS[slot] as Dictionary).duplicate(true)
+	item["name"] = "빙하벼림 %s" % str(item["name"])
+	return item
+
+
 # 혼령의 메아리: 정예 처치 시 E 재사용 단축 + 궁극기 게이지 소량 충전.
 func _grave_echo_on_elite() -> void:
 	skill_e_cd = maxf(0.0, skill_e_cd - 1.5)
@@ -5574,12 +6000,14 @@ func _grave_try_requiem_interrupt(target) -> bool:
 	if target == null or not is_instance_valid(target):
 		return false
 	var interrupted := false
-	if target is Boss and (target.hell_final or target.grave_final):
+	if target is Boss and target.uses_pattern_damage():
 		# 현재 패턴을 취소하고 추격(CHASE=0) 상태로 되돌린다. 짧은 재개 지연을 준다.
 		target._hell_state = 0
 		target._grave_state = 0
+		target._glacier_state = 0
 		target._hell_t = 0.7
 		target._grave_t = 0.7
+		target._glacier_t = 0.7
 		interrupted = true
 	elif target is Enemy and int(target._cstate) == 1:
 		target._cstate = 3   # 돌진 예열 취소 → 쿨다운으로
@@ -5921,7 +6349,8 @@ func _gear_detail_text(it: Dictionary) -> String:
 	var special = it.get("special", {})
 	if special is Dictionary and not (special as Dictionary).is_empty():
 		lines.append("")
-		var tag_label: String = {"hell": "지옥", "graveyard": "묘지"}.get(str(it.get("dungeon_tag", "")), "던전")
+		var tag_label: String = {"hell": "지옥", "graveyard": "묘지", "glacier": "빙하"}.get(
+			str(it.get("dungeon_tag", "")), "던전")
 		lines.append("[%s 전용] %s" % [tag_label, str((special as Dictionary).get("name", "특수 효과"))])
 		lines.append(str((special as Dictionary).get("desc", "")))
 	return "\n".join(lines)
@@ -7915,6 +8344,10 @@ func _record_current_floor(cleared: bool) -> void:
 		objective_key = "hell_fissures"
 		objectives_completed = hell_fissures_sealed
 		objectives_total = HELL_FISSURE_REQUIRED
+	elif map_stage == GLACIER_STAGE:
+		objective_key = "glacier_braziers"
+		objectives_completed = glacier_braziers_lit
+		objectives_total = GLACIER_BRAZIER_REQUIRED
 	run_floor_stats.append({
 		"floor": floor_no,
 		"stage": map_stage,
@@ -8096,6 +8529,7 @@ func _start_game(d: Dictionary) -> void:
 	hell_midboss_defeated = false
 	hell_boss_wait_warned = false
 	_reset_grave_floor_state()
+	_reset_glacier_floor_state()
 	# B블렌드: 장착한 무기 장비가 캐릭터 주무기(weapon1)를 대체. 없으면 캐릭터 기본 무기.
 	# (캐릭터 고유 2번째 무기 weapon2는 유지 → 캐릭터 정체성 일부 보존)
 	var gear_wpn := str(equipped.get("weapon", {}).get("weapon_kind", ""))
@@ -8221,6 +8655,9 @@ func _telemetry_incoming_name(source: String) -> String:
 		"enemy_projectile": "적 투사체",
 		"hell_hazard": "용암 균열",
 		"hell_boss": "화염 군주",
+		"grave_boss": "묘지 수호자",
+		"glacier_cold": "빙하의 냉기",
+		"glacier_boss": "빙결 거상",
 		"hazard": "바닥 장판",
 		"enemy_explosion": "폭발 몬스터",
 		"unknown": "알 수 없는 피해",
@@ -8834,9 +9271,9 @@ func _fire_ultimate() -> void:
 	_refresh_ult_bar()
 
 
-func _damage_hell_objectives(center: Vector2, radius: float, damage: float,
+func _damage_dungeon_objectives(center: Vector2, radius: float, damage: float,
 		crit: bool, element: String) -> void:
-	for objective in get_tree().get_nodes_in_group("hell_objectives"):
+	for objective in _combat_objectives():
 		if is_instance_valid(objective) and center.distance_to(objective.position) <= radius + objective.radius:
 			objective.take_damage(damage, crit, false, element)
 
@@ -8849,7 +9286,7 @@ func _ult_blast(base: float, elem: String, col: Color) -> void:
 			e.shove(player.position, 260.0)
 	if boss and is_instance_valid(boss):
 		boss.take_damage(base * 4.0, true, elem)
-	_damage_hell_objectives(player.position, 9999.0, base * 2.0, true, elem)
+	_damage_dungeon_objectives(player.position, 9999.0, base * 2.0, true, elem)
 	_flash(Color(col.r, col.g, col.b, 0.6))
 	shake_t = maxf(shake_t, 0.4)
 	_slowmo(0.4, 260)
@@ -8872,7 +9309,7 @@ func _ult_meteor(base: float, elem: String, col: Color) -> void:
 				e.take_damage(base * 1.4, true, false, elem)
 		if boss and is_instance_valid(boss) and pos.distance_to(boss.position) <= rad:
 			boss.take_damage(base * 1.4, true, elem)
-		_damage_hell_objectives(pos, rad, base * 1.4, true, elem)
+		_damage_dungeon_objectives(pos, rad, base * 1.4, true, elem)
 		_spawn_proc_fx("burst", pos, rad, col, 0.4)
 	_flash(Color(col.r, col.g, col.b, 0.4))
 	shake_t = maxf(shake_t, 0.36)
@@ -8886,7 +9323,7 @@ func _ult_blizzard(base: float, elem: String, col: Color) -> void:
 			e.apply_slow(0.7, 4.0)
 	if boss and is_instance_valid(boss):
 		boss.take_damage(base * 3.0, true, elem)
-	_damage_hell_objectives(player.position, 9999.0, base * 1.5, true, elem)
+	_damage_dungeon_objectives(player.position, 9999.0, base * 1.5, true, elem)
 	_flash(Color(col.r, col.g, col.b, 0.42))
 	shake_t = maxf(shake_t, 0.3)
 	_spawn_proc_fx("ring", player.position, 660.0, col, 0.7)
@@ -8901,7 +9338,7 @@ func _ult_judgment(base: float, elem: String, col: Color) -> void:
 			e.shove(player.position, 200.0)
 	if boss and is_instance_valid(boss):
 		boss.take_damage(base * 3.5, true, elem)
-	_damage_hell_objectives(player.position, 9999.0, base * 1.6, true, elem)
+	_damage_dungeon_objectives(player.position, 9999.0, base * 1.6, true, elem)
 	player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.3)   # 심판의 가호: 30% 회복
 	_flash(Color(col.r, col.g, col.b, 0.55))
 	shake_t = maxf(shake_t, 0.34)
@@ -8919,7 +9356,7 @@ func _ult_reap(base: float, elem: String, col: Color) -> void:
 			e.shove(player.position, 240.0)
 	if boss and is_instance_valid(boss):
 		boss.take_damage(base * 4.0, true, elem)
-	_damage_hell_objectives(player.position, 9999.0, base * 1.8, true, elem)
+	_damage_dungeon_objectives(player.position, 9999.0, base * 1.8, true, elem)
 	player.hp = minf(player.max_hp, player.hp + dealt * 0.15)   # 수확 흡혈: 가한 피해의 15% 회복
 	_flash(Color(col.r, col.g, col.b, 0.58))
 	shake_t = maxf(shake_t, 0.4)
@@ -12110,6 +12547,26 @@ func _nearest_landmark_hint() -> String:
 		elif hell_midboss_defeated:
 			progress += " · 최종 관문 준비"
 		return progress
+	if map_stage == GLACIER_STAGE:
+		var chill_text := "냉기 %d%%" % int(round(glacier_chill))
+		var warmth_text := " · 온기 안" if glacier_in_warmth else ""
+		if boss and is_instance_valid(boss) and boss.glacier_final:
+			if boss.armor_hp > 0.0:
+				var ice_armor_pct := int(round(100.0 * boss.armor_hp / maxf(1.0, boss.armor_max)))
+				return "%s%s · 얼음 갑옷 %d%% · 화염 파괴 증가" % [
+					chill_text, warmth_text, ice_armor_pct]
+			if boss.vulnerable_t > 0.0:
+				return "%s%s · 갑옷 파쇄! 집중 공격 %.1f초" % [
+					chill_text, warmth_text, boss.vulnerable_t]
+			return "%s%s · 빙결 거상 페이즈 %d" % [
+				chill_text, warmth_text, boss.glacier_phase]
+		var glacier_progress := "화로 점화 %d/%d · %s%s" % [
+			glacier_braziers_lit, GLACIER_BRAZIER_REQUIRED, chill_text, warmth_text]
+		if glacier_midboss_alive:
+			glacier_progress += " · 빙벽 골렘"
+		elif glacier_midboss_defeated:
+			glacier_progress += " · 최종 관문 준비"
+		return glacier_progress
 	if expedition_active:
 		var remaining := maxi(0, int(ceil(DUNGEON_BOSS_TIME - _dungeon_elapsed())))
 		return "%d/%d층 · 보스까지 %02d:%02d" % [

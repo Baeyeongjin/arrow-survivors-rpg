@@ -74,7 +74,7 @@ func _initialize() -> void:
 		]
 		for i in layout.item_positions.size():
 			checks.append({"label": "아이템%d" % i, "point": layout.item_positions[i], "radius": 34.0})
-		# 목표(균열·봉인비)는 반경 58로 스폰되므로 더 넓은 여유가 필요하다.
+		# 목표(균열·봉인비·화로)는 반경 58로 스폰되므로 더 넓은 여유가 필요하다.
 		for i in layout.objective_positions.size():
 			checks.append({"label": "목표%d" % i, "point": layout.objective_positions[i], "radius": 58.0})
 

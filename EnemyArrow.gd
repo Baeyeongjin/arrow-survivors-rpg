@@ -7,6 +7,7 @@ var radius := 8.0
 var life := 3.0
 var chill := false   # 명중 시 플레이어 이동 둔화 (아이스 퀸)
 var fire := false    # M3 화염 군주 탄막: 지옥 전용 방어 어픽스 적용 + 주황 가시성
+var damage_source := "enemy_projectile"   # 던전 보스 탄막의 방어 어픽스·텔레메트리 분기
 
 func _ready() -> void:
 	add_to_group("enemy_arrows")
