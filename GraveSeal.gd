@@ -5,6 +5,7 @@ extends Node2D
 # (묘지는 입문 던전이라 정답 속성이 없다). 범위를 벗어나면 진행이 멈추되 초기화되지 않는다.
 
 const SEAL_DURATION := 10.0
+const ART_PATH := "res://assets/maps/graveyard/soul_seal.png"
 
 var radius := 138.0          # 점령 판정 반경
 var duration := SEAL_DURATION
@@ -15,6 +16,7 @@ var _completed := false
 var _seal_fade := 0.6
 var _anim_t := 0.0
 var _in_range := false
+var _texture: Texture2D
 
 
 func _ready() -> void:
@@ -22,6 +24,7 @@ func _ready() -> void:
 	add_to_group("grave_objectives")
 	add_to_group("floor_runtime")
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_texture = Assets.tex(ART_PATH)
 
 
 func configure(index: int, seal_radius: float, seal_duration: float) -> void:
@@ -103,12 +106,18 @@ func _draw() -> void:
 		Color(0.70, 0.88, 1.0, 0.50 + pulse * 0.25) if _in_range else Color(0.62, 0.64, 0.80, 0.5),
 		2.5 + (pulse * 2.0 if _in_range else 0.0))
 
-	# 봉인비 기둥(형태로도 읽히게): 중앙 오벨리스크.
-	draw_colored_polygon(PackedVector2Array([
-		Vector2(-13, 30), Vector2(-9, -34), Vector2(0, -46),
-		Vector2(9, -34), Vector2(13, 30),
-	]), Color(0.30, 0.34, 0.46))
-	draw_line(Vector2(0, -40), Vector2(0, 20), Color(0.62, 0.86, 1.0, 0.55 + pulse * 0.35), 3.0)
+	# 봉인비 오벨리스크: 아트가 있으면 스프라이트, 없으면 폴리곤 폴백(형태로도 읽히게).
+	if _texture:
+		var art := 96.0
+		draw_texture_rect(_texture,
+			Rect2(Vector2(-art * 0.5, -art * 0.72), Vector2(art, art)), false,
+			Color(1.0, 1.0, 1.0) if not _in_range else Color(1.15, 1.25, 1.35))
+	else:
+		draw_colored_polygon(PackedVector2Array([
+			Vector2(-13, 30), Vector2(-9, -34), Vector2(0, -46),
+			Vector2(9, -34), Vector2(13, 30),
+		]), Color(0.30, 0.34, 0.46))
+		draw_line(Vector2(0, -40), Vector2(0, 20), Color(0.62, 0.86, 1.0, 0.55 + pulse * 0.35), 3.0)
 
 	# 점령 진행 링(형태) + 텍스트 대신 명확한 호 길이.
 	var bar_y := -radius - 22.0
