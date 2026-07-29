@@ -4085,7 +4085,9 @@ func _apply_char_growth() -> void:
 		return
 	var per: int = max(1, int(g.get("per", 10)))
 	var maxt: int = int(g.get("max", 5))
-	var tier: int = min(level / per, maxt)
+	# 고유 패시브는 장비와 무관하게 Lv1부터 항상 1단계 켜짐(짧은 던전 런에서도 정체성 유지).
+	# 상한 maxt는 그대로 → 바닥값만 1로, 전투력 천장은 불변.
+	var tier: int = clampi(level / per, 1, maxt)
 	if tier <= _growth_tier:
 		return
 	var steps: int = tier - _growth_tier

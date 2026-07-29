@@ -252,7 +252,7 @@ static func characters() -> Array:
 			"desc": "타락한 수녀 · 서포터\n오라 + 유도 성십자 · 가호",
 			"hp": 1.15, "speed": 0.95, "cd": 1.0, "range": 1.0,
 			"melee": 1.0, "ranged": 0.9,
-			"trait": "성스러운 가호", "trait_desc": "오라+성십자 시작 · 5레벨마다 성장 +4% (최대 +40%)",
+			"trait": "성스러운 가호", "trait_desc": "성십자 항상 장착 · 5레벨마다 경험치 +4% (최대 +40%)",
 			"growth": {"stat": "xp", "per": 5, "amt": 0.04, "max": 10}},
 		{"key": "valentino", "name": "발렌티노", "weapon": "blood_sword",
 			"unlock": "win_gustavo", "unlock_desc": "구스타보로 승리",
