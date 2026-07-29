@@ -2,6 +2,8 @@ class_name DamageNum
 extends Node2D
 # 위로 떠오르며 사라지는 데미지 숫자
 
+const UiTypographyScript = preload("res://UiTypography.gd")
+
 var amount := 0
 var crit := false
 var kind := ""            # ""=기본 / "weak"=약점 / "resist"=저항
@@ -13,9 +15,7 @@ static var _font: Font = null
 func _ready() -> void:
 	_vx = randf_range(-18.0, 18.0)
 	if _font == null:
-		_font = load("res://assets/fonts/pixel.ttf")
-		if _font == null:
-			_font = ThemeDB.fallback_font
+		_font = UiTypographyScript.font()
 
 func _process(delta: float) -> void:
 	position.y -= 48.0 * delta

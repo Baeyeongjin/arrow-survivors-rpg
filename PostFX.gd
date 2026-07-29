@@ -74,7 +74,7 @@ func _process(delta: float) -> void:
 func cycle() -> void:
 	_preset = (_preset + 1) % PRESETS.size()
 	_apply()
-	_label.text = "🖼 레트로 도트: %s" % PRESETS[_preset]["name"]
+	_label.text = "[화면] 레트로 도트: %s" % PRESETS[_preset]["name"]
 	_label.visible = true
 	_label_t = 2.2
 

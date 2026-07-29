@@ -1,6 +1,8 @@
 class_name StageMapPreview
 extends Control
 
+const UiTypographyScript = preload("res://UiTypography.gd")
+
 var world_size := Vector2(2400.0, 2400.0)
 var tracked_player: Node2D = null
 var reveal_names := false
@@ -28,7 +30,7 @@ func _draw() -> void:
 		var gy := lerpf(frame.position.y, frame.end.y, i / 4.0)
 		draw_line(Vector2(gx, frame.position.y), Vector2(gx, frame.end.y), Color(0.2, 0.32, 0.42, 0.22), 1.0)
 		draw_line(Vector2(frame.position.x, gy), Vector2(frame.end.x, gy), Color(0.2, 0.32, 0.42, 0.22), 1.0)
-	var font := ThemeDB.fallback_font
+	var font := UiTypographyScript.font()
 	for node in get_tree().get_nodes_in_group("landmarks"):
 		var landmark := node as Pickup
 		if landmark == null:

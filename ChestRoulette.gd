@@ -3,6 +3,8 @@ extends Control
 # 보물상자 슬롯머신 (뱀서식): N개 릴(1/3/5)이 순차로 돌다 감속하며 보상에 정착.
 # 순수 연출 — 보상은 Main에서 이미 적용됨. 정착 후 자동/클릭으로 닫힘.
 
+const UiTypographyScript = preload("res://UiTypography.gd")
+
 var _rewards: Array = []     # [{icon:Texture2D, name:String}]
 var _cycle: Array = []       # 순환용 아이콘 텍스처 풀
 var _title := ""
@@ -59,9 +61,7 @@ func _ready() -> void:
 	position = Vector2.ZERO
 	size = get_viewport_rect().size
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	_font = load("res://assets/fonts/pixel.ttf")
-	if _font == null:
-		_font = ThemeDB.fallback_font
+	_font = UiTypographyScript.font()
 	# 이 안정 경로의 파일은 d13de538 PixelLab 원본/9프레임으로 교체되어 있다.
 	_chest_tex = Assets.tex("res://assets/items/chest.png")
 	_chest_frames = Assets.frames("res://assets/anim/fx_chest_open")
@@ -328,7 +328,7 @@ func _draw() -> void:
 		draw_rect(f0, Color(0.02, 0.02, 0.03, 0.96))
 		draw_rect(f0, Color(0.75, 0.75, 0.8), false, 2.0)
 		# 타이틀
-		draw_string(_font, Vector2(f0.position.x, f0.position.y + 54.0), "✦  보물 발견!  ✦",
+		draw_string(_font, Vector2(f0.position.x, f0.position.y + 54.0), "보물 발견!",
 			HORIZONTAL_ALIGNMENT_CENTER, fw0, 34, Color(1.0, 0.88, 0.42))
 		# 닫힌 상자 (살짝 둥실)
 		var bob := sin(_intro_t * 2.2) * 6.0
@@ -341,7 +341,7 @@ func _draw() -> void:
 			draw_rect(Rect2(c.x - 60.0, c.y - 40.0 + bob, 120.0, 20.0), Color(0.8, 0.6, 0.2))
 		# 열기 안내 (깜빡임)
 		var blink0: float = 0.5 + 0.5 * sin(_intro_t * 5.0)
-		draw_string(_font, Vector2(f0.position.x, f0.position.y + fh0 - 40.0), "▶  열기 (클릭)",
+		draw_string(_font, Vector2(f0.position.x, f0.position.y + fh0 - 40.0), "열기 (클릭)",
 			HORIZONTAL_ALIGNMENT_CENTER, fw0, 26, Color(1.0, 0.9, 0.5, blink0))
 		return
 
@@ -359,7 +359,7 @@ func _draw() -> void:
 		# 폭발이 시작되면 걷힘 — 안 그러면 노란 얼룩으로 남아 폭발을 뭉갠다.
 		var gfade: float = 1.0 - clamp(bt / BURST, 0.0, 1.0)
 		draw_circle(c, fw1 * (0.30 + 0.26 * rp1), Color(1.0, 0.85, 0.4, (0.05 + 0.20 * rp1 * rp1) * gfade))
-		draw_string(_font, Vector2(f1.position.x, f1.position.y + 54.0), "✦  보물 발견!  ✦",
+		draw_string(_font, Vector2(f1.position.x, f1.position.y + 54.0), "보물 발견!",
 			HORIZONTAL_ALIGNMENT_CENTER, fw1, 34, Color(1.0, 0.88, 0.42))
 		var chest_p := Vector2(c.x, c.y - fw1 * 0.05)
 		# 개봉 폭발: 광선 기둥 + 확산 링
@@ -561,7 +561,7 @@ func _draw() -> void:
 			Color(fcol.r, fcol.g, fcol.b, fa))
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
-	# ── 잭팟 배너: 릴 정착 순간 크게 튀어오르며 펄스 → 위로 떠오르며 페이드 ("★ 대박! ★") ──
+	# ── 잭팟 배너: 릴 정착 순간 크게 튀어오르며 펄스 → 위로 떠오르며 페이드 ──
 	if _jackpot_banner > 0.0:
 		var bt2: float = _jackpot_banner
 		# 페이드: 0.9초 유지 후 0.7초에 걸쳐 소멸 (보상을 오래 가리지 않게)
@@ -571,7 +571,7 @@ func _draw() -> void:
 			var overshoot: float = 1.0 + (1.0 - pop_in) * 0.8   # 튀어오르는 오버슈트
 			var pulse: float = 1.0 + 0.06 * sin(bt2 * 9.0)
 			var bscale: float = overshoot * pulse
-			var btxt: String = "★ 대박! ★" if _n >= 3 else "★ 획득! ★"
+			var btxt: String = "대박!" if _n >= 3 else "획득!"
 			var bfs: int = 46 if _n >= 3 else 38
 			var bhue: float = fposmod(bt2 * 0.7, 1.0)
 			var bc := Color.from_hsv(bhue, 0.35, 1.0)
@@ -588,7 +588,7 @@ func _draw() -> void:
 	# ── 확인 안내 (프레임 하단, 깜빡임) ──
 	if all_settled:
 		var blink: float = 0.55 + 0.45 * sin(_t * 5.0)
-		draw_string(_font, Vector2(fx, fy + fh + 30.0), "▶ 확인 (클릭)",
+		draw_string(_font, Vector2(fx, fy + fh + 30.0), "확인 (클릭)",
 			HORIZONTAL_ALIGNMENT_CENTER, fw, 20, Color(1.0, 0.9, 0.5, blink))
 
 	# ── 전체 화면 섬광 (잭팟 순간) ──

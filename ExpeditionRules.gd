@@ -13,19 +13,19 @@ const BOSS_CRAFT_COST := 5
 const NODE_DEFS := {
 	"camp": {
 		"name": "회복 캠프",
-		"glyph": "♨",
+		"icon": "res://assets/ui/icons/route_camp.png",
 		"color": Color(0.45, 0.92, 0.66),
 		"desc": "최대 체력의 45% 회복 · 능력치 포인트 +1",
 	},
 	"merchant": {
 		"name": "떠돌이 상인",
-		"glyph": "◆",
+		"icon": "res://assets/ui/icons/route_merchant.png",
 		"color": Color(1.0, 0.80, 0.34),
 		"desc": "%d G로 다음 층용 고급 장비 구매" % MERCHANT_COST,
 	},
 	"event": {
 		"name": "저주받은 제단",
-		"glyph": "✦",
+		"icon": "res://assets/ui/icons/route_altar.png",
 		"color": Color(0.82, 0.52, 1.0),
 		"desc": "최대 체력 18%를 바쳐 에픽 장비와 70 G 획득",
 	},

@@ -15,7 +15,7 @@ const TABLE := {
 	"gold_owned": {"ko": "보유 골드: %d G", "en": "Gold: %d G"},
 	"char_select": {"ko": "— 캐릭터 선택 —", "en": "— SELECT CHARACTER —"},
 	"diff_select": {"ko": "— 난이도 선택 —", "en": "— SELECT DIFFICULTY —"},
-	"back": {"ko": "← 뒤로", "en": "← BACK"},
+	"back": {"ko": "뒤로", "en": "BACK"},
 	# 옵션
 	"opt_title": {"ko": "옵션", "en": "OPTIONS"},
 	"music_vol": {"ko": "음악 볼륨", "en": "Music Volume"},

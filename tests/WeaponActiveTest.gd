@@ -37,7 +37,7 @@ func _initialize() -> void:
 		var active_name := str(active_def.get("name", ""))
 		_expect(not active_name.is_empty(), "%s 액티브 표시 이름 누락" % archetype)
 		_expect(float(active_def.get("cd", 0.0)) > 0.0, "%s 액티브 쿨다운이 유효하지 않음" % archetype)
-		_expect(not str(active_def.get("glyph", "")).is_empty(), "%s 액티브 글리프 누락" % archetype)
+		_expect(not active_def.has("glyph"), "%s 액티브에 폰트 폴백 글리프가 남아 있음" % archetype)
 		_expect(ResourceLoader.exists(str(active_def.get("icon", ""))), "%s 액티브 아이콘 리소스 누락" % archetype)
 		_expect(not active_names.has(active_name), "액티브 표시 이름 중복: %s" % active_name)
 		active_names[active_name] = true

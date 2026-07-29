@@ -10,6 +10,15 @@ enum State { TITLE, PLAYING, LEVELUP, GAMEOVER, VICTORY, PAUSED, ROUTE, EXTRACTI
 const HellFissureScript = preload("res://HellFissure.gd")
 const ExpeditionRulesScript = preload("res://ExpeditionRules.gd")
 const RunTelemetryScript = preload("res://RunTelemetry.gd")
+const UiTypographyScript = preload("res://UiTypography.gd")
+
+const UI_ICONS := {
+	"backpack": "res://assets/ui/icons/backpack.png",
+	"anvil": "res://assets/ui/icons/anvil.png",
+	"codex": "res://assets/ui/icons/codex.png",
+	"achievement": "res://assets/ui/icons/achievement.png",
+	"options": "res://assets/ui/icons/options.png",
+}
 
 # 장판 무기는 독안개(poison_cloud) 하나만 남김 — 성수·용암지대 제거.
 # (공허구 void_orb는 VoidZone을 쓰지만 바닥 장판이 아니라 끌어당기는 블랙홀이라 유지)
@@ -70,15 +79,15 @@ const WNAMES := {
 # 장비 무기 5종은 캐릭터 수와 별개인 전투 아키타입이다.
 # 캐릭터는 고유 패시브·Q를, 현재 주무기는 자동공격·E를 결정한다.
 const WEAPON_ACTIVE_DEFS := {
-	"sword": {"name": "반격의 호", "cd": 6.0, "glyph": "⚔", "icon": "res://assets/items/gear_sword.png",
+	"sword": {"name": "반격의 호", "cd": 6.0, "icon": "res://assets/items/gear_sword.png",
 		"desc": "짧게 무적이 되고 전방을 넓게 베어 밀쳐냅니다."},
-	"axe": {"name": "파쇄 강타", "cd": 7.5, "glyph": "◆", "icon": "res://assets/items/gear_axe.png",
+	"axe": {"name": "파쇄 강타", "cd": 7.5, "icon": "res://assets/items/gear_axe.png",
 		"desc": "주변을 내려쳐 큰 피해와 경직을 줍니다."},
-	"staff": {"name": "원소 폭발", "cd": 6.5, "glyph": "✦", "icon": "res://assets/items/gear_staff.png",
+	"staff": {"name": "원소 폭발", "cd": 6.5, "icon": "res://assets/items/gear_staff.png",
 		"desc": "조준 지점에 현재 속성의 폭발을 일으킵니다."},
-	"dagger": {"name": "그림자 난무", "cd": 4.0, "glyph": "✣", "icon": "res://assets/items/gear_dagger.png",
+	"dagger": {"name": "그림자 난무", "cd": 4.0, "icon": "res://assets/items/gear_dagger.png",
 		"desc": "치명타 확률이 높은 단검을 빠르게 난사합니다."},
-	"spear": {"name": "돌파 찌르기", "cd": 5.5, "glyph": "➤", "icon": "res://assets/items/gear_spear.png",
+	"spear": {"name": "돌파 찌르기", "cd": 5.5, "icon": "res://assets/items/gear_spear.png",
 		"desc": "짧게 돌진한 뒤 긴 직선을 관통합니다."},
 }
 
@@ -310,9 +319,9 @@ func _evo_tint(kind: String) -> Color:
 
 # 무기 조합: 두 무기 모두 Lv3+ → 조합 카드 등장 (조합당 1회)
 const COMBO_DEFS := [
-	{"key": "arrow_lightning", "a": "arrow", "b": "lightning", "t": "⚡스톰 애로우",
+	{"key": "arrow_lightning", "a": "arrow", "b": "lightning", "t": "스톰 애로우",
 		"d": "화살 명중 시 30% 번개 연쇄", "icon": "res://assets/items/icon_lightning.png"},
-	{"key": "arrow_frost", "a": "arrow", "b": "frost", "t": "❄프로스트 애로우",
+	{"key": "arrow_frost", "a": "arrow", "b": "frost", "t": "프로스트 애로우",
 		"d": "모든 화살에 둔화 부여", "icon": "res://assets/items/icon_frost.png"},
 	{"key": "blade_aura", "a": "blade", "b": "aura", "t": "블레이드 스톰",
 		"d": "검 +1, 오라 범위 +15%", "icon": "res://assets/items/sword.png"},
@@ -323,15 +332,15 @@ const COMBO_DEFS := [
 	{"key": "blade_lightning", "a": "blade", "b": "lightning", "t": "뇌명검",
 		"d": "검 피해 +40%, 번개 강타 +1", "icon": "res://assets/items/sword.png"},
 	# 신규 무기 조합
-	{"key": "fire_frost", "a": "fireball", "b": "frost", "t": "🌋증기 폭발",
+	{"key": "fire_frost", "a": "fireball", "b": "frost", "t": "증기 폭발",
 		"d": "파이어볼 폭발 +30%, 둔화 부여", "icon": "res://assets/items/icon_fireball.png"},
-	{"key": "venom_fire", "a": "venom", "b": "fireball", "t": "☠맹독 화염",
+	{"key": "venom_fire", "a": "venom", "b": "fireball", "t": "맹독 화염",
 		"d": "독날 명중 시 화염 폭발", "icon": "res://assets/items/icon_venom.png"},
-	{"key": "holy_lightning", "a": "holy", "b": "lightning", "t": "⚡천벌 강림",
+	{"key": "holy_lightning", "a": "holy", "b": "lightning", "t": "천벌 강림",
 		"d": "천벌 착탄에 번개 연쇄", "icon": "res://assets/items/icon_holy.png"},
-	{"key": "whip_boomerang", "a": "whip", "b": "boomerang", "t": "🌀난무",
+	{"key": "whip_boomerang", "a": "whip", "b": "boomerang", "t": "난무",
 		"d": "채찍 범위 +30%, 부메랑 +1", "icon": "res://assets/items/icon_whip.png"},
-	{"key": "arrow_fireball", "a": "arrow", "b": "fireball", "t": "🔥폭렬 화살",
+	{"key": "arrow_fireball", "a": "arrow", "b": "fireball", "t": "폭렬 화살",
 		"d": "화살이 소형 폭발", "icon": "res://assets/items/icon_fireball.png"},
 ]
 # 유니온: 두 무기 모두 Lv8(만렙) → 보스 상자에서 합체 신규 무기 (뱀서 Union)
@@ -847,6 +856,15 @@ var expedition_route_panel: Control
 var expedition_route_title: Label
 var expedition_route_summary: Label
 var expedition_route_buttons: Array[Button] = []
+var expedition_route_icons: Array[TextureRect] = []
+var expedition_route_previews: Array[TextureRect] = []
+var expedition_route_boss_icons: Array[TextureRect] = []
+var expedition_route_name_labels: Array[Label] = []
+var expedition_route_type_labels: Array[Label] = []
+var expedition_route_destination_labels: Array[Label] = []
+var expedition_route_encounter_labels: Array[Label] = []
+var expedition_route_reward_labels: Array[Label] = []
+var expedition_route_cta_labels: Array[Label] = []
 var extraction_panel: Control
 var extraction_title: Label
 var extraction_summary: Label
@@ -880,15 +898,8 @@ func _ready() -> void:
 	_apply_fx_settings()
 	_apply_fullscreen()
 
-	# 픽셀 폰트 전역 적용 (모든 Label/Button)
-	var font_res: FontFile = null
-	if ResourceLoader.exists("res://assets/fonts/pixel.ttf"):
-		font_res = load("res://assets/fonts/pixel.ttf")
-	if font_res:
-		var ui_theme := Theme.new()
-		ui_theme.default_font = font_res
-		ui_theme.default_font_size = 15
-		get_window().theme = ui_theme
+	# 데미지 숫자와 동일한 픽셀 폰트를 모든 Control의 기본값으로 사용한다.
+	get_window().theme = UiTypographyScript.make_theme()
 
 	var s := get_viewport_rect().size
 
@@ -1168,7 +1179,7 @@ func _autoshot() -> void:
 			run_extracted_gear.resize(1)
 		state = State.VICTORY if end_preview_win else State.GAMEOVER
 		get_tree().paused = true
-		_show_end("⚔ 원정 완료!" if end_preview_win else "☠ 원정 실패", end_preview_win)
+		_show_end("원정 완료!" if end_preview_win else "원정 실패", end_preview_win)
 		run_history_summary = RunTelemetryScript.aggregate([last_run_telemetry])
 		end_report_label.text = _telemetry_report_bbcode()
 		await get_tree().create_timer(0.5, true, false, true).timeout
@@ -1756,7 +1767,7 @@ func _autoshot() -> void:
 			var rw: Array = []
 			for i in 3:
 				rw.append({"icon": icons[i % icons.size()], "name": "테스트 보상 %d" % (i + 1)})
-			_show_roulette(rw, "✦ 보물상자 ✦", 55.0)
+			_show_roulette(rw, "보물상자", 55.0)
 			await get_tree().create_timer(0.2, true, false, true).timeout
 			var rl: ChestRoulette = ui_overlay.get_children().filter(
 				func(x: Node) -> bool: return x is ChestRoulette)[0]
@@ -1837,13 +1848,13 @@ func _process(delta: float) -> void:
 		if not boss_spawned and not _boss_is_objective:
 			if not reaper_warned and dungeon_elapsed >= DUNGEON_BOSS_TIME - 45.0:
 				reaper_warned = true
-				_event_banner("⚠ 곧 %d층 보스가 나타난다..." % expedition_floor)
+				_event_banner("[경고] 곧 %d층 보스가 나타난다..." % expedition_floor)
 			if dungeon_elapsed >= DUNGEON_BOSS_TIME:
 				# 지옥은 중간보스가 살아 있으면 최종 관문이 열리지 않는다.
 				if map_stage == HELL_STAGE and hell_midboss_alive:
 					if not hell_boss_wait_warned:
 						hell_boss_wait_warned = true
-						_event_banner("⚠ 용암 집행자를 먼저 처치해야 한다!")
+						_event_banner("[경고] 용암 집행자를 먼저 처치해야 한다!")
 				else:
 					_spawn_dungeon_boss()
 
@@ -3999,10 +4010,10 @@ func on_pickup(kind: String) -> void:
 		var pdef: Dictionary = _passive_defs().get(passive_key, {})
 		if passives.get(passive_key, 0) < MAX_PLEVEL:
 			_add_passive(passive_key)
-			_event_banner("◆ 스테이지 아이템 획득 — %s" % pdef.get("name", passive_key))
+			_event_banner("[획득] 스테이지 아이템 — %s" % pdef.get("name", passive_key))
 		else:
 			run_gold += 25
-			_event_banner("◆ 완성된 아이템이 골드 +25로 변환됐다")
+			_event_banner("[획득] 완성된 아이템이 골드 +25로 변환됐다")
 		_refresh_inventory_ui()
 		_update_ui()
 		play_sfx("levelup", -5.0)
@@ -4026,7 +4037,7 @@ func on_pickup(kind: String) -> void:
 			hfx.life = 0.5
 			hfx.max_life = 0.5
 			add_child(hfx)
-			_event_banner("🍗 통닭! — 체력 완전 회복")
+			_event_banner("[회복] 통닭 — 체력 완전 회복")
 		"magnet":
 			# 전맵 즉시 흡수 → 6초간 흡수 범위 대폭 확대 버프
 			player.magnet_t = 6.0
@@ -4107,7 +4118,7 @@ func _spawn_hell_fissure(index: int) -> Node2D:
 	add_child(fissure)
 	_spawn_hell_elite_guardian(index, spawn_pos)
 	hell_fissures_spawned = maxi(hell_fissures_spawned, index + 1)
-	_event_banner("♨ 용암 균열 + 잿불 추적자! — 냉기로 봉인 (%d/%d)" % [
+	_event_banner("[지옥] 용암 균열 + 잿불 추적자 — 냉기로 봉인 (%d/%d)" % [
 		hell_fissures_sealed, HELL_FISSURE_REQUIRED])
 	return fissure
 
@@ -4137,7 +4148,7 @@ func _spawn_hell_midboss() -> Enemy:
 	enforcer.max_hp = enforcer.hp
 	enforcer.radius *= 1.08
 	enforcer.touch_damage *= 1.18
-	_event_banner("⚔ 중간보스 — 용암 집행자!  돌진 경로를 피하라")
+	_event_banner("[중간 보스] 용암 집행자 — 돌진 경로를 피하라")
 	_flash(Color(1.0, 0.28, 0.06, 0.38))
 	shake_t = maxf(shake_t, 0.28)
 	return enforcer
@@ -4155,7 +4166,7 @@ func on_hell_fissure_sealed(fissure: Node2D) -> void:
 	_spawn_proc_fx("ring", fissure.position, 118.0, Color(0.55, 0.90, 1.0), 0.48)
 	for i in 4:
 		_spawn_coin(fissure.position + Vector2.from_angle(TAU * float(i) / 4.0) * 24.0, 2)
-	_event_banner("❄ 용암 균열 봉인 %d/%d%s" % [
+	_event_banner("[냉기] 용암 균열 봉인 %d/%d%s" % [
 		hell_fissures_sealed, HELL_FISSURE_REQUIRED,
 		" — 최종 보스 갑옷 약화!" if hell_fissures_sealed == HELL_FISSURE_REQUIRED else ""])
 	play_sfx("levelup", -8.0)
@@ -4213,13 +4224,13 @@ func spawn_hell_boss_volley(origin: Vector2, count: int, damage: float) -> void:
 
 
 func on_hell_boss_armor_started(cycle: int, armor: float) -> void:
-	_event_banner("🔥 화염 갑옷 %d단계 — 냉기로 파괴!  방어도 %d" % [cycle, int(round(armor))])
+	_event_banner("[보스] 화염 갑옷 %d단계 — 냉기로 파괴!  방어도 %d" % [cycle, int(round(armor))])
 	_flash(Color(1.0, 0.30, 0.05, 0.28))
 	shake_t = maxf(shake_t, 0.24)
 
 
 func on_hell_boss_armor_broken(window: float) -> void:
-	_event_banner("❄ 화염 갑옷 파괴! — %.0f초 집중 공격" % window)
+	_event_banner("[기회] 화염 갑옷 파괴 — %.0f초 집중 공격" % window)
 	_flash(Color(0.50, 0.88, 1.0, 0.36))
 	_slowmo(0.55, 180)
 	shake_t = maxf(shake_t, 0.30)
@@ -4245,7 +4256,7 @@ func _spawn_boss(forced_key: String = "") -> void:
 	_clear_easy_boss_arena()
 	# 일반/어려움은 호드를 유지하고, 쉬움만 주변 일반 몬스터를 정리한다.
 	# 등장 연출: 배너 + 플래시 + 흔들림 (처치하면 보물상자!)
-	_event_banner("⚠ 보스 출현! — 처치하면 보물상자")
+	_event_banner("[보스] 출현 — 처치하면 보물상자")
 	_flash(Color(0.8, 0.2, 0.2, 0.5))
 	shake_t = max(shake_t, 0.35)
 	stage_banner_t = max(stage_banner_t, 2.5)
@@ -4274,10 +4285,10 @@ func _spawn_dungeon_boss() -> void:
 	if map_stage == HELL_STAGE:
 		var unsealed_count := maxi(0, HELL_FISSURE_REQUIRED - hell_fissures_sealed)
 		var penalty := " · 미봉인 %d개로 갑옷 강화" % unsealed_count if unsealed_count > 0 else " · 모든 균열 봉인 완료"
-		_event_banner("⚠ %s화염 군주 출현! — 예고 공격 회피 · 갑옷 파괴%s%s" % [
+		_event_banner("[보스] %s화염 군주 출현 — 예고 공격 회피 · 갑옷 파괴%s%s" % [
 			final_prefix, hint, penalty])
 	else:
-		_event_banner("⚠ %s던전 보스 출현! — 처치하면 전리품%s" % [final_prefix, hint])
+		_event_banner("[보스] %s던전 보스 출현 — 처치하면 전리품%s" % [final_prefix, hint])
 
 
 const GEM_CAP := 120   # 젬 노드 상한 (성능). 초과 XP는 가까운 젬 병합/먼 젬 재활용으로 총량 유지.
@@ -4406,7 +4417,7 @@ func _open_bonus_chest() -> void:
 	_refresh_inventory_ui()
 	_update_ui()
 	_chest_fanfare(count)   # 1/3/5 등급별 연출 (좋을수록 화려)
-	_show_roulette(rewards, "✦ 보물 상자 ✦", chest_gold)
+	_show_roulette(rewards, "보물 상자", chest_gold)
 
 
 # 화면 플래시 (레벨업·진화 순간). flash_overlay가 스스로 페이드.
@@ -4461,7 +4472,7 @@ func _chest_fanfare(count: int) -> void:
 	# 최고 등급엔 신성 폭발 이펙트까지
 	if tier >= 3:
 		spawn_fx("fx_divine", player.position, 300.0)
-	_event_banner("✦  보물 상자!  ✦" if tier < 3 else "✦✦  대박 보물!  ✦✦")
+	_event_banner("[보물] 보물 상자!" if tier < 3 else "[보물] 대박 보물!")
 
 
 func collect_coin(value: int) -> void:
@@ -4558,7 +4569,7 @@ func on_enemy_killed(e: Enemy) -> void:
 		_spawn_gear_pickup(e.position, _roll_hell_gear(true))
 		if player:
 			player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.22)
-		_event_banner("◆ 용암 집행자 격파! — 지옥 전용 장비 획득")
+		_event_banner("[획득] 용암 집행자 격파 — 지옥 전용 장비")
 		_flash(Color(1.0, 0.64, 0.18, 0.42))
 		_slowmo(0.45, 220)
 		shake_t = maxf(shake_t, 0.30)
@@ -4685,7 +4696,7 @@ func on_breakable_destroyed(b) -> void:
 	if b.kind == "coffin":
 		_flash(Color(1.0, 0.85, 0.4, 0.5))
 		shake_t = max(shake_t, 0.3)
-		_event_banner("⚰ 숨겨진 관을 열었다!")
+		_event_banner("[발견] 숨겨진 관을 열었다!")
 		play_sfx("levelup", -4.0)
 		for i in (10 + stage_num * 2):
 			_spawn_coin(pos + Vector2.from_angle(randf() * TAU) * randf_range(10.0, 60.0), 3 + stage_num)
@@ -4743,7 +4754,7 @@ func _award_boss_fragments(stage: int, final_floor: bool) -> void:
 	var amount := ExpeditionRulesScript.fragment_reward(
 		EXPEDITION_FLOORS if final_floor else expedition_floor)
 	run_boss_fragments[key] = int(run_boss_fragments.get(key, 0)) + amount
-	_event_banner("◆ %s +%d · 에픽 장비 확보" % [str(fragment["name"]), amount])
+	_event_banner("[획득] %s +%d · 에픽 장비 확보" % [str(fragment["name"]), amount])
 
 
 func _open_expedition_route() -> void:
@@ -4902,7 +4913,7 @@ func on_boss_killed() -> void:
 		if state == State.PLAYING:
 			state = State.VICTORY
 			get_tree().paused = true
-			_show_end("⚔ 원정 완료! — 3층 최종 보스 격파", true)
+			_show_end("원정 완료! — 3층 최종 보스 격파", true)
 		return
 	run_gold += 15 * stage_num   # 보스 보상
 	# 보스 = 장비 전리품 확정 2개
@@ -5003,7 +5014,7 @@ func _event_wall() -> void:
 		var t := (i / float(max(1, n - 1)) - 0.5) * 2.0   # -1..1
 		var base := _edge_pos(side, randf_range(20.0, 120.0))
 		_make_enemy(base + perp * t * half, false, tt)
-	_event_banner("⚠ %s 벽이 밀려온다!" % tt.get("name", ""))
+	_event_banner("[위험] %s 벽이 밀려온다!" % tt.get("name", ""))
 
 
 # 대규모 호드: 한 방향에서 떼로 몰려오는 무리
@@ -5014,7 +5025,7 @@ func _spawn_horde() -> void:
 	for i in n:
 		var ang := base_ang + randf_range(-0.65, 0.65)
 		_make_enemy(_edge_pos(ang, randf_range(60.0, 280.0)), false, tt)
-	_event_banner("⚠ %s 무리 출현!" % tt.get("name", "대규모"))
+	_event_banner("[위험] %s 무리 출현!" % tt.get("name", "대규모"))
 
 
 # 포위망: 사방 링으로 둘러싸고 조여옴
@@ -5024,7 +5035,7 @@ func _event_encircle() -> void:
 	for i in n:
 		var ang := TAU * i / float(max(1, n)) + randf_range(-0.05, 0.05)
 		_make_enemy(_edge_pos(ang, randf_range(20.0, 90.0)), false, tt)
-	_event_banner("⚠ %s 포위망!" % tt.get("name", ""))
+	_event_banner("[위험] %s 포위망!" % tt.get("name", ""))
 
 
 # 정적 포위 원 (뱀서식): 플레이어 주위 고정 반경에 촘촘한 원으로 나타나 천천히 조여오다
@@ -5040,7 +5051,7 @@ func _event_static_ring() -> void:
 		pos.x = clamp(pos.x, 40.0, WORLD.x - 40.0)
 		pos.y = clamp(pos.y, 40.0, WORLD.y - 40.0)
 		_make_enemy(pos, false, tt, 13.0, true)   # 13초 뒤 소멸 + 제자리 고정(안 움직임)
-	_event_banner("⚠ %s 원진(圓陣)! — 틈으로 빠져나가라" % tt.get("name", ""))
+	_event_banner("[위험] %s 원진(圓陣) — 틈으로 빠져나가라" % tt.get("name", ""))
 
 
 # 양방향 협공: 반대쪽 두 벽
@@ -5051,7 +5062,7 @@ func _event_pincer() -> void:
 	for side in [base, base + PI]:
 		for i in per:
 			_make_enemy(_edge_pos(side + randf_range(-0.5, 0.5), randf_range(60.0, 240.0)), false, tt)
-	_event_banner("⚠ %s 양방향 협공!" % tt.get("name", ""))
+	_event_banner("[위험] %s 양방향 협공!" % tt.get("name", ""))
 
 
 # 정예 무리: 엘리트 여럿이 한 방향에서 (미니보스 순간)
@@ -5061,7 +5072,7 @@ func _event_elite_pack() -> void:
 	var cnt: int = min(_spawn_budget(), 3 + stage_num)
 	for i in cnt:
 		_make_enemy(_edge_pos(ang + randf_range(-0.4, 0.4), randf_range(40.0, 160.0)), true, tt)
-	_event_banner("⚠ 정예 %s 무리!" % tt.get("name", ""))
+	_event_banner("[위험] 정예 %s 무리!" % tt.get("name", ""))
 
 
 func _gain_xp(amount: int) -> void:
@@ -5178,7 +5189,7 @@ const GEAR_AFFIXES := [
 ]
 const GEAR_AFFIX_COUNT := {"common": 1, "rare": 1, "epic": 2, "legendary": 3}
 const GEAR_POWER := {"common": 1.0, "rare": 1.5, "epic": 2.2, "legendary": 3.2}
-const RARITY_TAG := {"common": "", "rare": "[레어]", "epic": "◆에픽◆", "legendary": "★레전더리★"}
+const RARITY_TAG := {"common": "", "rare": "[레어]", "epic": "[에픽]", "legendary": "[전설]"}
 
 # M3 지옥 전용 장비 효과. 순수 공격력 영구 누적 대신 지옥의 규칙을 다루는 유틸리티다.
 const HELL_GEAR_SPECIALS := {
@@ -5371,7 +5382,7 @@ func _refresh_equip_hud() -> void:
 			lines.append("%s: %s%s" % [EQUIP_SLOT_NAME[slot], str(RARITY_TAG.get(str(it["rarity"]), "")), str(it["name"])])
 	var inv_line := "[ I ] 인벤토리 (%d)" % inventory.size()
 	if stat_points > 0:
-		inv_line += "  ◆스탯 %d" % stat_points
+		inv_line += "  스탯 %d" % stat_points
 	lines.append(inv_line)
 	equip_hud_label.text = "\n".join(lines)
 
@@ -5384,7 +5395,7 @@ func _refresh_equip_hud() -> void:
 const STAT_PT_ELITE := 1
 const STAT_DEFS := [
 	{"key": "str", "name": "힘",   "desc": "공격력 +3%"},
-	{"key": "agi", "name": "민첩", "desc": "공격속도·이동속도 ↑"},
+	{"key": "agi", "name": "민첩", "desc": "공격속도·이동속도 증가"},
 	{"key": "vit", "name": "체력", "desc": "최대체력 +10·재생"},
 	{"key": "foc", "name": "집중", "desc": "공격범위 +3%·방어 +0.5"},
 ]
@@ -5425,12 +5436,12 @@ func _gear_icon_path(item: Dictionary, slot_hint: String = "") -> String:
 func _gear_slot_symbol(slot: String) -> String:
 	match slot:
 		"weapon":
-			return "⚔"
+			return "무"
 		"armor":
-			return "🛡"
+			return "방"
 		"trinket":
-			return "✦"
-	return "•"
+			return "장"
+	return "?"
 
 
 func _gear_icon_socket(item: Dictionary, slot_hint: String = "", icon_size: Vector2 = Vector2(36.0, 36.0)) -> Panel:
@@ -5533,7 +5544,7 @@ func _gear_detail_text(it: Dictionary) -> String:
 		"%s" % str(EQUIP_SLOT_NAME.get(str(it.get("slot", "")), "장비")),
 	]
 	if bool(it.get("boss_crafted", false)):
-		lines.append("◆ 보스 파편 제작 장비")
+		lines.append("[제작] 보스 파편 장비")
 	if str(it.get("slot", "")) == "weapon":
 		var weapon_kind := str(it.get("weapon_kind", ""))
 		var active_def := _weapon_active_def_for_kind(weapon_kind)
@@ -5541,8 +5552,7 @@ func _gear_detail_text(it: Dictionary) -> String:
 			str(WNAMES.get(weapon_kind, "기본 공격")),
 			str(ELEMENT_NAME.get(str(it.get("element", "phys")), "물리")),
 		])
-		lines.append("E %s %s  (기본 %.1f초)" % [
-			str(active_def.get("glyph", "•")),
+		lines.append("E %s  (기본 %.1f초)" % [
 			str(active_def.get("name", "무기 스킬")),
 			float(active_def.get("cd", 0.0)),
 		])
@@ -5552,11 +5562,11 @@ func _gear_detail_text(it: Dictionary) -> String:
 			continue
 		var affix := raw_affix as Dictionary
 		var value_text := _gear_affix_value_text(affix)
-		lines.append("• %s +%s" % [str(affix.get("name", "효과")), value_text])
+		lines.append("- %s +%s" % [str(affix.get("name", "효과")), value_text])
 	var special = it.get("special", {})
 	if special is Dictionary and not (special as Dictionary).is_empty():
 		lines.append("")
-		lines.append("◆ [지옥 전용] %s" % str((special as Dictionary).get("name", "특수 효과")))
+		lines.append("[지옥 전용] %s" % str((special as Dictionary).get("name", "특수 효과")))
 		lines.append(str((special as Dictionary).get("desc", "")))
 	return "\n".join(lines)
 
@@ -5590,9 +5600,9 @@ func _gear_compare_text(selected: Dictionary, current: Dictionary) -> String:
 			continue
 		var pct: bool = key in ["damage_mult", "area_mult"]
 		var value_text := "%+.0f%%" % (value * 100.0) if pct else "%+.1f" % value
-		var arrow := "▲" if value > 0.0 else "▼"
+		var delta_word := "상승" if value > 0.0 else "감소"
 		var color := "#79eca3" if value > 0.0 else "#ff8296"
-		changes.append("[color=%s]%s %s %s[/color]" % [color, arrow, str(names.get(key, "효과")), value_text])
+		changes.append("[color=%s]%s %s %s[/color]" % [color, delta_word, str(names.get(key, "효과")), value_text])
 	if not changes.is_empty():
 		lines.append("")
 		lines.append("[color=#ffd36d][b]교체 변화[/b][/color]")
@@ -5696,7 +5706,7 @@ func _gear_line(it: Dictionary) -> String:
 func _bag_toast(it: Dictionary) -> void:
 	if ach_toast == null:
 		return
-	ach_toast.text = "🎒 가방에 담김: %s%s  [I]" % [str(RARITY_TAG.get(str(it["rarity"]), "")), str(it["name"])]
+	ach_toast.text = "[가방] %s%s  [I]" % [str(RARITY_TAG.get(str(it["rarity"]), "")), str(it["name"])]
 	ach_toast.add_theme_color_override("font_color", RARITY_COL.get(str(it["rarity"]), Color.WHITE))
 	ach_toast.visible = true
 	ach_toast_t = 2.2
@@ -6126,7 +6136,7 @@ func _refresh_forge() -> void:
 		child.queue_free()
 	if stash.is_empty():
 		var empty := Label.new()
-		empty.text = "🎁 보관함이 비어 있습니다.\n\n다음 런에서 엘리트와 보스를 처치해\n영구 장비를 획득하세요."
+		empty.text = "보관함이 비어 있습니다.\n\n다음 런에서 엘리트와 보스를 처치해\n영구 장비를 획득하세요."
 		empty.custom_minimum_size = Vector2(forge_list_item_width, 118)
 		empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		empty.add_theme_font_size_override("font_size", 13)
@@ -6136,7 +6146,7 @@ func _refresh_forge() -> void:
 		var item: Dictionary = stash[i]
 		var button := Button.new()
 		var equipped_mark := " [장착]" if _forge_item_equipped(item) else ""
-		var selected_mark := "▶ " if i == _forge_sel else ""
+		var selected_mark := "[선택] " if i == _forge_sel else ""
 		var forge_tag := " +%d" % _gear_level(item) if _gear_level(item) > 0 else ""
 		button.text = "%s[%s] %s%s%s" % [selected_mark, str(EQUIP_SLOT_NAME.get(str(item.get("slot", "")), "장비")), str(item.get("name", "장비")), forge_tag, equipped_mark]
 		button.custom_minimum_size = Vector2(forge_list_item_width, 42)
@@ -6150,7 +6160,7 @@ func _refresh_forge() -> void:
 		forge_list_box.add_child(button)
 	var selected := _forge_selected_item()
 	if selected.is_empty():
-		forge_detail_label.text = "장비를 선택하면 여기서 비교와 강화를 진행합니다.\n\n[ 대장간 안내 ]\n• 장착: 다음 런 시작부터 적용\n• 강화: 최대 5단계, 모든 어픽스 +12%\n• 분해: 장비를 골드로 환원"
+		forge_detail_label.text = "장비를 선택하면 여기서 비교와 강화를 진행합니다.\n\n[ 대장간 안내 ]\n- 장착: 다음 런 시작부터 적용\n- 강화: 최대 5단계, 모든 어픽스 +12%\n- 분해: 장비를 골드로 환원"
 		forge_equip_btn.disabled = true
 		forge_upgrade_btn.disabled = true
 		forge_discard_btn.disabled = true
@@ -6165,7 +6175,7 @@ func _refresh_forge() -> void:
 	var next_text := "최대 강화" if lv >= FORGE_MAX_LEVEL else "다음 Lv +%d%%" % int(round((lv + 1) * FORGE_LEVEL_BONUS * 100.0))
 	forge_detail_label.text = "%s\n\n[ 강화 ]\nLv%d/%d  ·  현재 어픽스 +%d%%\n%s\n\n[ 적용 ]\n%s" % [_gear_detail_text(selected), lv, FORGE_MAX_LEVEL, current_bonus, next_text, "현재 로드아웃에 장착 중입니다." if is_equipped else "장착하면 다음 런 시작부터 적용됩니다."]
 	forge_equip_btn.disabled = false
-	forge_equip_btn.text = "장착 해제" if is_equipped else "장착 ▶"
+	forge_equip_btn.text = "장착 해제" if is_equipped else "장착"
 	forge_upgrade_btn.disabled = lv >= FORGE_MAX_LEVEL or int(meta.get("gold", 0)) < upgrade_cost
 	forge_upgrade_btn.text = "최대 강화" if lv >= FORGE_MAX_LEVEL else "강화 +1 (%d G)" % upgrade_cost
 	forge_discard_btn.disabled = false
@@ -6274,7 +6284,7 @@ func _refresh_inventory_screen() -> void:
 		for i in inventory.size():
 			var it2: Dictionary = inventory[i]
 			var b := Button.new()
-			var selected_mark := "▶ " if i == _inv_sel else ""
+			var selected_mark := "[선택] " if i == _inv_sel else ""
 			var forge_tag := " +%d" % _gear_level(it2) if _gear_level(it2) > 0 else ""
 			b.text = "%s[%s] %s%s" % [selected_mark, str(EQUIP_SLOT_NAME.get(str(it2.get("slot", "")), "장비")), str(it2.get("name", "장비")), forge_tag]
 			b.custom_minimum_size = Vector2(inv_list_item_width, 40)
@@ -6294,13 +6304,13 @@ func _refresh_inventory_screen() -> void:
 		inv_detail_label.text = _gear_compare_text(sel, equipped.get(slot, {})) + "\n\n장착하면 기존 %s는 가방으로 이동합니다." % str(EQUIP_SLOT_NAME[slot])
 		inv_equip_btn.disabled = false
 		inv_discard_btn.disabled = false
-		inv_equip_btn.text = "장착 ▶"
+		inv_equip_btn.text = "장착"
 		inv_discard_btn.text = "분해 (+%d G)" % _gear_gold_value(sel)
 	else:
 		inv_detail_label.text = "가방에서 장비를 선택하세요.\n\n선택한 장비의 어픽스와 현재 장비 대비 변화량을 여기서 확인할 수 있습니다."
 		inv_equip_btn.disabled = true
 		inv_discard_btn.disabled = true
-		inv_equip_btn.text = "장착 ▶"
+		inv_equip_btn.text = "장착"
 		inv_discard_btn.text = "분해"
 
 
@@ -6352,14 +6362,9 @@ func _build_inventory_ui(s: Vector2, overlay: CanvasLayer) -> void:
 	# menu_panel.png의 큰 오너먼트가 내부 3패널 위까지 읽혀 정보가 묻히므로, 여기서는 단정한 금테를 쓴다.
 	frame.add_theme_stylebox_override("panel", _hud_style())
 	inventory_panel.add_child(frame)
-	var ttl := Label.new()
-	ttl.text = "🎒 인벤토리"
-	ttl.position = Vector2(0, 13)
-	ttl.size = Vector2(modal.size.x, 32)
-	ttl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	ttl.add_theme_font_size_override("font_size", 24)
-	ttl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
-	frame.add_child(ttl)
+	_centered_icon_title(
+		frame, "인벤토리", str(UI_ICONS["backpack"]),
+		Rect2(0, 13, modal.size.x, 32), 24, Color(1.0, 0.85, 0.4))
 	var sub := Label.new()
 	sub.text = "이번 런 장비와 능력치 · 런 종료 시 초기화됩니다"
 	sub.position = Vector2(0, 45)
@@ -6395,7 +6400,7 @@ func _build_inventory_ui(s: Vector2, overlay: CanvasLayer) -> void:
 	left.add_theme_stylebox_override("panel", _section_style(Color(0.33, 0.63, 0.83, 0.9)))
 	frame.add_child(left)
 	var lh := Label.new()
-	lh.text = "⚔ 장착 장비"
+	lh.text = "장착 장비"
 	lh.position = Vector2(12, 10)
 	lh.size = Vector2(left_w - 24.0, 22)
 	lh.add_theme_font_size_override("font_size", 15)
@@ -6408,7 +6413,7 @@ func _build_inventory_ui(s: Vector2, overlay: CanvasLayer) -> void:
 	left.add_child(inv_equip_box)
 	var stat_y := 142.0 if content_h >= 355.0 else maxf(132.0, content_h - 164.0)
 	var sh := Label.new()
-	sh.text = "✦ 능력치 분배"
+	sh.text = "능력치 분배"
 	sh.position = Vector2(12, stat_y)
 	sh.size = Vector2(left_w - 24.0, 22)
 	sh.add_theme_font_size_override("font_size", 15)
@@ -6446,7 +6451,7 @@ func _build_inventory_ui(s: Vector2, overlay: CanvasLayer) -> void:
 	right.add_theme_stylebox_override("panel", _section_style(Color(0.78, 0.48, 0.65, 0.9)))
 	frame.add_child(right)
 	var dh := Label.new()
-	dh.text = "◇ 선택 장비 · 비교"
+	dh.text = "선택 장비 · 비교"
 	dh.position = Vector2(12, 10)
 	dh.size = Vector2(right_w - 24.0, 22)
 	dh.add_theme_font_size_override("font_size", 15)
@@ -6470,7 +6475,7 @@ func _build_inventory_ui(s: Vector2, overlay: CanvasLayer) -> void:
 	close_btn.pressed.connect(_toggle_inventory)
 	frame.add_child(close_btn)
 	inv_equip_btn = Button.new()
-	inv_equip_btn.text = "장착 ▶"
+	inv_equip_btn.text = "장착"
 	inv_equip_btn.position = Vector2(modal.size.x - 18.0 - 168.0 - 10.0 - 148.0, footer_y + 6.0)
 	inv_equip_btn.size = Vector2(148, 44)
 	_style_button(inv_equip_btn, "res://assets/ui/button.png")
@@ -6510,7 +6515,7 @@ func _populate_levelup() -> void:
 			c["r"] = rr
 			c["rbonus"] = {"legendary": 2, "epic": 1}.get(rr, 0)
 			if rr == "legendary" or rr == "epic":
-				c["title"] = "%s %s" % ["★레전더리★" if rr == "legendary" else "◆에픽◆", str(c["title"])]
+				c["title"] = "%s %s" % ["[전설]" if rr == "legendary" else "[에픽]", str(c["title"])]
 		if RARITY_ORDER.get(str(c.get("r", "")), 0) > RARITY_ORDER.get(top_rarity, 0):
 			top_rarity = str(c["r"])
 		# 뱀서식 행: 이름·레벨(윗줄) + 설명(아랫줄). 아이콘은 왼쪽.
@@ -6591,7 +6596,7 @@ func _stat_row(box: GridContainer, icon_path: String, sname: String, value: Stri
 	vl.add_theme_constant_override("outline_size", 3)
 	vl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	var value_color := Color(1.0, 0.9, 0.55)
-	if value in ["-", "기본", "±0%"]:
+	if value in ["-", "기본", "0%"]:
 		value_color = Color(0.58, 0.60, 0.68)
 	elif value.begins_with("+"):
 		value_color = Color(0.52, 0.94, 0.66)
@@ -6713,10 +6718,10 @@ func _pause_slot(box: HBoxContainer, path: String, lv: int, glow: bool, max_pips
 	if glow:
 		tr.modulate = Color(1.3, 1.2, 0.7)
 	vb.add_child(tr)
-	# 진화/유니온이면 ★ 라벨, 아니면 뱀서식 핍(칸) 채우기
+	# 진화/유니온이면 텍스트 라벨, 아니면 뱀서식 핍(칸) 채우기
 	if glow:
 		var lb := Label.new()
-		lb.text = "★"
+		lb.text = "진화"
 		lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		lb.add_theme_font_size_override("font_size", 12)
 		lb.add_theme_color_override("font_color", Color(1.0, 0.9, 0.55))
@@ -6796,14 +6801,14 @@ func _do_skip() -> void:
 
 func _update_levelup_buttons() -> void:
 	if reroll_btn:
-		reroll_btn.text = "↻ 리롤 (%d)" % run_rerolls
+		reroll_btn.text = "리롤 (%d)" % run_rerolls
 		reroll_btn.disabled = run_rerolls <= 0
 	if banish_btn:
-		banish_btn.text = "✖ 밴 취소" if _banish_mode else "✖ 밴 (%d)" % run_banishes
+		banish_btn.text = "밴 취소" if _banish_mode else "밴 (%d)" % run_banishes
 		banish_btn.disabled = run_banishes <= 0 and not _banish_mode
 		banish_btn.modulate = Color(1.0, 0.6, 0.6) if _banish_mode else Color.WHITE
 	if skip_btn:
-		skip_btn.text = "» 스킵 (%d)" % run_skips
+		skip_btn.text = "스킵 (%d)" % run_skips
 		skip_btn.disabled = run_skips <= 0
 
 
@@ -6913,8 +6918,8 @@ func _pending_primary_evolution() -> Dictionary:
 	var pk: String = primary_weapon
 	var ev: Dictionary = EVO_RECIPE[primary_weapon]
 	return {"r": "legendary", "t": "evo", "new": true,
-		"title": "★ 진화 — %s" % str(ev["name"]),
-		"desc": "%s 숙련 완성 → 최종 무기로 진화" % WNAMES.get(primary_weapon, primary_weapon),
+		"title": "[진화] %s" % str(ev["name"]),
+		"desc": "%s 숙련 완성 — 최종 무기로 진화" % WNAMES.get(primary_weapon, primary_weapon),
 		"icon": str(ev.get("icon", WICON.get(primary_weapon, ""))),
 		"act": func() -> void: _evolve_primary(pk)}
 
@@ -6925,7 +6930,7 @@ func _evolve_primary(kind: String) -> void:
 		return
 	_evolve(kind)
 	if stage_label:
-		stage_label.text = "★진화★ %s!" % EVO_RECIPE[kind]["name"]
+		stage_label.text = "[진화] %s!" % EVO_RECIPE[kind]["name"]
 		stage_label.visible = true
 	stage_banner_t = 2.6
 	play_sfx("levelup", -4.0)
@@ -7014,17 +7019,17 @@ func _card_options() -> Array:
 # 리밋 브레이크 카드 풀 (중복 회피). 모든 성장 소진 후 레벨업이 낭비되지 않게.
 func _limit_break_card(used: Dictionary) -> Dictionary:
 	var pool := [
-		{"title": "⟡ 리밋: 힘", "desc": "공격력 +6%", "icon": "res://assets/items/icon_spinach.png",
+		{"title": "[리밋] 힘", "desc": "공격력 +6%", "icon": "res://assets/items/icon_spinach.png",
 			"act": func() -> void: player.damage_mult += 0.06},
-		{"title": "⟡ 리밋: 신속", "desc": "쿨다운 -4%", "icon": "res://assets/items/icon_tome.png",
+		{"title": "[리밋] 신속", "desc": "쿨다운 -4%", "icon": "res://assets/items/icon_tome.png",
 			"act": func() -> void: player.cooldown_mult = max(0.3, player.cooldown_mult * 0.96)},
-		{"title": "⟡ 리밋: 확장", "desc": "효과 범위 +8%", "icon": "res://assets/items/icon_candela.png",
+		{"title": "[리밋] 확장", "desc": "효과 범위 +8%", "icon": "res://assets/items/icon_candela.png",
 			"act": func() -> void: player.area_mult += 0.08},
-		{"title": "⟡ 리밋: 활력", "desc": "최대체력 +25 · 회복", "icon": "res://assets/items/icon_voidheart.png",
+		{"title": "[리밋] 활력", "desc": "최대체력 +25 · 회복", "icon": "res://assets/items/icon_voidheart.png",
 			"act": func() -> void: _p_hp()},
-		{"title": "⟡ 리밋: 예리", "desc": "치명타 확률 +4%", "icon": "res://assets/items/icon_keeneye.png",
+		{"title": "[리밋] 예리", "desc": "치명타 확률 +4%", "icon": "res://assets/items/icon_keeneye.png",
 			"act": func() -> void: player.crit_chance += 0.04},
-		{"title": "⟡ 리밋: 재생", "desc": "재생 +0.5/초", "icon": "res://assets/items/icon_tomato.png",
+		{"title": "[리밋] 재생", "desc": "재생 +0.5/초", "icon": "res://assets/items/icon_tomato.png",
 			"act": func() -> void: player.regen += 0.5},
 	]
 	pool.shuffle()
@@ -7033,7 +7038,7 @@ func _limit_break_card(used: Dictionary) -> Dictionary:
 			c["r"] = "rare"
 			return c
 	# 다 쓰면 힘 반복
-	return {"r": "rare", "title": "⟡ 리밋: 힘", "desc": "공격력 +6%",
+	return {"r": "rare", "title": "[리밋] 힘", "desc": "공격력 +6%",
 		"icon": "res://assets/items/icon_spinach.png",
 		"act": func() -> void: player.damage_mult += 0.06}
 
@@ -7114,7 +7119,7 @@ func _add_passive(key: String) -> void:
 func _evo_hint(kind: String) -> String:
 	if EVO_RECIPE.has(kind):
 		var pn: String = _passive_defs().get(EVO_RECIPE[kind]["passive"], {}).get("name", "")
-		return "Lv%d 만렙 + [%s] → 10:00 이후 보스 상자에서 진화!" % [MAX_WLEVEL, pn]
+		return "Lv%d 만렙 + [%s] · 10:00 이후 보스 상자에서 진화!" % [MAX_WLEVEL, pn]
 	return ""
 
 
@@ -7131,20 +7136,20 @@ func _evo_weapon_for_passive(pkey: String) -> String:
 # 짝수 성장 무기는 해당 레벨에 "투사체 +1"을 강조, 그 외 레벨은 무기별 성장 문구.
 const WGROW := {
 	"arrow": "투사체 +1 · 관통 증가", "knife": "투사체 +1 · 사거리",
-	"aura": "범위 확장 · 지속피해↑", "lightning": "낙뢰 대상 +1 · 피해↑",
-	"spread_shot": "탄 수 증가 · 피해↑", "cleave": "범위 확장 · 피해↑",
-	"blade": "회전검 +1 · 궤도 확대", "whip": "타격 폭 확대 · 피해↑",
-	"frost": "범위 확장 · 둔화 강화", "holy": "심판 낙뢰 +1 · 피해↑",
-	"fireball": "투사체 +1 · 폭발 범위↑", "boomerang": "투사체 +1 · 관통",
+	"aura": "범위 확장 · 지속피해 증가", "lightning": "낙뢰 대상 +1 · 피해 증가",
+	"spread_shot": "탄 수 증가 · 피해 증가", "cleave": "범위 확장 · 피해 증가",
+	"blade": "회전검 +1 · 궤도 확대", "whip": "타격 폭 확대 · 피해 증가",
+	"frost": "범위 확장 · 둔화 강화", "holy": "심판 낙뢰 +1 · 피해 증가",
+	"fireball": "투사체 +1 · 폭발 범위 증가", "boomerang": "투사체 +1 · 관통",
 	"axe": "투사체 +1 · 관통 증가", "crossbow": "볼트 +1 · 관통 강화",
-	"blood_sword": "피해량↑↑ · 흡혈율↑", "chakram": "튕김 +1 · 피해↑",
-	"frost_ring": "유도 서리탄 +1 · 둔화↑", "homing_skull": "유도탄 +1 · 관통",
-	"moonlight": "낙하 수 +1 · 범위↑", "holy_cross": "유도 성탄 +1 · 관통",
+	"blood_sword": "피해량 크게 증가 · 흡혈율 증가", "chakram": "튕김 +1 · 피해 증가",
+	"frost_ring": "유도 서리탄 +1 · 둔화 증가", "homing_skull": "유도탄 +1 · 관통",
+	"moonlight": "낙하 수 +1 · 범위 증가", "holy_cross": "유도 성탄 +1 · 관통",
 	"soul_bolt": "동시 조준 +1 · 관통", "holy_beam": "빛기둥 확대 · 관통",
-	"bone_spiral": "유도 뼈탄 +1 · 관통", "ice_lance": "창 수 +1 · 둔화↑",
+	"bone_spiral": "유도 뼈탄 +1 · 관통", "ice_lance": "창 수 +1 · 둔화 증가",
 	"venom": "투사체 +1 · 중독 강화", "spear": "관통 · 낙뢰 강화",
 	"thorn_burst": "유도 가시탄 +1 · 관통",
-	"poison_cloud": "구름 범위↑ · 중첩 한계↑",
+	"poison_cloud": "구름 범위 증가 · 중첩 한계 증가",
 }
 func _weapon_lv_desc(kind: String, _next_lv: int) -> String:
 	return WGROW.get(kind, "피해 증가 · 쿨타임 감소")
@@ -7168,14 +7173,14 @@ func _try_evolve_from_chest() -> bool:
 	# 그 전에 조건을 완성했다면 상자는 일반 성장 보상을 주고 준비 완료를 안내한다.
 	if not abyss_mode and time_survived < EVO_START_TIME:
 		if _ready_evolution_kind() != "":
-			_event_banner("★ 진화 준비 완료 — 10:00 이후 보스 상자를 노려라!")
+			_event_banner("[진화] 준비 완료 — 10:00 이후 보스 상자를 노려라!")
 		return false
 	var kind := _ready_evolution_kind()
 	if kind == "":
 		return false
 	_evolve(kind)
 	if stage_label:
-		stage_label.text = "★진화★ %s!" % EVO_RECIPE[kind]["name"]
+		stage_label.text = "[진화] %s!" % EVO_RECIPE[kind]["name"]
 		stage_label.visible = true
 	stage_banner_t = 2.6
 	play_sfx("levelup", -4.0)
@@ -7183,7 +7188,7 @@ func _try_evolve_from_chest() -> bool:
 	spawn_fx("fx_divine", player.position, 300.0)
 	_grant_ach("legend_weapon")
 	_flash(Color(1.0, 1.0, 0.95, 0.62))   # 진화 화이트 플래시
-	_show_chest_roulette(WICON.get(kind, ""), "★ 무기 진화 ★", EVO_RECIPE[kind]["name"])
+	_show_chest_roulette(WICON.get(kind, ""), "무기 진화", EVO_RECIPE[kind]["name"])
 	return true
 
 
@@ -7198,7 +7203,7 @@ func _try_union_from_chest() -> bool:
 			Meta.save_data(meta)
 			wtimer[u["key"]] = 0.0   # 발사 루프에 등록
 			if stage_label:
-				stage_label.text = "★유니온★ %s!" % u["name"]
+				stage_label.text = "[유니온] %s!" % u["name"]
 				stage_label.visible = true
 			stage_banner_t = 2.6
 			play_sfx("levelup", -4.0)
@@ -7206,7 +7211,7 @@ func _try_union_from_chest() -> bool:
 			spawn_fx("fx_divine", player.position, 320.0)
 			_grant_ach("legend_weapon")
 			_flash(Color(0.75, 0.9, 1.0, 0.62))   # 유니온 블루 플래시
-			_show_chest_roulette(u.get("icon", ""), "★ 유니온 합체 ★", u["name"])
+			_show_chest_roulette(u.get("icon", ""), "유니온 합체", u["name"])
 			return true
 	return false
 
@@ -7284,7 +7289,7 @@ func _weapon_desc(kind: String) -> String:
 		"frost_ring":
 			return "사방으로 퍼지는 둔화 서리탄 링"
 		"blood_sword":
-			return "넓게 베어 피해의 일부를 체력으로 회복 (레벨↑ = 화력·흡혈↑)"
+			return "넓게 베어 피해의 일부를 체력으로 회복 (레벨에 따라 화력·흡혈 증가)"
 		"cleave":
 			return "전방을 반투명 검기로 부채꼴 베기 (근접)"
 		"excalibur":
@@ -7811,7 +7816,7 @@ func _game_over() -> void:
 		shake_t = max(shake_t, 0.2)
 		play_sfx("levelup", -6.0)
 		if stage_label:
-			stage_label.text = "✨ 부활! (남은 부활 %d)" % revives
+			stage_label.text = "[부활] 남은 부활 %d" % revives
 			stage_label.visible = true
 		stage_banner_t = 2.0
 		return
@@ -7939,7 +7944,7 @@ func _telemetry_report_bbcode() -> String:
 	var floors: Array = last_run_telemetry.get("floor_results", [])
 	for i in mini(3, floors.size()):
 		var floor: Dictionary = floors[i]
-		var result_mark := "✓" if str(floor.get("outcome", "")) == "clear" else "✕"
+		var result_mark := "완료" if str(floor.get("outcome", "")) == "clear" else "실패"
 		lines.append("[color=#8fd9ff]%s %d층 · %s[/color]  %s  피해 %d · 피격 %d" % [
 			result_mark, int(floor.get("floor", i + 1)),
 			str(floor.get("stage_name", "던전")),
@@ -7964,7 +7969,7 @@ func _telemetry_report_bbcode() -> String:
 	var route_text := ""
 	for route_key in last_run_telemetry.get("route_history", []):
 		if route_text != "":
-			route_text += " → "
+			route_text += " > "
 		route_text += _telemetry_route_name(str(route_key))
 	if route_text != "":
 		lines.append("[color=#f1d06b][b]선택 경로[/b][/color]  %s" % route_text)
@@ -7976,7 +7981,7 @@ func _telemetry_report_bbcode() -> String:
 			extracted_text += " · "
 		var gear_name := str(gear.get("name", "장비"))
 		if gear_name.length() > 14:
-			gear_name = gear_name.substr(0, 13) + "…"
+			gear_name = gear_name.substr(0, 13) + "..."
 		extracted_text += gear_name
 	if extracted_text != "":
 		lines.append("[color=#f1d06b][b]추출 장비[/b][/color]  %s" % extracted_text)
@@ -8111,13 +8116,10 @@ func _refresh_skill_hud() -> void:
 	if skill_hud_label == null:
 		return
 	var active_def := _current_weapon_active_def()
-	var active_label := "%s %s" % [
-		str(active_def.get("glyph", "•")),
-		str(active_def.get("name", "무기 스킬")),
-	]
-	var et := "E %s ✓" % active_label if skill_e_cd <= 0.0 else "E %s %.1f" % [active_label, skill_e_cd]
+	var active_label := str(active_def.get("name", "무기 스킬"))
+	var et := "E %s 준비" % active_label if skill_e_cd <= 0.0 else "E %s %.1f" % [active_label, skill_e_cd]
 	var dodge_cd := player.dodge_cd if player else 0.0
-	var st := "Space 회피 ✓" if dodge_cd <= 0.0 else "Space 회피 %.1f" % dodge_cd
+	var st := "Space 회피 준비" if dodge_cd <= 0.0 else "Space 회피 %.1f" % dodge_cd
 	skill_hud_label.text = "%s     %s" % [et, st]
 
 
@@ -8129,7 +8131,7 @@ func _refresh_ult_bar() -> void:
 	if ult_bar_label:
 		var un := str(ULT_NAME.get(_char_ult(), "궁극기"))
 		if ult_gauge >= 1.0:
-			ult_bar_label.text = "★ Q  %s  READY ★" % un
+			ult_bar_label.text = "Q  %s  READY" % un
 			ult_bar_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.5))
 		else:
 			ult_bar_label.text = "Q  %s  %d%%" % [un, int(ult_gauge * 100.0)]
@@ -8663,7 +8665,7 @@ func _handle_cheat_key(keycode: int) -> void:
 
 func _cheat_toast(text: String) -> void:
 	if ach_toast:
-		ach_toast.text = "⚙ " + text
+		ach_toast.text = "[치트] " + text
 		ach_toast.visible = true
 		ach_toast_t = 2.0
 
@@ -8854,13 +8856,13 @@ func _refresh_stage_selection() -> void:
 			"5분 동안 성장한 뒤 목표 보스를 처치", "5분 성장 후 목표 보스 처치"
 		)
 		if sel_stage == HELL_STAGE:
-			objective_summary = "균열 3개 봉인 → 집행자 격파 → 화염 갑옷 파괴"
+			objective_summary = "균열 3개 봉인 후 집행자 격파 · 화염 갑옷 파괴"
 		map_detail_label.text = (
 			"[center][color=#f6d477]%d. %s[/color]  "
 			+ "[color=#a9c3d7]3층 · %s · 약점 %s[/color]\n"
 			+ "[color=#eef1ff]목표  %s[/color]\n"
 			+ "[color=#8edca8]캠프·상인·이벤트 · 추출 2개[/color]  "
-			+ "[color=#c8b8f2]%s · 적 HP×%.2f · 출현×%.2f[/color][/center]"
+			+ "[color=#c8b8f2]%s · 적 HP x%.2f · 출현 x%.2f[/color][/center]"
 		) % [
 			sel_stage, selected_data["name"], mob_themes[sel_stage - 1], weak_name,
 			objective_summary,
@@ -8875,7 +8877,7 @@ func _refresh_stage_selection() -> void:
 		var difficulty_data: Dictionary = GameConfig.difficulties()[difficulty_index]
 		var is_difficulty_selected := str(difficulty_data.get("key", "")) == selected_difficulty_key
 		difficulty_button.text = "%s%s · %s" % [
-			"◆ " if is_difficulty_selected else "",
+			"[선택] " if is_difficulty_selected else "",
 			difficulty_data.get("label", ""),
 			difficulty_data.get("reward_tag", "")
 		]
@@ -8936,7 +8938,7 @@ func _preview_char(c: Dictionary) -> void:
 	if char_det_desc:
 		var t: String = str(c.get("desc", ""))
 		if c.has("trait"):
-			t += "\n★ %s — %s" % [c["trait"], c.get("trait_desc", "")]
+			t += "\n[특성] %s — %s" % [c["trait"], c.get("trait_desc", "")]
 		char_det_desc.text = t
 	_fill_char_stats(c)
 
@@ -8993,9 +8995,9 @@ func _up_summary(key: String, lv: int) -> String:
 	var atmax: bool = lv >= int(Meta.UPGRADES[_up_idx(key)]["max"])
 	match key:
 		"amount":
-			return "투사체 +%d%s" % [lv / 2, "" if atmax else " → +%d" % ((lv + 1) / 2)]
+			return "투사체 +%d%s" % [lv / 2, "" if atmax else " > +%d" % ((lv + 1) / 2)]
 		"revive":
-			return "부활 %d회%s" % [lv, "" if atmax else " → %d회" % (lv + 1)]
+			return "부활 %d회%s" % [lv, "" if atmax else " > %d회" % (lv + 1)]
 	var unit := {"dmg": 4.0, "hp": 10.0, "speed": 3.0, "cd": -2.0, "magnet": 12.0,
 		"regen": 0.2, "armor": 1.0, "area": 5.0, "greed": 12.0, "xp": 8.0, "luck": 8.0}
 	if not unit.has(key):
@@ -9006,8 +9008,8 @@ func _up_summary(key: String, lv: int) -> String:
 	var cur: float = u * lv
 	var nxt: float = u * (lv + 1)
 	if key == "regen":
-		return "현재 +%.1f%s" % [cur, suf] if atmax else "현재 +%.1f → +%.1f%s" % [cur, nxt, suf]
-	return "현재 %+d%s" % [int(cur), suf] if atmax else "현재 %+d → %+d%s" % [int(cur), int(nxt), suf]
+		return "현재 +%.1f%s" % [cur, suf] if atmax else "현재 +%.1f > +%.1f%s" % [cur, nxt, suf]
+	return "현재 %+d%s" % [int(cur), suf] if atmax else "현재 %+d > %+d%s" % [int(cur), int(nxt), suf]
 
 
 func _up_idx(key: String) -> int:
@@ -9113,7 +9115,7 @@ func _grant_ach(key: String) -> void:
 	Meta.save_data(meta)
 	play_sfx("levelup", -6.0)
 	if ach_toast:
-		ach_toast.text = "★ 업적 달성: %s  (+%d G)" % [a.get("name", key), int(a.get("gold", 0))]
+		ach_toast.text = "[업적 달성] %s  (+%d G)" % [a.get("name", key), int(a.get("gold", 0))]
 		if not new_unlocks.is_empty():
 			ach_toast.text += "\n해금 — " + " · ".join(new_unlocks)
 		ach_toast.visible = true
@@ -9190,6 +9192,56 @@ func _style_button(b: Button, path: String, m: float = 22.0, cm_v: float = -1.0)
 	b.add_theme_color_override("font_disabled_color", Color(0.68, 0.68, 0.74))
 
 
+func _set_button_icon(button: Button, icon_path: String, max_width: int = 26) -> void:
+	var texture := Assets.tex(icon_path)
+	if texture == null:
+		return
+	button.icon = texture
+	button.expand_icon = true
+	button.icon_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	button.vertical_icon_alignment = VERTICAL_ALIGNMENT_CENTER
+	button.add_theme_constant_override("icon_max_width", max_width)
+
+
+func _centered_icon_title(
+	parent: Control,
+	title_text: String,
+	icon_path: String,
+	title_rect: Rect2,
+	font_size: int,
+	color: Color
+) -> Label:
+	var center := CenterContainer.new()
+	center.position = title_rect.position
+	center.size = title_rect.size
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(center)
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 8)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	center.add_child(row)
+	var texture := Assets.tex(icon_path)
+	if texture:
+		var icon := TextureRect.new()
+		var icon_size := maxf(20.0, title_rect.size.y - 6.0)
+		icon.custom_minimum_size = Vector2(icon_size, icon_size)
+		icon.texture = texture
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(icon)
+	var title := Label.new()
+	title.text = title_text
+	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", font_size)
+	title.add_theme_color_override("font_color", color)
+	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(title)
+	return title
+
+
 # HUD 패널 스타일 (다크 네이비 + 금 테두리 — 뱃지/게이지와 통일)
 func _hud_style() -> StyleBox:
 	var sb := StyleBoxFlat.new()
@@ -9223,6 +9275,30 @@ func _style_tile(b: Button) -> void:
 	b.add_theme_stylebox_override("pressed", mk.call(Color(0.32, 0.34, 0.46, 1.0), Color(1.0, 0.88, 0.45), 3))
 	b.add_theme_stylebox_override("focus", mk.call(Color(0.28, 0.30, 0.42, 0.98), Color(0.95, 0.80, 0.38), 3))
 	b.add_theme_stylebox_override("disabled", mk.call(Color(0.075, 0.08, 0.12, 0.98), Color(0.32, 0.30, 0.38), 2))
+
+
+func _style_route_card(button: Button, accent: Color) -> void:
+	var make_box := func(bg: Color, border: Color, width: int) -> StyleBoxFlat:
+		var box := StyleBoxFlat.new()
+		box.bg_color = bg
+		box.set_border_width_all(width)
+		box.border_color = border
+		box.set_corner_radius_all(8)
+		box.content_margin_left = 0
+		box.content_margin_right = 0
+		box.content_margin_top = 0
+		box.content_margin_bottom = 0
+		return box
+	button.add_theme_stylebox_override(
+		"normal", make_box.call(Color(0.0, 0.0, 0.0, 0.0), Color(0.0, 0.0, 0.0, 0.0), 0))
+	button.add_theme_stylebox_override(
+		"hover", make_box.call(Color(accent.r, accent.g, accent.b, 0.11), accent.lightened(0.18), 2))
+	button.add_theme_stylebox_override(
+		"pressed", make_box.call(Color(accent.r, accent.g, accent.b, 0.19), accent.lightened(0.28), 2))
+	button.add_theme_stylebox_override(
+		"focus", make_box.call(Color(accent.r, accent.g, accent.b, 0.13), accent.lightened(0.22), 2))
+	button.add_theme_stylebox_override(
+		"disabled", make_box.call(Color(0.01, 0.01, 0.02, 0.36), Color(0.25, 0.26, 0.31, 0.45), 1))
 
 
 # 인벤토리 아이콘 슬롯 스타일 (작은 금테 소켓)
@@ -9326,10 +9402,10 @@ func _inv_slot(icon_path: String, lvl: String, fallback: String, evolvable: bool
 		nl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		slot.add_child(nl)
 	v.add_child(slot)
-	# 레벨 표기: 진화 준비면 "▲진화", 숫자면 뱀서식 핍(칸) 채우기, 그 외(★ 등)는 라벨
+	# 레벨 표기: 진화 준비면 텍스트, 숫자면 뱀서식 핍(칸) 채우기.
 	if evolvable:
 		var el := Label.new()
-		el.text = "▲진화"
+		el.text = "진화"
 		el.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		el.add_theme_font_size_override("font_size", 9)
 		el.add_theme_constant_override("outline_size", 3)
@@ -9345,7 +9421,7 @@ func _inv_slot(icon_path: String, lvl: String, fallback: String, evolvable: bool
 		l.add_theme_font_size_override("font_size", 10)
 		l.add_theme_constant_override("outline_size", 3)
 		l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
-		l.add_theme_color_override("font_color", Color(1.0, 0.9, 0.5) if lvl == "★" else Color(0.92, 0.92, 0.96))
+		l.add_theme_color_override("font_color", Color(1.0, 0.9, 0.5) if lvl == "진화" else Color(0.92, 0.92, 0.96))
 		v.add_child(l)
 	return v
 
@@ -9383,7 +9459,7 @@ func _populate_end_build() -> void:
 	wrow.add_theme_constant_override("separation", 4)
 	for kind in ALL_WEAPONS:
 		if weapons.has(kind):
-			var lvl := "★" if evolved.get(kind, false) else str(weapons[kind])
+			var lvl := "진화" if evolved.get(kind, false) else str(weapons[kind])
 			wrow.add_child(_inv_slot(WICON.get(kind, ""), lvl, str(kind).substr(0, 2)))
 	end_build_box.add_child(wrow)
 	if passives.size() > 0:
@@ -9417,7 +9493,7 @@ func _refresh_inventory_ui() -> void:
 	var wcount := 0
 	for kind in ALL_WEAPONS:
 		if weapons.has(kind):
-			var lvl := "★" if evolved.get(kind, false) else str(weapons[kind])
+			var lvl := "진화" if evolved.get(kind, false) else str(weapons[kind])
 			inv_weapons_box.add_child(_inv_slot(WICON.get(kind, ""), lvl, wnames.get(kind, kind), _is_evolvable(kind)))
 			wcount += 1
 	var pcount := 0
@@ -9442,53 +9518,168 @@ func _build_expedition_ui(s: Vector2, overlay: CanvasLayer) -> void:
 	expedition_route_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	overlay.add_child(expedition_route_panel)
 	var route_dim := ColorRect.new()
-	route_dim.color = Color(0.015, 0.012, 0.028, 0.94)
+	route_dim.color = Color(0.012, 0.010, 0.024, 0.96)
 	route_dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	expedition_route_panel.add_child(route_dim)
-	var route_modal := _modal_rect(s, Vector2(940, 560), 20.0)
-	var route_frame := Panel.new()
+	var route_modal := _modal_rect(s, Vector2(1032, 576), 18.0)
+	var route_backing := ColorRect.new()
+	route_backing.position = route_modal.position + Vector2(70, 42)
+	route_backing.size = route_modal.size - Vector2(140, 84)
+	route_backing.color = Color(0.025, 0.022, 0.045, 0.97)
+	route_backing.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	expedition_route_panel.add_child(route_backing)
+	var route_frame := TextureRect.new()
 	route_frame.position = route_modal.position
 	route_frame.size = route_modal.size
-	route_frame.add_theme_stylebox_override("panel", _menu_style())
+	route_frame.texture = Assets.tex("res://assets/ui/route_selection_frame.png")
+	route_frame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	route_frame.stretch_mode = TextureRect.STRETCH_SCALE
+	route_frame.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	expedition_route_panel.add_child(route_frame)
 	expedition_route_title = Label.new()
-	expedition_route_title.position = Vector2(24, 22)
-	expedition_route_title.size = Vector2(route_modal.size.x - 48, 40)
+	expedition_route_title.position = Vector2(320, 38)
+	expedition_route_title.size = Vector2(392, 48)
 	expedition_route_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	expedition_route_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	expedition_route_title.add_theme_font_size_override("font_size", 28)
 	expedition_route_title.add_theme_color_override("font_color", Color(1.0, 0.83, 0.38))
+	expedition_route_title.add_theme_constant_override("outline_size", 4)
+	expedition_route_title.add_theme_color_override("font_outline_color", Color(0.03, 0.02, 0.05, 0.96))
 	route_frame.add_child(expedition_route_title)
 	expedition_route_summary = Label.new()
-	expedition_route_summary.position = Vector2(34, 69)
-	expedition_route_summary.size = Vector2(route_modal.size.x - 68, 58)
+	expedition_route_summary.position = Vector2(184, 130)
+	expedition_route_summary.size = Vector2(664, 46)
 	expedition_route_summary.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	expedition_route_summary.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	expedition_route_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	expedition_route_summary.add_theme_font_size_override("font_size", 14)
+	expedition_route_summary.add_theme_font_size_override("font_size", 13)
 	expedition_route_summary.add_theme_color_override("font_color", Color(0.78, 0.82, 0.92))
-	expedition_route_summary.add_theme_constant_override("outline_size", 4)
+	expedition_route_summary.add_theme_constant_override("outline_size", 3)
 	expedition_route_summary.add_theme_color_override("font_outline_color", Color(0.02, 0.02, 0.04, 0.96))
 	route_frame.add_child(expedition_route_summary)
 	expedition_route_buttons.clear()
-	var route_gap := 14.0
-	var route_card_w := (route_modal.size.x - 68.0 - route_gap * 2.0) / 3.0
+	expedition_route_icons.clear()
+	expedition_route_previews.clear()
+	expedition_route_boss_icons.clear()
+	expedition_route_name_labels.clear()
+	expedition_route_type_labels.clear()
+	expedition_route_destination_labels.clear()
+	expedition_route_encounter_labels.clear()
+	expedition_route_reward_labels.clear()
+	expedition_route_cta_labels.clear()
+	var route_card_rects := [
+		Rect2(148, 198, 226, 302),
+		Rect2(412, 198, 202, 302),
+		Rect2(650, 198, 212, 302),
+	]
 	for route_index in 3:
+		var card_rect: Rect2 = route_card_rects[route_index]
 		var route_button := Button.new()
-		route_button.position = Vector2(
-			34.0 + float(route_index) * (route_card_w + route_gap), 142.0)
-		route_button.size = Vector2(route_card_w, route_modal.size.y - 205.0)
-		route_button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		route_button.add_theme_font_size_override("font_size", 16)
-		_style_tile(route_button)
+		route_button.position = card_rect.position
+		route_button.size = card_rect.size
+		route_button.clip_contents = true
+		route_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		_style_route_card(route_button, Color(0.82, 0.68, 0.36))
 		route_button.pressed.connect(_choose_expedition_route.bind(route_index))
 		route_frame.add_child(route_button)
+		var route_icon := TextureRect.new()
+		route_icon.position = Vector2(card_rect.size.x * 0.5 - 20.0, 14.0)
+		route_icon.size = Vector2(40, 40)
+		route_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		route_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		route_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		route_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		route_button.add_child(route_icon)
+		var route_name := Label.new()
+		route_name.position = Vector2(8, 53)
+		route_name.size = Vector2(card_rect.size.x - 16, 25)
+		route_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		route_name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		route_name.add_theme_font_size_override("font_size", 17)
+		route_name.add_theme_constant_override("outline_size", 3)
+		route_name.add_theme_color_override("font_outline_color", Color(0.03, 0.02, 0.05, 0.96))
+		route_name.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		route_button.add_child(route_name)
+		var route_type := Label.new()
+		route_type.position = Vector2(8, 78)
+		route_type.size = Vector2(card_rect.size.x - 16, 18)
+		route_type.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		route_type.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		route_type.add_theme_font_size_override("font_size", 11)
+		route_type.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		route_button.add_child(route_type)
+		var route_preview := TextureRect.new()
+		route_preview.position = Vector2(12, 103)
+		route_preview.size = Vector2(card_rect.size.x - 24, 68)
+		route_preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		route_preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		route_preview.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		route_preview.modulate = Color(0.72, 0.74, 0.82, 0.72)
+		route_preview.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		route_button.add_child(route_preview)
+		var route_boss_icon := TextureRect.new()
+		route_boss_icon.position = Vector2(card_rect.size.x * 0.5 - 27.0, 110.0)
+		route_boss_icon.size = Vector2(54, 54)
+		route_boss_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		route_boss_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		route_boss_icon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		route_boss_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		route_button.add_child(route_boss_icon)
+		var route_destination := Label.new()
+		route_destination.position = Vector2(8, 177)
+		route_destination.size = Vector2(card_rect.size.x - 16, 22)
+		route_destination.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		route_destination.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		route_destination.add_theme_font_size_override("font_size", 13)
+		route_destination.add_theme_color_override("font_color", Color(0.94, 0.90, 0.78))
+		route_destination.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		route_button.add_child(route_destination)
+		var route_encounter := Label.new()
+		route_encounter.position = Vector2(10, 200)
+		route_encounter.size = Vector2(card_rect.size.x - 20, 39)
+		route_encounter.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		route_encounter.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		route_encounter.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		route_encounter.add_theme_font_size_override("font_size", 11)
+		route_encounter.add_theme_color_override("font_color", Color(0.70, 0.74, 0.84))
+		route_encounter.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		route_button.add_child(route_encounter)
+		var route_reward := Label.new()
+		route_reward.position = Vector2(10, 240)
+		route_reward.size = Vector2(card_rect.size.x - 20, 38)
+		route_reward.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		route_reward.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		route_reward.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		route_reward.add_theme_font_size_override("font_size", 11)
+		route_reward.add_theme_color_override("font_color", Color(0.84, 0.85, 0.90))
+		route_reward.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		route_button.add_child(route_reward)
+		var route_cta := Label.new()
+		route_cta.position = Vector2(8, 278)
+		route_cta.size = Vector2(card_rect.size.x - 16, 20)
+		route_cta.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		route_cta.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		route_cta.add_theme_font_size_override("font_size", 12)
+		route_cta.add_theme_constant_override("outline_size", 3)
+		route_cta.add_theme_color_override("font_outline_color", Color(0.03, 0.02, 0.05, 0.96))
+		route_cta.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		route_button.add_child(route_cta)
 		expedition_route_buttons.append(route_button)
+		expedition_route_icons.append(route_icon)
+		expedition_route_previews.append(route_preview)
+		expedition_route_boss_icons.append(route_boss_icon)
+		expedition_route_name_labels.append(route_name)
+		expedition_route_type_labels.append(route_type)
+		expedition_route_destination_labels.append(route_destination)
+		expedition_route_encounter_labels.append(route_encounter)
+		expedition_route_reward_labels.append(route_reward)
+		expedition_route_cta_labels.append(route_cta)
 	var route_footer := Label.new()
-	route_footer.text = "경로 선택은 이번 원정에만 적용됩니다. 장비·숙련·능력치는 다음 층에도 유지됩니다."
-	route_footer.position = Vector2(34, route_modal.size.y - 53)
-	route_footer.size = Vector2(route_modal.size.x - 68, 24)
+	route_footer.text = "경로 효과는 이번 원정에 적용 · 장비와 성장은 다음 층에도 유지"
+	route_footer.position = Vector2(204, 524)
+	route_footer.size = Vector2(624, 28)
 	route_footer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	route_footer.add_theme_font_size_override("font_size", 12)
+	route_footer.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	route_footer.add_theme_font_size_override("font_size", 11)
 	route_footer.add_theme_color_override("font_color", Color(0.62, 0.66, 0.76))
 	route_frame.add_child(route_footer)
 
@@ -9507,14 +9698,10 @@ func _build_expedition_ui(s: Vector2, overlay: CanvasLayer) -> void:
 	extraction_frame.size = extraction_modal.size
 	extraction_frame.add_theme_stylebox_override("panel", _menu_style())
 	extraction_panel.add_child(extraction_frame)
-	extraction_title = Label.new()
-	extraction_title.text = "🎒 전리품 추출"
-	extraction_title.position = Vector2(24, 18)
-	extraction_title.size = Vector2(extraction_modal.size.x - 48, 38)
-	extraction_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	extraction_title.add_theme_font_size_override("font_size", 27)
-	extraction_title.add_theme_color_override("font_color", Color(1.0, 0.83, 0.38))
-	extraction_frame.add_child(extraction_title)
+	extraction_title = _centered_icon_title(
+		extraction_frame, "전리품 추출", str(UI_ICONS["backpack"]),
+		Rect2(24, 18, extraction_modal.size.x - 48, 38),
+		27, Color(1.0, 0.83, 0.38))
 	extraction_summary = Label.new()
 	extraction_summary.position = Vector2(32, 61)
 	extraction_summary.size = Vector2(extraction_modal.size.x - 64, 50)
@@ -9546,8 +9733,8 @@ func _build_expedition_ui(s: Vector2, overlay: CanvasLayer) -> void:
 func _refresh_expedition_route_panel() -> void:
 	if expedition_route_panel == null:
 		return
-	expedition_route_title.text = "%d층 정복 — 다음 경로 선택" % expedition_floor
-	expedition_route_summary.text = "현재 %s · HP %d/%d · 골드 %d G · 능력치 포인트 %d\n다음 층의 전장과 휴식 방식을 함께 고릅니다." % [
+	expedition_route_title.text = "%d층 정복" % expedition_floor
+	expedition_route_summary.text = "%s 원정 · HP %d/%d · 골드 %d G · 능력치 %d" % [
 		str(GameConfig.stage_info(map_stage)["name"]),
 		int(maxf(0.0, player.hp)) if player else 0,
 		int(player.max_hp) if player else 0,
@@ -9563,17 +9750,41 @@ func _refresh_expedition_route_panel() -> void:
 		var node_key := str(route["key"])
 		var target_stage := int(route["target_stage"])
 		var target_data: Dictionary = GameConfig.stage_info(target_stage)
-		button.text = "%s  %s\n\n→ %d층  %s\n%s 속성 · 보스 %s\n\n%s" % [
-			str(route["glyph"]), str(route["name"]),
-			expedition_floor + 1, str(target_data["name"]),
-			str(ELEMENT_NAME.get(str(target_data.get("element", "phys")), "물리")),
-			str(target_data.get("boss_name", target_data["boss"])),
-			str(route["desc"]),
-		]
-		button.modulate = Color(route["color"])
+		var accent := Color(route["color"])
+		var unavailable := node_key == "merchant" and run_gold < ExpeditionRulesScript.MERCHANT_COST
+		button.text = ""
+		button.modulate = Color.WHITE
+		button.disabled = unavailable
+		_style_route_card(button, accent)
+		if route_index < expedition_route_icons.size():
+			expedition_route_icons[route_index].texture = Assets.tex(str(route.get("icon", "")))
+			expedition_route_previews[route_index].texture = Assets.tex(
+				"res://assets/maps/%s/preview.png" % STAGE_MAP_DIRS[target_stage - 1])
+			expedition_route_boss_icons[route_index].texture = Assets.tex(
+				"res://assets/boss/%s.png" % str(target_data["boss"]))
+			expedition_route_name_labels[route_index].text = str(route["name"])
+			expedition_route_name_labels[route_index].add_theme_color_override("font_color", accent)
+			expedition_route_type_labels[route_index].text = str({
+				"camp": "회복",
+				"merchant": "상점",
+				"event": "위험 보상",
+			}.get(node_key, "경로"))
+			expedition_route_type_labels[route_index].add_theme_color_override(
+				"font_color", accent.darkened(0.08))
+			expedition_route_destination_labels[route_index].text = "다음 %d층 · %s" % [
+				expedition_floor + 1, str(target_data["name"])]
+			expedition_route_encounter_labels[route_index].text = "%s 속성\n보스 %s" % [
+				str(ELEMENT_NAME.get(str(target_data.get("element", "phys")), "물리")),
+				str(target_data.get("boss_name", target_data["boss"])),
+			]
+			expedition_route_reward_labels[route_index].text = str(route["desc"])
+			expedition_route_cta_labels[route_index].text = (
+				"%d G 필요" % ExpeditionRulesScript.MERCHANT_COST
+				if unavailable else "이 경로 선택")
+			expedition_route_cta_labels[route_index].add_theme_color_override(
+				"font_color", Color(0.48, 0.48, 0.54) if unavailable else accent.lightened(0.12))
 		button.tooltip_text = "%s\n\n%s" % [
 			str(target_data.get("rule", "5분 뒤 목표 보스")), str(route["desc"])]
-		button.disabled = node_key == "merchant" and run_gold < ExpeditionRulesScript.MERCHANT_COST
 	for button in expedition_route_buttons:
 		if button.visible and not button.disabled:
 			button.grab_focus()
@@ -9600,10 +9811,10 @@ func _refresh_extraction_panel() -> void:
 			effect_parts.append("%s +%s" % [str(affix.get("name", "효과")), affix_value])
 		var special = item.get("special", {})
 		if special is Dictionary and not (special as Dictionary).is_empty():
-			effect_parts.append("◆ %s" % str((special as Dictionary).get("name", "특수")))
+			effect_parts.append("[특수] %s" % str((special as Dictionary).get("name", "특수")))
 		var button := Button.new()
 		button.text = "%s  [%s] %s\n%s · %s  ·  미선택 시 +%d G" % [
-			"✓ 추출" if selected else "◇ 선택",
+			"추출 선택됨" if selected else "추출 선택",
 			str(EQUIP_SLOT_NAME.get(str(item.get("slot", "")), "장비")),
 			str(item.get("name", "장비")),
 			str(RARITY_TAG.get(str(item.get("rarity", "")), "일반")),
@@ -9885,7 +10096,7 @@ func _build_ui(s: Vector2) -> void:
 		cards.append(b)
 		# "신규!" 뱃지 (우상단, 안 가진 무기/패시브에만 표시)
 		var badge := Label.new()
-		badge.text = "✦ 신규!"
+		badge.text = "신규!"
 		badge.add_theme_font_size_override("font_size", 16)
 		badge.add_theme_color_override("font_color", Color(1.0, 0.86, 0.32))
 		badge.add_theme_constant_override("outline_size", 4)
@@ -10204,6 +10415,7 @@ func _build_ui(s: Vector2) -> void:
 	start_btn.size = Vector2(300, 64)
 	start_btn.add_theme_font_size_override("font_size", 20)
 	_style_button(start_btn, "res://assets/ui/button.png")
+	_set_button_icon(start_btn, "res://assets/items/gear_sword.png", 28)
 	start_btn.pressed.connect(func() -> void: _goto_screen(char_panel))
 	title_panel.add_child(start_btn)
 
@@ -10212,6 +10424,7 @@ func _build_ui(s: Vector2) -> void:
 	shop_btn.position = Vector2(title_center_x - 250.0, 442)
 	shop_btn.size = Vector2(240, 52)
 	_style_button(shop_btn, "res://assets/ui/button.png")
+	_set_button_icon(shop_btn, "res://assets/items/coin.png", 24)
 	shop_btn.pressed.connect(_open_shop)
 	title_panel.add_child(shop_btn)
 
@@ -10220,6 +10433,7 @@ func _build_ui(s: Vector2) -> void:
 	forge_btn.position = Vector2(title_center_x + 10.0, 442)
 	forge_btn.size = Vector2(240, 52)
 	_style_button(forge_btn, "res://assets/ui/button.png")
+	_set_button_icon(forge_btn, str(UI_ICONS["anvil"]), 24)
 	forge_btn.pressed.connect(_open_forge)
 	title_panel.add_child(forge_btn)
 
@@ -10228,6 +10442,7 @@ func _build_ui(s: Vector2) -> void:
 	collection_btn.position = Vector2(utility_x, utility_y)
 	collection_btn.size = Vector2(utility_width, 52)
 	_style_button(collection_btn, "res://assets/ui/button.png")
+	_set_button_icon(collection_btn, str(UI_ICONS["codex"]), 22)
 	collection_btn.pressed.connect(_open_collection)
 	title_panel.add_child(collection_btn)
 
@@ -10236,6 +10451,7 @@ func _build_ui(s: Vector2) -> void:
 	opt_btn.position = Vector2(utility_x + (utility_width + utility_gap) * 2.0, utility_y)
 	opt_btn.size = Vector2(utility_width, 52)
 	_style_button(opt_btn, "res://assets/ui/button.png")
+	_set_button_icon(opt_btn, str(UI_ICONS["options"]), 22)
 	opt_btn.pressed.connect(func() -> void: options_panel.visible = true)
 	title_panel.add_child(opt_btn)
 
@@ -10244,6 +10460,7 @@ func _build_ui(s: Vector2) -> void:
 	ach_btn.position = Vector2(utility_x + utility_width + utility_gap, utility_y)
 	ach_btn.size = Vector2(utility_width, 52)
 	_style_button(ach_btn, "res://assets/ui/button.png")
+	_set_button_icon(ach_btn, str(UI_ICONS["achievement"]), 22)
 	ach_btn.pressed.connect(_open_achievements)
 	title_panel.add_child(ach_btn)
 
@@ -10518,7 +10735,7 @@ func _build_ui(s: Vector2) -> void:
 
 	# 던전 준비 화면으로 이동한다. 난이도와 가호는 다음 화면에서 함께 확정한다.
 	var cok := Button.new()
-	cok.text = "맵 선택 ▶"
+	cok.text = "맵 선택"
 	cok.position = Vector2(char_main_right - 180.0, s.y - 76)
 	cok.size = Vector2(180, 48)
 	_style_button(cok, "res://assets/ui/button.png")
@@ -10644,7 +10861,7 @@ func _build_ui(s: Vector2) -> void:
 		stage_button.add_child(selection_border)
 		map_selection_borders.append(selection_border)
 		var selected_badge := Label.new()
-		selected_badge.text = "✓ 선택"
+		selected_badge.text = "선택됨"
 		selected_badge.position = Vector2(slot.size.x - 53.0, 8) * frame_scale
 		selected_badge.size = Vector2(48, 20) * frame_scale
 		selected_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -10657,7 +10874,7 @@ func _build_ui(s: Vector2) -> void:
 		map_selection_badges.append(selected_badge)
 		stage_button.text = "\n\n%d\n%s" % [stage_index, stage_data["name"]]
 		if stage_index > unlocked_stage_count:
-			stage_button.text = "\n\n🔒\n잠김"
+			stage_button.text = "\n\n잠김"
 			stage_button.modulate = Color(0.48, 0.48, 0.55)
 		stage_button.pressed.connect(_choose_stage_card.bind(stage_index))
 		stage_select_panel.add_child(stage_button)
@@ -10693,8 +10910,8 @@ func _build_ui(s: Vector2) -> void:
 		difficulty_button.size = Vector2(difficulty_button_width, 23.0) * frame_scale
 		difficulty_button.add_theme_font_size_override("font_size", maxi(10, int(12.0 * frame_scale)))
 		difficulty_button.tooltip_text = (
-			"%s\n플레이어 HP ×%.2f · 적 HP ×%.2f · 속도 ×%.2f · 출현 ×%.2f\n"
-			+ "골드 ×%.2f · 경험치 ×%.2f · 장비 ×%.2f"
+			"%s\n플레이어 HP x%.2f · 적 HP x%.2f · 속도 x%.2f · 출현 x%.2f\n"
+			+ "골드 x%.2f · 경험치 x%.2f · 장비 x%.2f"
 		) % [
 			difficulty_data.get("desc", ""),
 			difficulty_data.get("player_hp", 1.0),
@@ -10776,14 +10993,9 @@ func _build_ui(s: Vector2) -> void:
 	shop_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	shop_panel.add_child(shop_bg)
 
-	var sttl := Label.new()
-	sttl.text = "영구 강화 상점"
-	sttl.position = Vector2(0, 60)
-	sttl.size = Vector2(s.x, 40)
-	sttl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	sttl.add_theme_font_size_override("font_size", 28)
-	sttl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
-	shop_panel.add_child(sttl)
+	_centered_icon_title(
+		shop_panel, "영구 강화 상점", "res://assets/items/coin.png",
+		Rect2(0, 60, s.x, 40), 28, Color(1.0, 0.85, 0.4))
 
 	shop_gold_label = Label.new()
 	shop_gold_label.position = Vector2(0, 98)
@@ -10810,7 +11022,7 @@ func _build_ui(s: Vector2) -> void:
 	var sby := 120 + int(ceil(Meta.UPGRADES.size() / 2.0)) * 76 + 4
 	# 초기화(환불) 버튼
 	var reset_btn := Button.new()
-	reset_btn.text = "↺ 초기화 (전액 환불)"
+	reset_btn.text = "초기화 (전액 환불)"
 	reset_btn.position = Vector2(s.x / 2.0 - 260, sby)
 	reset_btn.size = Vector2(210, 50)
 	_style_button(reset_btn, "res://assets/ui/button.png")
@@ -10819,7 +11031,7 @@ func _build_ui(s: Vector2) -> void:
 	shop_panel.add_child(reset_btn)
 
 	var back_btn := Button.new()
-	back_btn.text = "← 돌아가기"
+	back_btn.text = "돌아가기"
 	back_btn.position = Vector2(s.x / 2.0 + 50, sby)
 	back_btn.size = Vector2(210, 50)
 	_style_button(back_btn, "res://assets/ui/button.png")
@@ -10842,14 +11054,9 @@ func _build_ui(s: Vector2) -> void:
 	# 대장간도 장비 정보가 주인공이므로 배경 장식보다 얇은 금테를 우선한다.
 	fbg.add_theme_stylebox_override("panel", _hud_style())
 	forge_panel.add_child(fbg)
-	var fttl := Label.new()
-	fttl.text = "⚒ 대장간 — 영구 장비"
-	fttl.position = Vector2(0, 13)
-	fttl.size = Vector2(forge_modal.size.x, 32)
-	fttl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	fttl.add_theme_font_size_override("font_size", 24)
-	fttl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
-	fbg.add_child(fttl)
+	_centered_icon_title(
+		fbg, "대장간 — 영구 장비", str(UI_ICONS["anvil"]),
+		Rect2(0, 13, forge_modal.size.x, 32), 24, Color(1.0, 0.85, 0.4))
 	forge_gold_label = Label.new()
 	forge_gold_label.position = Vector2(0, 45)
 	forge_gold_label.size = Vector2(forge_modal.size.x, 20)
@@ -10883,7 +11090,7 @@ func _build_ui(s: Vector2) -> void:
 	loadout_panel.add_theme_stylebox_override("panel", _section_style(Color(0.33, 0.63, 0.83, 0.9)))
 	fbg.add_child(loadout_panel)
 	var flh := Label.new()
-	flh.text = "⚔ 현재 로드아웃"
+	flh.text = "현재 로드아웃"
 	flh.position = Vector2(12, 10)
 	flh.size = Vector2(left_w - 24.0, 22)
 	flh.add_theme_font_size_override("font_size", 15)
@@ -10929,7 +11136,7 @@ func _build_ui(s: Vector2) -> void:
 	detail_panel.add_theme_stylebox_override("panel", _section_style(Color(0.78, 0.48, 0.65, 0.9)))
 	fbg.add_child(detail_panel)
 	var fdh := Label.new()
-	fdh.text = "◇ 장비 상세 · 강화"
+	fdh.text = "장비 상세 · 강화"
 	fdh.position = Vector2(12, 10)
 	fdh.size = Vector2(right_w - 24.0, 22)
 	fdh.add_theme_font_size_override("font_size", 15)
@@ -10944,7 +11151,7 @@ func _build_ui(s: Vector2) -> void:
 	detail_panel.add_child(forge_detail_label)
 
 	var fback := Button.new()
-	fback.text = "← 돌아가기"
+	fback.text = "돌아가기"
 	fback.position = Vector2(18, footer_y + 6.0)
 	fback.size = Vector2(150, 44)
 	_style_button(fback, "res://assets/ui/button.png")
@@ -10996,14 +11203,9 @@ func _build_ui(s: Vector2) -> void:
 	obg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	options_panel.add_child(obg)
 
-	var ottl := Label.new()
-	ottl.text = Loc.t("opt_title")
-	ottl.position = Vector2(0, 146)
-	ottl.size = Vector2(s.x, 44)
-	ottl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	ottl.add_theme_font_size_override("font_size", 30)
-	ottl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
-	options_panel.add_child(ottl)
+	_centered_icon_title(
+		options_panel, Loc.t("opt_title"), str(UI_ICONS["options"]),
+		Rect2(0, 146, s.x, 44), 30, Color(1.0, 0.85, 0.4))
 
 	var ox := s.x / 2.0 - 280.0
 	# 음악 볼륨
@@ -11134,14 +11336,9 @@ func _build_ui(s: Vector2) -> void:
 	achbg.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	achbg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	achievements_panel.add_child(achbg)
-	var achttl := Label.new()
-	achttl.text = "업 적"
-	achttl.position = Vector2(0, 30)
-	achttl.size = Vector2(s.x, 38)
-	achttl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	achttl.add_theme_font_size_override("font_size", 30)
-	achttl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
-	achievements_panel.add_child(achttl)
+	_centered_icon_title(
+		achievements_panel, "업적", str(UI_ICONS["achievement"]),
+		Rect2(0, 30, s.x, 38), 30, Color(1.0, 0.85, 0.4))
 	ach_progress_label = Label.new()
 	ach_progress_label.position = Vector2(0, 96)
 	ach_progress_label.size = Vector2(s.x, 26)
@@ -11187,14 +11384,9 @@ func _build_ui(s: Vector2) -> void:
 	colbg.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	colbg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	collection_panel.add_child(colbg)
-	var colttl := Label.new()
-	colttl.text = "수 집  도 감"
-	colttl.position = Vector2(0, 30)
-	colttl.size = Vector2(s.x, 38)
-	colttl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	colttl.add_theme_font_size_override("font_size", 30)
-	colttl.add_theme_color_override("font_color", Color(0.55, 0.88, 1.0))
-	collection_panel.add_child(colttl)
+	_centered_icon_title(
+		collection_panel, "수집 도감", str(UI_ICONS["codex"]),
+		Rect2(0, 30, s.x, 38), 30, Color(0.55, 0.88, 1.0))
 	collection_progress_label = Label.new()
 	collection_progress_label.position = Vector2(0, 96)
 	collection_progress_label.size = Vector2(s.x, 26)
@@ -11367,8 +11559,8 @@ func _make_relic_set_card(set_def: Dictionary) -> Control:
 	var active := owned >= relics.size()
 	var scol: Color = set_def["color"]
 	var card := _ui_card("res://assets/ui/card_relic.png", Rect2(52, 64, 410, 96), 96)
-	var head := "◆ %s  (%d/%d)" % [set_def["name"], owned, relics.size()]
-	if active: head += "  ✦발동✦"
+	var head := "[세트] %s  (%d/%d)" % [set_def["name"], owned, relics.size()]
+	if active: head += "  [발동]"
 	_ui_card_label(card, head, Vector2(18, 7), Vector2(428, 26), 17,
 		scol if active else Color(0.6, 0.62, 0.7))
 	_ui_card_label(card, str(set_def["desc"]), Vector2(18, 34), Vector2(428, 52), 13,
@@ -11491,7 +11683,7 @@ func _make_achievement_card(achievement: Dictionary, unlocked: bool) -> Control:
 	if unlocked:
 		_ui_icon_socket(card, Vector2(386, 17), Vector2(64, 64))
 	_ui_card_icon(card, _achievement_icon_path(achievement), Vector2(393, 24), Vector2(50, 50), not unlocked)
-	_ui_card_label(card, ("✓ " if unlocked else "◇ ") + str(achievement["name"]), Vector2(26, 7), Vector2(342, 25), 16, Color(1.0, 0.84, 0.42) if unlocked else Color(0.58, 0.6, 0.68))
+	_ui_card_label(card, ("[완료] " if unlocked else "[잠김] ") + str(achievement["name"]), Vector2(26, 7), Vector2(342, 25), 16, Color(1.0, 0.84, 0.42) if unlocked else Color(0.58, 0.6, 0.68))
 	_ui_card_label(card, str(achievement["desc"]), Vector2(26, 31), Vector2(342, 36), 12, Color(0.84, 0.86, 0.92) if unlocked else Color(0.48, 0.5, 0.57))
 	var reward_text := "+%d G" % int(achievement.get("gold", 0))
 	var meta_rewards := _achievement_unlock_rewards(str(achievement["key"]))
@@ -11522,7 +11714,7 @@ func _nearest_landmark_hint() -> String:
 		if boss and is_instance_valid(boss) and boss.hell_final:
 			if boss.armor_hp > 0.0:
 				var armor_pct := int(round(100.0 * boss.armor_hp / maxf(1.0, boss.armor_max)))
-				return "화염 갑옷 %d%% · 냉기 파괴 ↑" % armor_pct
+				return "화염 갑옷 %d%% · 냉기 파괴 증가" % armor_pct
 			if boss.vulnerable_t > 0.0:
 				return "갑옷 파괴! 집중 공격 %.1f초" % boss.vulnerable_t
 			return "화염 군주 페이즈 %d" % boss.hell_phase
@@ -11564,7 +11756,7 @@ func _update_ui() -> void:
 		lv_label.text = "LV %d" % level
 	var phase := ""
 	if boss_spawned:
-		phase = "⚔ 보스전!"
+		phase = "[보스전]"
 	elif abyss_mode:
 		phase = "심연 %d층" % stage_num
 	var landmark_hint := _nearest_landmark_hint()
