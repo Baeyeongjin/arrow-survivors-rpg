@@ -13,6 +13,23 @@
 
 ---
 
+## ✅ 완료 (2026-07-29, Claude) — M5-A 묘지 세로 슬라이스
+
+1순위 작업만 구현했다. 지옥 슬라이스는 건드리지 않았다(HellSliceTest 회귀 통과).
+
+- **영혼 봉인비**(`GraveSeal.gd`): 파괴가 아닌 점령형(범위 안 10초 누적, 밖이면 정지·비초기화). 좌표 3개는 `StageLayout.make(1)`의 `objective_positions`, 스폰 시 `묘지 파수꾼`(정예) 동반. 00:40/01:35/03:20.
+- **무덤 기사**(중간보스, 02:30): `graveyard_midboss_tier`(dark_knight), 돌진 예고. 처치 전 최종 관문 잠금(HUD 경고). 처치 시 묘지 전용 장비 확정.
+- **묘지 수호자**(최종보스, `Boss.gd` `configure_grave_final`/`_process_grave`): 접촉 피해 없이 예고 3패턴(부채꼴 뼈파동·지연 묘지폭발·직선 영혼돌진). 체력 60%에 영혼 방패, 핵 수 `max(1, 4-완료 봉인)`, 어떤 무기·속성도 파괴, 전부 파괴 시 5초 딜타임(피해 1.7배).
+- **묘지 전용 장비 3종**(`GRAVE_GEAR_SPECIALS`, `dungeon_tag="graveyard"`): 장송의 무기(`requiem_interrupt`), 수의의 가호(`burial_shroud`), 혼령의 메아리(`grave_echo`). `_gear_detail_text`에 `[묘지 전용]` 표기. 효과는 실제 런에 연결.
+- **HUD/텔레메트리**: 기존 상단 목표 재사용(봉인 n/3·중간보스·방패 핵·취약 시간). `run_floor_stats`에 `objective_key`/`objectives_completed`/`objectives_total` 추가. 층 전환 시 `_reset_grave_floor_state`로 완전 초기화.
+- **파일 분리**: 묘지 로직을 `Main.gd`에 통째로 복사하지 않고 `GraveSeal.gd`/보스 상태머신으로 분리(다음 던전이 따를 최소 수명주기).
+
+검증: 파싱 clean · `GRAVEYARD_SLICE_OK` · 회귀 `HELL_SLICE_OK`/Expedition/Difficulty/Mastery/Element · `--telemetry-test`/`--map-selection-test`/`--expedition-flow-test` PASS · `--graveyard-preview=seal|midboss|boss` 실제 렌더 캡처 확인.
+
+이월(ponytail): 무덤 기사의 2번째 전조 패턴(부채꼴 베기)은 완료조건 밖이라 돌진 예고 1패턴으로 시작. 봉인 보상·보스 핵 HP 수치는 플레이테스트 후 조정. 나머지 4개 던전(M5-B~E)은 이 문서 8절 순서대로 별도 진행.
+
+---
+
 ## 1. 지금 상태의 결론
 
 현재 게임은 RPG 전환의 기반 공사가 끝난 상태다.

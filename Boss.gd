@@ -43,6 +43,31 @@ var _hell_lock_dir := Vector2.DOWN
 var _hell_charge_hit := false
 var _hell_armor_index := 0
 
+# M5-A 묘지 최종 보스: 접촉 피해 없이 예고 패턴 3종(부채꼴 뼈파동·지연 묘지폭발·직선 영혼돌진) +
+# 체력 60%에서 시작하는 영혼 방패(핵 파괴) 국면. 방패 핵은 어떤 무기·속성으로도 부순다.
+const GRAVE_VULNERABLE_TIME := 5.0
+const GRAVE_SHIELD_THRESHOLD := 0.60
+const GRAVE_FAN_RADIUS := 150.0
+const GRAVE_EXPLODE_RADIUS := 128.0
+enum GraveState { CHASE, FAN_WINDUP, EXPLODE_WINDUP, CHARGE_WINDUP, CHARGE, RECOVERY, STUNNED }
+
+var grave_final := false
+var grave_phase := 1
+var grave_shield_active := false
+var grave_shield_started := false
+var grave_shield_core_max := 1
+var grave_shield_cores := 1
+var grave_core_hp := 0.0
+var grave_core_hp_max := 0.0
+var sealed_graves := 0
+
+var _grave_state: int = GraveState.CHASE
+var _grave_t := 1.25
+var _grave_attack_index := 0
+var _grave_lock_dir := Vector2.DOWN
+var _grave_charge_hit := false
+var _grave_explode_pos := Vector2.ZERO
+
 func _ready() -> void:
 	add_to_group("boss")
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -64,7 +89,7 @@ func configure_hell_final(unsealed: int) -> void:
 
 
 func uses_pattern_damage() -> bool:
-	return hell_final
+	return hell_final or grave_final
 
 
 func hell_armor_element_multiplier(element: String) -> float:
@@ -84,6 +109,8 @@ func _process(delta: float) -> void:
 	if pl:
 		if hell_final:
 			_process_hell(delta, pl)
+		elif grave_final:
+			_process_grave(delta, pl)
 		else:
 			var to: Vector2 = pl.position - position
 			# 일반 보스는 기존 추격형 동작을 보존한다. 지옥 보스만 패턴 전투를 사용한다.
@@ -201,6 +228,9 @@ func take_damage(d: float, _crit: bool = true, element: String = "") -> void:
 	var elem := element
 	if elem == "" and m and "attack_element" in m:
 		elem = str(m.attack_element)
+	if grave_final:
+		_take_damage_grave(d, _crit, elem, m)
+		return
 	# 화염 군주의 갑옷은 체력과 별도다. 냉기는 빠르게 파괴하고 화염은 거의 통하지 않는다.
 	# 전용 무기 어픽스는 이 파괴량에만 적용해 일반 DPS 영구 누적을 만들지 않는다.
 	if hell_final and armor_hp > 0.0:
@@ -280,9 +310,196 @@ func _break_hell_armor() -> void:
 	if main and main.has_method("on_hell_boss_armor_broken"):
 		main.on_hell_boss_armor_broken(vulnerable_t)
 
+
+func configure_grave_final(sealed: int) -> void:
+	grave_final = true
+	sealed_graves = maxi(0, sealed)
+	weak = ""       # 묘지는 입문 던전 — 강제 약점/저항 없음.
+	resist = ""
+	grave_phase = 1
+	grave_shield_active = false
+	grave_shield_started = false
+	grave_shield_core_max = maxi(1, 4 - sealed_graves)   # 봉인 많을수록 핵이 적다.
+	grave_shield_cores = grave_shield_core_max
+	grave_core_hp = 0.0
+	grave_core_hp_max = 0.0
+	vulnerable_t = 0.0
+	_grave_state = GraveState.CHASE
+	_grave_t = 2.45   # 등장 배너가 사라진 뒤 첫 패턴을 시작한다.
+	_grave_attack_index = 0
+
+
+func _process_grave(delta: float, pl: Player) -> void:
+	var main := get_parent()
+	if _grave_state == GraveState.STUNNED:
+		vulnerable_t = maxf(0.0, vulnerable_t - delta)
+		if vulnerable_t <= 0.0:
+			_grave_state = GraveState.CHASE
+			_grave_t = maxf(0.72, 1.30 - grave_phase * 0.14)
+		return
+	_grave_t -= delta
+	match _grave_state:
+		GraveState.CHASE:
+			if position.distance_to(pl.position) > 150.0:
+				if main and main.has_method("stage_enemy_step"):
+					position = main.stage_enemy_step(position, pl.position, move_speed * delta, radius)
+				else:
+					position = position.move_toward(pl.position, move_speed * delta)
+				_atk_play = maxf(_atk_play, 0.35)
+			if _grave_t <= 0.0:
+				_start_next_grave_attack(pl)
+		GraveState.FAN_WINDUP:
+			_atk_play = maxf(_atk_play, 0.25)
+			if _grave_t <= 0.0:
+				if main and main.has_method("grave_boss_fan"):
+					main.grave_boss_fan(position, _grave_lock_dir, 7 + grave_phase,
+						attack_damage * 0.58)
+				_grave_state = GraveState.RECOVERY
+				_grave_t = 0.66
+				_atk_play = 0.5
+				_atk_t = 0.0
+		GraveState.EXPLODE_WINDUP:
+			_atk_play = maxf(_atk_play, 0.2)
+			if _grave_t <= 0.0:
+				if main and main.has_method("grave_boss_explosion"):
+					main.grave_boss_explosion(_grave_explode_pos,
+						GRAVE_EXPLODE_RADIUS + (grave_phase - 1) * 12.0, attack_damage * 1.05)
+				_grave_state = GraveState.RECOVERY
+				_grave_t = 0.60
+		GraveState.CHARGE_WINDUP:
+			_atk_play = maxf(_atk_play, 0.25)
+			if _grave_t <= 0.0:
+				_grave_state = GraveState.CHARGE
+				_grave_t = 0.50
+				_grave_charge_hit = false
+		GraveState.CHARGE:
+			var charge_speed := 430.0 + (grave_phase - 1) * 45.0
+			var target := position + _grave_lock_dir * 900.0
+			if main and main.has_method("stage_enemy_step"):
+				position = main.stage_enemy_step(position, target, charge_speed * delta, radius)
+			else:
+				position += _grave_lock_dir * charge_speed * delta
+			_atk_play = maxf(_atk_play, 0.28)
+			if not _grave_charge_hit and position.distance_to(pl.position) <= radius + pl.radius + 10.0:
+				_grave_charge_hit = true
+				if main and main.has_method("apply_grave_boss_damage"):
+					main.apply_grave_boss_damage(attack_damage * 1.1, position)
+			if _grave_t <= 0.0:
+				_grave_state = GraveState.RECOVERY
+				_grave_t = 0.52
+		GraveState.RECOVERY:
+			if _grave_t <= 0.0:
+				_grave_state = GraveState.CHASE
+				_grave_t = maxf(0.72, 1.34 - grave_phase * 0.14)
+
+
+func _start_next_grave_attack(pl: Player) -> void:
+	var pattern := _grave_attack_index % 3
+	_grave_attack_index += 1
+	match pattern:
+		0:
+			_grave_lock_dir = (pl.position - position).normalized()
+			if _grave_lock_dir == Vector2.ZERO:
+				_grave_lock_dir = Vector2.DOWN
+			_grave_state = GraveState.FAN_WINDUP
+			_grave_t = maxf(0.62, 0.88 - (grave_phase - 1) * 0.06)
+		1:
+			_grave_explode_pos = pl.position   # 예고 시점의 플레이어 위치를 고정.
+			_grave_state = GraveState.EXPLODE_WINDUP
+			_grave_t = maxf(0.66, 0.92 - (grave_phase - 1) * 0.05)
+		_:
+			_grave_lock_dir = (pl.position - position).normalized()
+			if _grave_lock_dir == Vector2.ZERO:
+				_grave_lock_dir = Vector2.DOWN
+			_grave_state = GraveState.CHARGE_WINDUP
+			_grave_t = maxf(0.58, 0.80 - (grave_phase - 1) * 0.06)
+
+
+func _start_grave_shield() -> void:
+	grave_shield_started = true
+	grave_shield_active = true
+	grave_phase = 2
+	grave_shield_cores = grave_shield_core_max
+	grave_core_hp_max = maxf(1.0, max_hp * 0.12)
+	grave_core_hp = grave_core_hp_max
+	vulnerable_t = 0.0
+	_grave_state = GraveState.CHASE
+	_grave_t = 2.30   # 방패 안내 배너 아래에서 즉시 공격하지 않는다.
+	var main := get_parent()
+	if main and main.has_method("on_grave_shield_started"):
+		main.on_grave_shield_started(grave_shield_cores)
+
+
+func _break_grave_shield() -> void:
+	grave_shield_active = false
+	grave_phase = 3
+	vulnerable_t = GRAVE_VULNERABLE_TIME
+	_grave_state = GraveState.STUNNED
+	_grave_t = vulnerable_t
+	var main := get_parent()
+	if main and main.has_method("on_grave_shield_broken"):
+		main.on_grave_shield_broken(vulnerable_t)
+
+
+# 묘지 보스 피해: 방패 활성이면 핵부터 부수고(속성 무관), 아니면 60% 게이트·취약 보너스 적용.
+func _take_damage_grave(d: float, crit: bool, elem: String, m) -> void:
+	if grave_shield_active:
+		var actual_core := minf(grave_core_hp, maxf(0.0, d))
+		grave_core_hp -= d
+		if m and m.has_method("record_damage_dealt"):
+			m.record_damage_dealt(actual_core)
+		if m and m.has_method("_spawn_dmg_num") and d >= 1.0:
+			m._spawn_dmg_num(position + Vector2(0, -radius * 0.5), maxi(1, int(round(d))), crit, "", elem)
+		if grave_core_hp <= 0.0:
+			grave_shield_cores -= 1
+			if grave_shield_cores > 0:
+				grave_core_hp = grave_core_hp_max
+				if m and m.has_method("on_grave_shield_core_broken"):
+					m.on_grave_shield_core_broken(grave_shield_cores)
+			else:
+				_break_grave_shield()
+		queue_redraw()
+		return
+	if vulnerable_t > 0.0:
+		d *= 1.70
+	var hit_kind := ""
+	if elem != "" and elem != "phys":
+		if elem == weak:
+			d *= 1.5
+			hit_kind = "weak"
+		elif elem == resist:
+			d *= 0.6
+			hit_kind = "resist"
+	# 60% 방패 게이트(1회): 정확히 60%에서 멈춰 방패 국면을 건너뛰는 원샷을 막는다.
+	if not grave_shield_started:
+		var threshold_hp := max_hp * GRAVE_SHIELD_THRESHOLD
+		if hp > threshold_hp and hp - d <= threshold_hp:
+			d = maxf(0.0, hp - threshold_hp)
+	var actual := minf(maxf(0.0, hp), maxf(0.0, d))
+	if m and m.has_method("record_damage_dealt"):
+		m.record_damage_dealt(actual)
+	hp -= d
+	if m and m.has_method("_spawn_dmg_num"):
+		if d >= 1.0:
+			m._spawn_dmg_num(position + Vector2(0, -radius * 0.5), maxi(1, int(round(d))), true, hit_kind, elem)
+		else:
+			_dmg_accum += d
+	if not grave_shield_started and hp <= max_hp * GRAVE_SHIELD_THRESHOLD + 0.01:
+		hp = max_hp * GRAVE_SHIELD_THRESHOLD
+		_start_grave_shield()
+		queue_redraw()
+		return
+	if hp <= 0:
+		if m and m.has_method("on_boss_killed"):
+			m.on_boss_killed()
+		queue_free()
+
+
 func _draw() -> void:
 	if hell_final:
 		_draw_hell_warning()
+	elif grave_final:
+		_draw_grave_warning()
 	var tex: Texture2D = null
 	if _atk_play > 0.0:
 		var fa: Array = Assets.frames("res://assets/anim/%s_attack" % key)
@@ -317,6 +534,10 @@ func _draw() -> void:
 			tint = Color(1.35, 0.72, 0.34)
 		elif hell_final and vulnerable_t > 0.0:
 			tint = Color(0.62, 0.88, 1.18)
+		elif grave_final and grave_shield_active:
+			tint = Color(0.72, 0.86, 1.22)
+		elif grave_final and vulnerable_t > 0.0:
+			tint = Color(0.70, 1.12, 0.86)
 		# 충전 중엔 붉게 달아오름 (맥동)
 		if _tele_t > 0.0:
 			var tp: float = clamp(1.0 - _tele_t / TELE_DUR, 0.0, 1.0)
@@ -356,6 +577,59 @@ func _draw() -> void:
 			Vector2(-w2 * 0.5, -radius - 31.0),
 			Vector2(-w2 * 0.5 - 6.0, -radius - 24.0),
 		]), Color(0.55, 0.90, 1.0))
+	if grave_final and grave_shield_active and grave_core_hp_max > 0.0:
+		var core_ratio := clampf(grave_core_hp / grave_core_hp_max, 0.0, 1.0)
+		draw_rect(Rect2(Vector2(-w2 / 2.0, -radius - 34), Vector2(w2, 7)),
+			Color(0.05, 0.06, 0.10, 0.94))
+		draw_rect(Rect2(Vector2(-w2 / 2.0, -radius - 34), Vector2(w2 * core_ratio, 7)),
+			Color(0.55, 0.82, 1.0))
+		# 남은 핵 수를 사각 점(형태)으로도 — 색만이 아니라 개수로 읽힌다.
+		for ci in grave_shield_cores:
+			draw_rect(Rect2(Vector2(-w2 * 0.5 + ci * 10.0, -radius - 46), Vector2(7, 7)),
+				Color(0.72, 0.92, 1.0))
+
+
+func _draw_grave_warning() -> void:
+	var danger := Color(0.62, 0.80, 1.0)
+	match _grave_state:
+		GraveState.FAN_WINDUP:
+			var progress := clampf(1.0 - _grave_t / maxf(0.62, 0.88 - (grave_phase - 1) * 0.06), 0.0, 1.0)
+			var half := 0.62
+			var base := _grave_lock_dir.angle()
+			var pts := PackedVector2Array([Vector2.ZERO])
+			var reach := GRAVE_FAN_RADIUS * (0.7 + progress * 0.4)
+			for i in 13:
+				var a := base - half + (2.0 * half) * float(i) / 12.0
+				pts.append(Vector2.from_angle(a) * reach)
+			draw_colored_polygon(pts, Color(danger.r, danger.g, danger.b, 0.08 + progress * 0.14))
+			draw_arc(Vector2.ZERO, reach, base - half, base + half, 24,
+				Color(0.72, 0.88, 1.0, 0.5 + progress * 0.4), 3.0)
+		GraveState.EXPLODE_WINDUP:
+			var progress := clampf(1.0 - _grave_t / maxf(0.66, 0.92 - (grave_phase - 1) * 0.05), 0.0, 1.0)
+			var local := _grave_explode_pos - position
+			var rr := GRAVE_EXPLODE_RADIUS + (grave_phase - 1) * 12.0
+			draw_circle(local, rr, Color(0.55, 0.45, 0.85, 0.10 + progress * 0.16))
+			draw_arc(local, lerpf(rr * 1.4, rr, progress), 0.0, TAU, 44,
+				Color(0.74, 0.62, 1.0, 0.45 + progress * 0.45), 3.0 + progress * 2.0)
+		GraveState.CHARGE_WINDUP:
+			var progress := clampf(1.0 - _grave_t / maxf(0.58, 0.80 - (grave_phase - 1) * 0.06), 0.0, 1.0)
+			var side := _grave_lock_dir.orthogonal() * (radius + 14.0)
+			var end := _grave_lock_dir * 360.0
+			draw_colored_polygon(PackedVector2Array([-side, side, end + side, end - side]),
+				Color(danger.r, danger.g, danger.b, 0.06 + progress * 0.12))
+			draw_line(-side, end - side, Color(0.70, 0.85, 1.0, 0.50 + progress * 0.40), 3.0)
+			draw_line(side, end + side, Color(0.70, 0.85, 1.0, 0.50 + progress * 0.40), 3.0)
+	if grave_shield_active:
+		var pulse := 0.5 + 0.5 * sin(_anim_t * 8.0)
+		draw_arc(Vector2.ZERO, radius * 1.5, 0.0, TAU, 44,
+			Color(0.55, 0.80, 1.0, 0.55 + pulse * 0.28), 4.0)
+		for i in grave_shield_cores:
+			var a := TAU * float(i) / float(maxi(1, grave_shield_core_max)) - PI * 0.5
+			draw_circle(Vector2.from_angle(a) * radius * 1.5, 6.0, Color(0.75, 0.92, 1.0))
+	elif vulnerable_t > 0.0:
+		var pulse := 0.5 + 0.5 * sin(_anim_t * 10.0)
+		draw_arc(Vector2.ZERO, radius * (1.30 + pulse * 0.10), 0.0, TAU, 40,
+			Color(0.60, 1.0, 0.80, 0.70), 4.0)
 
 
 func _draw_hell_warning() -> void:

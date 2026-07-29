@@ -168,9 +168,9 @@ static func tier_by_key(key: String) -> Dictionary:
 # --- 스테이지 정의 ---
 static func stages() -> Array:
 	return [
-		{"name": "던전",   "boss": "boss_1", "boss_name": "묘지 수호자", "tint": Color(0.70, 0.70, 0.78),
+		{"name": "묘지",   "boss": "boss_1", "boss_name": "묘지 수호자", "tint": Color(0.70, 0.70, 0.78),
 			"element": "phys", "boss_weak": "",
-			"rule": "5분 동안 성장한 뒤 목표 보스를 처치",
+			"rule": "영혼 봉인비 3곳 점령 · 2:30 무덤 기사 · 묘지 수호자 영혼 방패",
 			"field_passives": ["armor", "wings", "magnet", "spinach"],
 			"props": ["res://assets/props/s1_a.png", "res://assets/props/s1_b.png"]},
 		{"name": "지옥",   "boss": "boss_2", "boss_name": "화염 군주", "tint": Color(0.85, 0.55, 0.50),
@@ -218,6 +218,27 @@ static func hell_midboss_tier() -> Dictionary:
 		"color": Color(1.0, 0.30, 0.10), "hp_mult": 4.8, "speed_mult": 0.92,
 		"xp": 18, "radius": 27.0, "behavior": "charge",
 		"sprite": "res://assets/enemies/demon.png", "weak": "ice", "resist": "fire",
+	}
+
+
+# M5-A 묘지 고유 정예. 영혼 봉인비를 지키며 등장해 점령 전투를 만든다.
+# 묘지는 입문 던전이라 약점/저항 속성을 강제하지 않는다(어떤 빌드도 진행 가능).
+static func graveyard_elite_tier() -> Dictionary:
+	return {
+		"name": "묘지 파수꾼", "key": "grave_warden", "shape": "demon",
+		"color": Color(0.62, 0.78, 0.92), "hp_mult": 2.4, "speed_mult": 1.14,
+		"xp": 9, "radius": 18.0, "behavior": "charge",
+		"sprite": "res://assets/enemies/wraith_knight.png", "weak": "", "resist": "",
+	}
+
+
+# M5-A 묘지 중간보스 전용 티어. 일반 웨이브에 섞지 않아 2:30 무덤 기사 전투를 보장한다.
+static func graveyard_midboss_tier() -> Dictionary:
+	return {
+		"name": "무덤 기사", "key": "tomb_knight", "shape": "demon",
+		"color": Color(0.55, 0.70, 0.88), "hp_mult": 4.4, "speed_mult": 0.96,
+		"xp": 16, "radius": 26.0, "behavior": "charge",
+		"sprite": "res://assets/enemies/dark_knight.png", "weak": "", "resist": "",
 	}
 
 

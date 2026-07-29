@@ -8,6 +8,7 @@ extends Node2D
 enum State { TITLE, PLAYING, LEVELUP, GAMEOVER, VICTORY, PAUSED, ROUTE, EXTRACTION }
 
 const HellFissureScript = preload("res://HellFissure.gd")
+const GraveSealScript = preload("res://GraveSeal.gd")
 const ExpeditionRulesScript = preload("res://ExpeditionRules.gd")
 const RunTelemetryScript = preload("res://RunTelemetry.gd")
 const UiTypographyScript = preload("res://UiTypography.gd")
@@ -192,6 +193,12 @@ const HELL_STAGE := 2
 const HELL_FISSURE_TIMES := [45.0, 115.0, 190.0]
 const HELL_FISSURE_REQUIRED := 3
 const HELL_MIDBOSS_TIME := 150.0
+# M5-A 묘지 세로 슬라이스: 영혼 봉인비 3곳(점령) · 2:30 무덤 기사 · 5:00 묘지 수호자.
+const GRAVE_STAGE := 1
+const GRAVE_SEAL_TIMES := [40.0, 95.0, 200.0]   # 00:40 / 01:35 / 03:20
+const GRAVE_SEAL_REQUIRED := 3
+const GRAVE_SEAL_DURATION := 10.0   # 봉인비 1곳당 누적 점령 시간
+const GRAVE_MIDBOSS_TIME := 150.0   # 02:30 무덤 기사
 const EXPEDITION_FLOORS := ExpeditionRulesScript.FLOOR_COUNT
 const MAX_ENEMIES := 300     # 동시 등장 상한 (뱀서형 밀도 + 내장 GPU 부하 관리. 340은 Iris Xe에서 랙 → 300으로 한 단계 롤백)
 # 무기 진화 레시피 (뱀서식): 무기 만렙(Lv8) + 필수 패시브 보유 → 보스 상자 개봉 시 진화
@@ -560,6 +567,16 @@ var hell_midboss_spawned := false
 var hell_midboss_alive := false
 var hell_midboss_defeated := false
 var hell_boss_wait_warned := false
+
+# M5-A 묘지 인카운터 상태 (층 전환 시 초기화)
+var grave_seals_spawned := 0
+var grave_seals_completed := 0
+var grave_midboss_spawned := false
+var grave_midboss_alive := false
+var grave_midboss_defeated := false
+var grave_boss_wait_warned := false
+var grave_shroud_used := false   # 수의의 가호: 층마다 처음 치명 피해 1회 방어
+var grave_requiem_cd := 0.0      # 장송의 무기: 전조 취소 쿨다운(8초)
 
 # M4 3층 원정. 총 런 시간은 time_survived에 누적하고, 각 층의 5분 시계는
 # expedition_floor_started_at을 빼서 계산한다.
@@ -1054,6 +1071,7 @@ func _autoshot() -> void:
 		meta["loadout"] = {"weapon": {}, "armor": {}, "trinket": {}}
 	var active_preview := ""
 	var hell_preview := ""
+	var grave_preview := ""
 	for arg in args:
 		if arg.begins_with("--active-preview="):
 			var requested_active := arg.trim_prefix("--active-preview=")
@@ -1063,6 +1081,10 @@ func _autoshot() -> void:
 			var requested_hell := arg.trim_prefix("--hell-preview=")
 			if requested_hell in ["fissure", "midboss", "boss"]:
 				hell_preview = requested_hell
+		elif arg.begins_with("--graveyard-preview="):
+			var requested_grave := arg.trim_prefix("--graveyard-preview=")
+			if requested_grave in ["seal", "midboss", "boss"]:
+				grave_preview = requested_grave
 	if active_preview != "":
 		var preview_weapon_kind := str({
 			"sword": "cleave", "axe": "axe", "staff": "soul_bolt",
@@ -1083,6 +1105,8 @@ func _autoshot() -> void:
 		meta["loadout"] = preview_loadout
 	if hell_preview != "":
 		sel_stage = HELL_STAGE
+	if grave_preview != "":
+		sel_stage = GRAVE_STAGE
 	title_panel.visible = false
 	sel_modifier = {}
 	_start_game(GameConfig.difficulties()[0])
@@ -1309,6 +1333,61 @@ func _autoshot() -> void:
 		var hell_image := get_viewport().get_texture().get_image()
 		hell_image.save_png("user://autoshot.png")
 		print("HELL_PREVIEW %s" % hell_preview)
+		print("AUTOSHOT SAVED: ", ProjectSettings.globalize_path("user://autoshot.png"))
+		get_tree().quit()
+		return
+
+	# --graveyard-preview=seal|midboss|boss: M5-A 핵심 전투 상태를 실제 렌더로 검수한다.
+	if grave_preview != "":
+		player.invuln = 999.0
+		weapons.clear()
+		wtimer.clear()
+		xp_to_next = 999999
+		for preview_enemy in get_tree().get_nodes_in_group("enemies"):
+			if is_instance_valid(preview_enemy):
+				preview_enemy.queue_free()
+		await get_tree().process_frame
+		match grave_preview:
+			"seal":
+				time_survived = GRAVE_SEAL_TIMES[0]
+				var seal = _spawn_grave_seal(0)
+				seal.position = player.position + Vector2.RIGHT * 20.0
+				seal.progress = seal.duration * 0.55
+				seal._in_range = true
+				seal.process_mode = Node.PROCESS_MODE_DISABLED
+				seal.queue_redraw()
+			"midboss":
+				time_survived = GRAVE_MIDBOSS_TIME
+				_wave_minute = int(time_survived / 60.0)
+				_current_wave = GameConfig.wave_for_minute(_wave_minute, GRAVE_STAGE)
+				featured_enemy = str(_current_wave.get("primary", "skeleton"))
+				var knight := _spawn_grave_midboss()
+				knight.position = player.position + Vector2.RIGHT * 210.0
+				knight._cstate = 1
+				knight._ctimer = 0.26
+				knight._clock = Vector2.LEFT
+				knight.process_mode = Node.PROCESS_MODE_DISABLED
+				knight.queue_redraw()
+			"boss":
+				time_survived = DUNGEON_BOSS_TIME
+				_wave_minute = int(time_survived / 60.0)
+				_current_wave = GameConfig.wave_for_minute(_wave_minute, GRAVE_STAGE)
+				featured_enemy = str(_current_wave.get("primary", "skeleton"))
+				grave_seals_spawned = GRAVE_SEAL_REQUIRED
+				grave_seals_completed = 1
+				grave_midboss_spawned = true
+				grave_midboss_defeated = true
+				_spawn_dungeon_boss()
+				boss.position = player.position + Vector2.RIGHT * 220.0
+				boss.take_damage(boss.max_hp * 0.45, false, "phys")
+				boss.process_mode = Node.PROCESS_MODE_DISABLED
+				boss.queue_redraw()
+		_update_ui()
+		await get_tree().process_frame
+		await get_tree().process_frame
+		var grave_image := get_viewport().get_texture().get_image()
+		grave_image.save_png("user://autoshot.png")
+		print("GRAVEYARD_PREVIEW %s" % grave_preview)
 		print("AUTOSHOT SAVED: ", ProjectSettings.globalize_path("user://autoshot.png"))
 		get_tree().quit()
 		return
@@ -1837,6 +1916,10 @@ func _process(delta: float) -> void:
 	# 진행 (시간 기반) / 보스
 	if map_stage == HELL_STAGE:
 		_update_hell_encounter()
+	elif map_stage == GRAVE_STAGE:
+		_update_grave_encounter()
+	if grave_requiem_cd > 0.0:
+		grave_requiem_cd = maxf(0.0, grave_requiem_cd - delta)
 	if abyss_mode:
 		# 심연: 예약 시간마다 보스 (무한)
 		if not boss_spawned and time_survived >= next_boss_time:
@@ -1850,11 +1933,15 @@ func _process(delta: float) -> void:
 				reaper_warned = true
 				_event_banner("[경고] 곧 %d층 보스가 나타난다..." % expedition_floor)
 			if dungeon_elapsed >= DUNGEON_BOSS_TIME:
-				# 지옥은 중간보스가 살아 있으면 최종 관문이 열리지 않는다.
+				# 지옥·묘지는 중간보스가 살아 있으면 최종 관문이 열리지 않는다.
 				if map_stage == HELL_STAGE and hell_midboss_alive:
 					if not hell_boss_wait_warned:
 						hell_boss_wait_warned = true
 						_event_banner("[경고] 용암 집행자를 먼저 처치해야 한다!")
+				elif map_stage == GRAVE_STAGE and grave_midboss_alive:
+					if not grave_boss_wait_warned:
+						grave_boss_wait_warned = true
+						_event_banner("[경고] 무덤 기사를 먼저 처치해야 한다!")
 				else:
 					_spawn_dungeon_boss()
 
@@ -4237,6 +4324,150 @@ func on_hell_boss_armor_broken(window: float) -> void:
 	play_sfx("ult", -7.0)
 
 
+# ── M5-A 묘지 세로 슬라이스 ────────────────────────────────────────────
+func _update_grave_encounter() -> void:
+	if map_stage != GRAVE_STAGE or state != State.PLAYING:
+		return
+	var elapsed := _dungeon_elapsed()
+	while grave_seals_spawned < GRAVE_SEAL_TIMES.size() \
+			and elapsed >= float(GRAVE_SEAL_TIMES[grave_seals_spawned]):
+		_spawn_grave_seal(grave_seals_spawned)
+	if not grave_midboss_spawned and elapsed >= GRAVE_MIDBOSS_TIME:
+		_spawn_grave_midboss()
+
+
+func _spawn_grave_seal(index: int) -> Node2D:
+	if index < 0 or index >= GRAVE_SEAL_REQUIRED:
+		return null
+	var seal := GraveSealScript.new()
+	var spawn_pos := player.position + Vector2.RIGHT * 240.0 if player else WORLD * 0.5
+	if stage_layout and index < stage_layout.objective_positions.size():
+		spawn_pos = stage_layout.objective_positions[index]
+	if stage_layout:
+		spawn_pos = stage_layout.nearest_walkable(spawn_pos, 58.0)
+	seal.position = spawn_pos
+	seal.configure(index, 138.0, GRAVE_SEAL_DURATION)
+	add_child(seal)
+	_spawn_grave_elite_guardian(index, spawn_pos)
+	grave_seals_spawned = maxi(grave_seals_spawned, index + 1)
+	_event_banner("[묘지] 영혼 봉인비 + 묘지 파수꾼 — 범위 안에서 점령 (%d/%d)" % [
+		grave_seals_completed, GRAVE_SEAL_REQUIRED])
+	return seal
+
+
+func _spawn_grave_elite_guardian(index: int, origin: Vector2) -> Enemy:
+	var offset := Vector2.from_angle(PI * 0.5 * float(index + 1)) * 135.0
+	var guardian_pos := origin + offset
+	if stage_layout:
+		guardian_pos = stage_layout.nearest_walkable(guardian_pos, 34.0)
+	var guardian := _make_enemy(guardian_pos, true, GameConfig.graveyard_elite_tier())
+	guardian.hp *= 0.80
+	guardian.max_hp = guardian.hp
+	return guardian
+
+
+func _spawn_grave_midboss() -> Enemy:
+	if grave_midboss_spawned:
+		return null
+	grave_midboss_spawned = true
+	grave_midboss_alive = true
+	var spawn_pos := player.position + Vector2.LEFT * 360.0 if player else WORLD * 0.5
+	if stage_layout:
+		spawn_pos = stage_layout.nearest_walkable(spawn_pos, 44.0)
+	var knight := _make_enemy(spawn_pos, true, GameConfig.graveyard_midboss_tier())
+	knight.midboss = true
+	knight.hp *= 2.3
+	knight.max_hp = knight.hp
+	knight.radius *= 1.06
+	knight.touch_damage *= 1.12
+	_event_banner("[중간 보스] 무덤 기사 — 돌진 경로를 피하라")
+	_flash(Color(0.45, 0.60, 0.95, 0.34))
+	shake_t = maxf(shake_t, 0.26)
+	return knight
+
+
+func on_grave_seal_completed(seal: Node2D) -> void:
+	grave_seals_completed = mini(GRAVE_SEAL_REQUIRED, grave_seals_completed + 1)
+	run_gold += 8
+	if player:
+		player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.04)
+	_spawn_proc_fx("shatter", seal.position, 82.0, Color(0.55, 0.95, 0.75), 0.55)
+	_spawn_proc_fx("ring", seal.position, 118.0, Color(0.55, 0.95, 0.75), 0.48)
+	for i in 3:
+		_spawn_coin(seal.position + Vector2.from_angle(TAU * float(i) / 3.0) * 24.0, 2)
+	_event_banner("[봉인] 영혼 봉인비 점령 %d/%d%s" % [
+		grave_seals_completed, GRAVE_SEAL_REQUIRED,
+		" — 묘지 수호자 영혼 방패 약화!" if grave_seals_completed == GRAVE_SEAL_REQUIRED else ""])
+	play_sfx("levelup", -8.0)
+
+
+func apply_grave_boss_damage(amount: float, source: Vector2) -> bool:
+	if player == null or player.invuln > 0.0:
+		return false
+	var damage := maxf(1.0, amount - player.armor)
+	apply_player_damage(damage, "grave_boss")
+	player.invuln = 0.70
+	player.play_hurt()
+	play_sfx("hurt", -7.0, 0.25)
+	shake_t = maxf(shake_t, 0.20)
+	_spawn_proc_fx("burst", player.position, 42.0, Color(0.60, 0.75, 1.0), 0.24,
+		(player.position - source).normalized())
+	return true
+
+
+func grave_boss_fan(origin: Vector2, aim_dir: Vector2, count: int, damage: float) -> void:
+	var base := aim_dir.angle() if aim_dir != Vector2.ZERO else 0.0
+	var spread := 1.05
+	var n := maxi(5, count)
+	for i in n:
+		var a := base - spread * 0.5 + spread * float(i) / float(n - 1)
+		var dir := Vector2.from_angle(a)
+		spawn_enemy_arrow(origin + dir * 28.0, dir, damage, false, 245.0, true)
+	_spawn_proc_fx("burst", origin, 64.0, Color(0.60, 0.80, 1.0), 0.30)
+	play_sfx("shoot", -8.0, 0.08)
+
+
+func grave_boss_explosion(origin: Vector2, radius: float, damage: float) -> void:
+	_spawn_proc_fx("ring", origin, radius, Color(0.55, 0.45, 0.90), 0.44)
+	_spawn_proc_fx("burst", origin, radius * 0.5, Color(0.75, 0.60, 1.0), 0.34)
+	spawn_fx("fx_quake_spike", origin, radius * 1.1)
+	shake_t = maxf(shake_t, 0.26)
+	if player and player.invuln <= 0.0 and player.position.distance_to(origin) <= radius + player.radius:
+		apply_grave_boss_damage(damage, origin)
+
+
+func on_grave_shield_started(cores: int) -> void:
+	_event_banner("[보스] 영혼 방패 — 핵 %d개를 부숴라!" % cores)
+	_flash(Color(0.45, 0.65, 1.0, 0.28))
+	shake_t = maxf(shake_t, 0.22)
+
+
+func on_grave_shield_core_broken(remaining: int) -> void:
+	var fx_pos: Vector2 = boss.position if (boss and is_instance_valid(boss)) else WORLD * 0.5
+	_spawn_proc_fx("shatter", fx_pos, 70.0, Color(0.70, 0.90, 1.0), 0.40)
+	_event_banner("[방패] 영혼 핵 파괴 — 남은 핵 %d개" % remaining)
+	play_sfx("kill", -8.0, 0.05)
+
+
+func on_grave_shield_broken(window: float) -> void:
+	_event_banner("[기회] 영혼 방패 파괴 — %.0f초 집중 공격" % window)
+	_flash(Color(0.55, 1.0, 0.80, 0.34))
+	_slowmo(0.55, 180)
+	shake_t = maxf(shake_t, 0.30)
+	play_sfx("ult", -7.0)
+
+
+func _reset_grave_floor_state() -> void:
+	grave_seals_spawned = 0
+	grave_seals_completed = 0
+	grave_midboss_spawned = false
+	grave_midboss_alive = false
+	grave_midboss_defeated = false
+	grave_boss_wait_warned = false
+	grave_shroud_used = false
+	grave_requiem_cd = 0.0
+
+
 func _spawn_boss(forced_key: String = "") -> void:
 	boss_spawned = true
 	play_sfx("boss", -4.0)
@@ -4279,6 +4510,13 @@ func _spawn_dungeon_boss() -> void:
 			boss.attack_damage = (24.0 + stage_num * 2.5) \
 				* sqrt(diff_enemy_hp * _expedition_floor_pressure())
 			boss.configure_hell_final(unsealed)
+		elif map_stage == GRAVE_STAGE:
+			for seal in get_tree().get_nodes_in_group("grave_seals"):
+				if is_instance_valid(seal) and seal.has_method("absorb_without_reward"):
+					seal.absorb_without_reward()
+			boss.attack_damage = (20.0 + stage_num * 2.0) \
+				* sqrt(diff_enemy_hp * _expedition_floor_pressure())
+			boss.configure_grave_final(grave_seals_completed)
 	var wk := str(GameConfig.stage_info(map_stage).get("boss_weak", ""))
 	var hint := "  (약점: %s)" % str(ELEMENT_NAME.get(wk, "")) if wk != "" else ""
 	var final_prefix := "최종 " if expedition_active and expedition_floor >= EXPEDITION_FLOORS else ""
@@ -4287,6 +4525,10 @@ func _spawn_dungeon_boss() -> void:
 		var penalty := " · 미봉인 %d개로 갑옷 강화" % unsealed_count if unsealed_count > 0 else " · 모든 균열 봉인 완료"
 		_event_banner("[보스] %s화염 군주 출현 — 예고 공격 회피 · 갑옷 파괴%s%s" % [
 			final_prefix, hint, penalty])
+	elif map_stage == GRAVE_STAGE:
+		var cores := maxi(1, 4 - grave_seals_completed)
+		_event_banner("[보스] %s묘지 수호자 출현 — 예고 패턴 회피 · 영혼 방패 핵 %d개 파괴%s" % [
+			final_prefix, cores, hint])
 	else:
 		_event_banner("[보스] %s던전 보스 출현 — 처치하면 전리품%s" % [final_prefix, hint])
 
@@ -4513,6 +4755,9 @@ func record_damage_dealt(amount: float, source: String = "") -> void:
 func apply_player_damage(amount: float, source: String = "unknown") -> float:
 	if player == null or amount <= 0.0:
 		return 0.0
+	# 수의의 가호: 층마다 처음 치명 피해를 1 HP로 버틴다(피해 미적용).
+	if player.hp - amount <= 0.0 and _grave_try_death_guard():
+		return maxf(0.0, player.hp)
 	var actual_damage := minf(maxf(0.0, player.hp), amount)
 	player.hp -= amount
 	run_damage_taken += actual_damage
@@ -4551,6 +4796,7 @@ const DEATH_FX := {
 	"ghoul": "fx_death_blood", "lava_toad": "fx_death_ember",
 	"ember_stalker": "fx_death_ember", "hell_enforcer": "fx_death_ember",
 	"frost_spider": "fx_death_ice", "eye_mass": "fx_death_soul", "cultist": "fx_death_blood",
+	"grave_warden": "fx_death_soul", "tomb_knight": "fx_death_soul",
 }
 func _death_fx_for(key: String) -> String:
 	return DEATH_FX.get(key, "fx_death_blood")
@@ -4562,15 +4808,24 @@ func on_enemy_killed(e: Enemy) -> void:
 	ult_gauge = minf(1.0, ult_gauge + (0.05 if e.elite else 0.008))
 	_refresh_ult_bar()
 	_maybe_drop_gear(e.position, e.elite)   # 장비 드롭 (엘리트 확정급, 일반 저확률)
+	if e.elite and _has_gear_special("grave_echo"):
+		_grave_echo_on_elite()   # 혼령의 메아리: 정예 처치 시 E 재사용 단축 + 궁 게이지
 	if e.midboss:
-		hell_midboss_alive = false
-		hell_midboss_defeated = true
 		run_gold += 30
-		_spawn_gear_pickup(e.position, _roll_hell_gear(true))
 		if player:
 			player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.22)
-		_event_banner("[획득] 용암 집행자 격파 — 지옥 전용 장비")
-		_flash(Color(1.0, 0.64, 0.18, 0.42))
+		if map_stage == GRAVE_STAGE:
+			grave_midboss_alive = false
+			grave_midboss_defeated = true
+			_spawn_gear_pickup(e.position, _roll_graveyard_gear(true))
+			_event_banner("[획득] 무덤 기사 격파 — 묘지 전용 장비")
+			_flash(Color(0.50, 0.65, 1.0, 0.40))
+		else:
+			hell_midboss_alive = false
+			hell_midboss_defeated = true
+			_spawn_gear_pickup(e.position, _roll_hell_gear(true))
+			_event_banner("[획득] 용암 집행자 격파 — 지옥 전용 장비")
+			_flash(Color(1.0, 0.64, 0.18, 0.42))
 		_slowmo(0.45, 220)
 		shake_t = maxf(shake_t, 0.30)
 	var enemy_key := str(e.tier.get("key", "unknown"))
@@ -4743,6 +4998,8 @@ func on_breakable_destroyed(b) -> void:
 func _roll_boss_reward(stage: int, force_epic: bool) -> Dictionary:
 	if stage == HELL_STAGE:
 		return _roll_hell_gear(force_epic)
+	if stage == GRAVE_STAGE:
+		return _roll_graveyard_gear(force_epic)
 	var slot: String = EQUIP_SLOTS[randi() % EQUIP_SLOTS.size()]
 	var rarity := "epic" if force_epic else _roll_rarity(diff_rarity_luck + 1.5)
 	return _roll_gear_for(slot, rarity)
@@ -4823,7 +5080,8 @@ func _clear_floor_runtime() -> void:
 	var groups := [
 		"enemies", "boss", "arrows", "enemy_arrows", "pickups", "landmarks",
 		"breakables", "gems", "coins", "hazards", "hell_fissures",
-		"hell_objectives", "voidzones", "effects", "floor_runtime",
+		"hell_objectives", "grave_seals", "grave_objectives",
+		"voidzones", "effects", "floor_runtime",
 	]
 	var queued := {}
 	for group_name in groups:
@@ -4851,6 +5109,7 @@ func _transition_to_expedition_floor(target_stage: int) -> void:
 	_boss_is_objective = false
 	reaper_warned = false
 	_reset_hell_floor_state()
+	_reset_grave_floor_state()
 	if not _prepare_stage(target_stage):
 		push_error("Expedition floor failed to initialize: %d" % target_stage)
 	stage_num = map_stage
@@ -5207,6 +5466,22 @@ const HELL_GEAR_SPECIALS := {
 	},
 }
 
+# M5-A 묘지 전용 어픽스. 수치 누적이 아니라 조작·생존 규칙을 바꾼다.
+const GRAVE_GEAR_SPECIALS := {
+	"weapon": {
+		"key": "requiem_interrupt", "name": "장송의 무기",
+		"desc": "전조 중인 정예·보스에게 E 적중 시 8초에 한 번 공격을 취소",
+	},
+	"armor": {
+		"key": "burial_shroud", "name": "수의의 가호",
+		"desc": "층마다 처음 치명 피해를 1 HP로 버티고 1.5초 무적",
+	},
+	"trinket": {
+		"key": "grave_echo", "name": "혼령의 메아리",
+		"desc": "정예 처치 시 E 재사용 1.5초 단축·궁극기 게이지 충전",
+	},
+}
+
 # Phase 5 대장간: 장비 하나당 최대 5회, 강화마다 모든 어픽스가 +12%씩 강해진다.
 # 런 골드가 초반 영구 강화와 함께 자연스럽게 소모되도록 등급별 비용을 별도로 둔다.
 const FORGE_MAX_LEVEL := 5
@@ -5255,6 +5530,86 @@ func _roll_hell_gear(force_epic: bool = false, slot_override: String = "") -> Di
 	item["special"] = (HELL_GEAR_SPECIALS[slot] as Dictionary).duplicate(true)
 	item["name"] = "지옥벼림 %s" % str(item["name"])
 	return item
+
+
+func _roll_graveyard_gear(force_epic: bool = false, slot_override: String = "") -> Dictionary:
+	var slot := slot_override if slot_override in EQUIP_SLOTS else str(EQUIP_SLOTS[randi() % EQUIP_SLOTS.size()])
+	var rarity := _roll_rarity(diff_rarity_luck + 2.0)
+	if int(RARITY_ORDER.get(rarity, 1)) < 2:
+		rarity = "rare"
+	if force_epic and int(RARITY_ORDER.get(rarity, 1)) < 3:
+		rarity = "epic"
+	var item := _roll_gear_for(slot, rarity)
+	item["dungeon_tag"] = "graveyard"
+	item["special"] = (GRAVE_GEAR_SPECIALS[slot] as Dictionary).duplicate(true)
+	item["name"] = "묘지벼림 %s" % str(item["name"])
+	return item
+
+
+# 혼령의 메아리: 정예 처치 시 E 재사용 단축 + 궁극기 게이지 소량 충전.
+func _grave_echo_on_elite() -> void:
+	skill_e_cd = maxf(0.0, skill_e_cd - 1.5)
+	ult_gauge = minf(1.0, ult_gauge + 0.05)
+	_refresh_ult_bar()
+
+
+# 수의의 가호: 층마다 처음 치명 피해를 1 HP로 버티고 짧은 무적. 발동 시 true.
+func _grave_try_death_guard() -> bool:
+	if grave_shroud_used or not _has_gear_special("burial_shroud") or player == null:
+		return false
+	grave_shroud_used = true
+	player.hp = 1.0
+	player.invuln = maxf(player.invuln, 1.5)
+	player.play_hurt()
+	_flash(Color(0.55, 0.75, 1.0, 0.5))
+	_event_banner("[수의의 가호] 치명 피해를 버텼다 — 1.5초 무적")
+	play_sfx("levelup", -6.0)
+	return true
+
+
+# 장송의 무기: 전조 중인 정예·보스에게 E 적중 시 8초에 한 번 공격을 취소. 발동 시 true.
+func _grave_try_requiem_interrupt(target) -> bool:
+	if grave_requiem_cd > 0.0 or not _has_gear_special("requiem_interrupt"):
+		return false
+	if target == null or not is_instance_valid(target):
+		return false
+	var interrupted := false
+	if target is Boss and (target.hell_final or target.grave_final):
+		# 현재 패턴을 취소하고 추격(CHASE=0) 상태로 되돌린다. 짧은 재개 지연을 준다.
+		target._hell_state = 0
+		target._grave_state = 0
+		target._hell_t = 0.7
+		target._grave_t = 0.7
+		interrupted = true
+	elif target is Enemy and int(target._cstate) == 1:
+		target._cstate = 3   # 돌진 예열 취소 → 쿨다운으로
+		target._ctimer = 1.0
+		interrupted = true
+	if interrupted:
+		grave_requiem_cd = 8.0
+		_spawn_proc_fx("ring", target.position, 70.0, Color(0.7, 0.85, 1.0), 0.35)
+		_event_banner("[장송] 공격 취소")
+	return interrupted
+
+
+# E 발동 시: 사거리 안에 전조 중인 보스/정예가 있으면 장송의 무기로 취소를 시도한다.
+func _grave_requiem_on_cast() -> void:
+	if grave_requiem_cd > 0.0 or not _has_gear_special("requiem_interrupt") or player == null:
+		return
+	if boss and is_instance_valid(boss) and boss.uses_pattern_damage() \
+			and player.position.distance_to(boss.position) < 420.0:
+		_grave_try_requiem_interrupt(boss)
+		return
+	var best: Enemy = null
+	var best_d := 360.0
+	for en in get_tree().get_nodes_in_group("enemies"):
+		if is_instance_valid(en) and en.elite and int(en._cstate) == 1:
+			var d := player.position.distance_to(en.position)
+			if d < best_d:
+				best_d = d
+				best = en
+	if best:
+		_grave_try_requiem_interrupt(best)
 
 
 func _has_gear_special(key: String) -> bool:
@@ -5566,7 +5921,8 @@ func _gear_detail_text(it: Dictionary) -> String:
 	var special = it.get("special", {})
 	if special is Dictionary and not (special as Dictionary).is_empty():
 		lines.append("")
-		lines.append("[지옥 전용] %s" % str((special as Dictionary).get("name", "특수 효과")))
+		var tag_label: String = {"hell": "지옥", "graveyard": "묘지"}.get(str(it.get("dungeon_tag", "")), "던전")
+		lines.append("[%s 전용] %s" % [tag_label, str((special as Dictionary).get("name", "특수 효과"))])
 		lines.append(str((special as Dictionary).get("desc", "")))
 	return "\n".join(lines)
 
@@ -7547,6 +7903,18 @@ func _record_current_floor(cleared: bool) -> void:
 		stage_name = str(GameConfig.stage_info(map_stage).get("name", "던전"))
 	var hp_remaining := player.hp if player else 0.0
 	var max_hp := player.max_hp if player else 0.0
+	# 범용 목표 기록: 던전별 사전 목표 수행량(봉인/균열)을 남겨 밸런스 분석에 쓴다.
+	var objective_key := ""
+	var objectives_completed := 0
+	var objectives_total := 0
+	if map_stage == GRAVE_STAGE:
+		objective_key = "grave_seals"
+		objectives_completed = grave_seals_completed
+		objectives_total = GRAVE_SEAL_REQUIRED
+	elif map_stage == HELL_STAGE:
+		objective_key = "hell_fissures"
+		objectives_completed = hell_fissures_sealed
+		objectives_total = HELL_FISSURE_REQUIRED
 	run_floor_stats.append({
 		"floor": floor_no,
 		"stage": map_stage,
@@ -7559,6 +7927,9 @@ func _record_current_floor(cleared: bool) -> void:
 		"damage_taken": maxf(0.0, run_damage_taken - run_floor_start_taken),
 		"hp_remaining": maxf(0.0, hp_remaining),
 		"hp_ratio": hp_remaining / maxf(1.0, max_hp),
+		"objective_key": objective_key,
+		"objectives_completed": objectives_completed,
+		"objectives_total": objectives_total,
 	})
 
 
@@ -7724,6 +8095,7 @@ func _start_game(d: Dictionary) -> void:
 	hell_midboss_alive = false
 	hell_midboss_defeated = false
 	hell_boss_wait_warned = false
+	_reset_grave_floor_state()
 	# B블렌드: 장착한 무기 장비가 캐릭터 주무기(weapon1)를 대체. 없으면 캐릭터 기본 무기.
 	# (캐릭터 고유 2번째 무기 weapon2는 유지 → 캐릭터 정체성 일부 보존)
 	var gear_wpn := str(equipped.get("weapon", {}).get("weapon_kind", ""))
@@ -8577,6 +8949,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		if state == State.PLAYING and skill_e_cd <= 0.0:
 			if _fire_weapon_active():
 				skill_e_cd = _weapon_active_cooldown()
+				_grave_requiem_on_cast()   # 장송의 무기: 전조 중인 보스/정예 공격 취소
 				get_viewport().set_input_as_handled()
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_SPACE:
 		if state == State.PLAYING and player and player.try_dodge():
@@ -11710,6 +12083,19 @@ func _refresh_achievements() -> void:
 
 
 func _nearest_landmark_hint() -> String:
+	if map_stage == GRAVE_STAGE:
+		if boss and is_instance_valid(boss) and boss.grave_final:
+			if boss.grave_shield_active:
+				return "영혼 방패 핵 %d/%d · 아무 무기로 파괴" % [boss.grave_shield_cores, boss.grave_shield_core_max]
+			if boss.vulnerable_t > 0.0:
+				return "방패 파괴! 집중 공격 %.1f초" % boss.vulnerable_t
+			return "묘지 수호자 페이즈 %d" % boss.grave_phase
+		var g_progress := "영혼 봉인 %d/%d" % [grave_seals_completed, GRAVE_SEAL_REQUIRED]
+		if grave_midboss_alive:
+			g_progress += " · 무덤 기사"
+		elif grave_midboss_defeated:
+			g_progress += " · 최종 관문 준비"
+		return g_progress
 	if map_stage == HELL_STAGE:
 		if boss and is_instance_valid(boss) and boss.hell_final:
 			if boss.armor_hp > 0.0:

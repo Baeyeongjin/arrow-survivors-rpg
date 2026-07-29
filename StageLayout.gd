@@ -31,6 +31,8 @@ static func make(stage: int, stage_tint: Color) -> StageLayout:
 				Rect2(1500, 1160, 220, 190), Rect2(300, 1500, 300, 260),
 			]
 			layout.item_positions = [Vector2(1400, 400), Vector2(2400, 1400), Vector2(1400, 2400), Vector2(400, 1000)]
+			# M5-A 영혼 봉인비: 개활지 세 모서리로 흩어 점령 동선을 만든다(장애물과 겹치지 않게).
+			layout.objective_positions = [Vector2(950, 950), Vector2(2050, 950), Vector2(1400, 2050)]
 			layout.relic_position = Vector2(300, 2400)
 			layout.landmark_position = Vector2(1400, 1400)
 		2:
