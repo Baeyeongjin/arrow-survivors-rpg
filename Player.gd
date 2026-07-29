@@ -2,6 +2,10 @@ class_name Player
 extends Node2D
 
 const BASE_RADIUS := 12.6   # 캐릭터 크기 (15→10.5로 줄였다가, 너무 작아 +20%)
+const DODGE_DURATION := 0.17
+const DODGE_DISTANCE := 112.0
+const DODGE_INVULN := 0.28
+const DODGE_COOLDOWN := 1.20
 
 # 뱀서식 스탯
 var speed := 125.0   # 뱀서식: 느리고 묵직한 이동 (200 → 165 → 145 → 125)
@@ -21,10 +25,13 @@ var radius := BASE_RADIUS
 var invuln := 0.0           # 피격 무적 시간
 var magnet_t := 0.0         # 자석 아이템 버프 남은 시간
 var slow_t := 0.0           # 빙결 둔화 남은 시간 (아이스 퀸)
+var dodge_t := 0.0          # 공용 회피 이동 남은 시간
+var dodge_cd := 0.0         # 공용 회피 재사용 대기시간
 var cam: Camera2D
 
-# 뱀서식: 대시 없음 (이동만). _last_dir는 무기 조준용으로 유지.
+# 최근 이동 방향은 자동 무기 조준과 방향 입력이 없을 때의 회피 방향에 함께 쓴다.
 var _last_dir := Vector2(0, -1)
+var _dodge_dir := Vector2(0, -1)
 var moving := false   # 이번 프레임 이동 여부 (스폰 편향용 — 도망칠 틈)
 
 func current_pickup_radius() -> float:
@@ -77,6 +84,54 @@ func play_death() -> void:
 	# 게임오버로 트리가 멈춰도 사망 모션은 계속 재생되도록
 	process_mode = Node.PROCESS_MODE_ALWAYS
 
+
+func _movement_input() -> Vector2:
+	var v := Vector2.ZERO
+	if Input.is_action_pressed("ui_left") or Input.is_key_pressed(KEY_A):
+		v.x -= 1.0
+	if Input.is_action_pressed("ui_right") or Input.is_key_pressed(KEY_D):
+		v.x += 1.0
+	if Input.is_action_pressed("ui_up") or Input.is_key_pressed(KEY_W):
+		v.y -= 1.0
+	if Input.is_action_pressed("ui_down") or Input.is_key_pressed(KEY_S):
+		v.y += 1.0
+	if v == Vector2.ZERO:
+		var stick := Vector2(Input.get_joy_axis(0, JOY_AXIS_LEFT_X), Input.get_joy_axis(0, JOY_AXIS_LEFT_Y))
+		if stick.length() > 0.25:
+			v = stick
+	return v.normalized() if v != Vector2.ZERO else Vector2.ZERO
+
+
+func _face_direction(dir: Vector2) -> void:
+	if dir == Vector2.ZERO:
+		return
+	_last_dir = dir
+	if abs(dir.x) >= abs(dir.y):
+		_dir = "w" if dir.x < 0.0 else "e"
+		_face_left = dir.x < 0.0
+	else:
+		_dir = "n" if dir.y < 0.0 else "s"
+
+
+func try_dodge(direction: Vector2 = Vector2.ZERO) -> bool:
+	if _dying or dodge_cd > 0.0 or dodge_t > 0.0:
+		return false
+	var chosen: Vector2 = direction.normalized() if direction.length_squared() > 0.01 else _movement_input()
+	if chosen == Vector2.ZERO:
+		chosen = _last_dir
+	_dodge_dir = chosen.normalized()
+	dodge_t = DODGE_DURATION
+	dodge_cd = DODGE_COOLDOWN
+	invuln = maxf(invuln, DODGE_INVULN)
+	_face_direction(_dodge_dir)
+	queue_redraw()
+	return true
+
+
+func is_dodging() -> bool:
+	return dodge_t > 0.0
+
+
 func _ready() -> void:
 	add_to_group("player")
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -117,36 +172,34 @@ func _process(delta: float) -> void:
 		_anim_t += delta
 		queue_redraw()
 		return
-	var v := Vector2.ZERO
-	if Input.is_action_pressed("ui_left") or Input.is_key_pressed(KEY_A):
-		v.x -= 1.0
-	if Input.is_action_pressed("ui_right") or Input.is_key_pressed(KEY_D):
-		v.x += 1.0
-	if Input.is_action_pressed("ui_up") or Input.is_key_pressed(KEY_W):
-		v.y -= 1.0
-	if Input.is_action_pressed("ui_down") or Input.is_key_pressed(KEY_S):
-		v.y += 1.0
-	# 게임패드 아날로그 스틱 (키 입력 없을 때)
-	if v == Vector2.ZERO:
-		var stick := Vector2(Input.get_joy_axis(0, JOY_AXIS_LEFT_X), Input.get_joy_axis(0, JOY_AXIS_LEFT_Y))
-		if stick.length() > 0.25:
-			v = stick
+	var v := _movement_input()
 	if slow_t > 0.0:
-		slow_t -= delta
+		slow_t = maxf(0.0, slow_t - delta)
+	if invuln > 0.0:
+		invuln = maxf(0.0, invuln - delta)
+	if dodge_cd > 0.0:
+		dodge_cd = maxf(0.0, dodge_cd - delta)
+	if magnet_t > 0.0:
+		magnet_t = maxf(0.0, magnet_t - delta)
 	var eff_speed := speed * (0.55 if slow_t > 0.0 else 1.0)
-	moving = v != Vector2.ZERO
-	if v != Vector2.ZERO:
-		var vn := v.normalized()
-		var desired := position + vn * eff_speed * delta
+	if dodge_t > 0.0:
+		# 프레임이 크게 끊겨도 총 회피 거리가 DODGE_DISTANCE를 넘지 않게 남은 시간만 적분한다.
+		var dodge_motion_time := minf(delta, dodge_t)
+		var dodge_step := DODGE_DISTANCE / DODGE_DURATION * dodge_motion_time
+		var dodge_target := position + _dodge_dir * dodge_step
+		position = stage_layout.resolve_move(position, dodge_target, radius) if stage_layout else dodge_target
+		dodge_t = maxf(0.0, dodge_t - delta)
+		moving = true
+		_walking = true
+	elif v != Vector2.ZERO:
+		var desired := position + v * eff_speed * delta
 		position = stage_layout.resolve_move(position, desired, radius) if stage_layout else desired
-		_last_dir = vn
-		# 4방향 판정: 수평 우세면 동/서, 수직 우세면 북/남
-		if abs(vn.x) >= abs(vn.y):
-			_dir = "w" if vn.x < 0.0 else "e"
-			_face_left = vn.x < 0.0
-		else:
-			_dir = "n" if vn.y < 0.0 else "s"
-	_walking = v != Vector2.ZERO
+		_face_direction(v)
+		moving = true
+		_walking = true
+	else:
+		moving = false
+		_walking = false
 	_anim_t += delta
 	if _attack_t > 0.0:
 		_attack_t -= delta
@@ -158,15 +211,19 @@ func _process(delta: float) -> void:
 	if stage_layout:
 		position = stage_layout.nearest_walkable(position, radius)
 
-	if invuln > 0.0:
-		invuln -= delta
-	if magnet_t > 0.0:
-		magnet_t -= delta
-
 	queue_redraw()
 
 func _draw() -> void:
 	var r := radius
+	# 회피 잔상: 이동 방향 반대쪽에 짧은 속도선을 남겨 순간 이동량과 무적 구간을 읽게 한다.
+	if dodge_t > 0.0:
+		var dodge_alpha := clampf(dodge_t / DODGE_DURATION, 0.0, 1.0)
+		var side := _dodge_dir.orthogonal()
+		for i in 3:
+			var lane := float(i - 1) * r * 0.45
+			var trail_from := -_dodge_dir * r * 0.3 + side * lane
+			var trail_to := -_dodge_dir * r * (1.8 + i * 0.45) + side * lane
+			draw_line(trail_from, trail_to, Color(0.55, 0.9, 1.0, dodge_alpha * (0.62 - i * 0.12)), 3.0 - i * 0.55)
 	# 라이트 헤일로(주변을 밝히던 원 2겹)는 제거 — 캐릭터 주변에 원이 떠 보였음.
 	# 발밑 그림자는 유지: 없으면 캐릭터가 바닥에서 떠 보임.
 	draw_set_transform(Vector2(0, r * 0.85), 0.0, Vector2(1.0, 0.42))
@@ -241,7 +298,8 @@ func _draw() -> void:
 
 	# 피격 무적 표시
 	if invuln > 0.0:
-		draw_arc(Vector2.ZERO, r + 5.0, 0.0, TAU, 24, Color(1, 1, 1, 0.7), 2.0)
+		var invuln_col := Color(0.45, 0.9, 1.0, 0.9) if dodge_t > 0.0 else Color(1, 1, 1, 0.7)
+		draw_arc(Vector2.ZERO, r + 5.0, 0.0, TAU, 24, invuln_col, 2.0)
 	# 자석 버프 표시 (흡수 범위 링)
 	if magnet_t > 0.0:
 		draw_arc(Vector2.ZERO, current_pickup_radius(), 0.0, TAU, 48, Color(0.7, 0.5, 1.0, 0.35), 2.0)

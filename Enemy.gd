@@ -38,9 +38,14 @@ var hold := false        # true면 추격 안 하고 제자리 고정 (정적 �
 # 행동 타입 (#27): "" 기본추격 / ranged 사수 / charge 돌진 / exploder 자폭 / splitter 분열
 var behavior := ""
 var _shoot_cd := 1.2     # 사수 발사 쿨다운
+var _shoot_windup := 0.0 # 사수 조준선 표시 시간
+var _shoot_lock := Vector2.RIGHT
 var _cstate := 0         # 돌진 상태: 0 접근 / 1 예열 / 2 돌진 / 3 쿨다운
 var _ctimer := 0.0       # 돌진 상태 타이머
 var _clock := Vector2.ZERO  # 돌진 고정 방향
+var _melee_state := 0    # 근접 상태: 0 접근 / 1 예고 / 2 타격 / 3 회복
+var _melee_t := 0.0
+var _strike_dir := Vector2.DOWN
 var is_split := false    # 분열로 생성된 새끼 (재분열 방지)
 # 죽음 연출 (스쿼시→팝→페이드). 죽는 순간 잠깐 살아있는 상태로 애니 재생 후 소멸.
 var _dying := false
@@ -49,6 +54,53 @@ const DIE_DUR := 0.30
 # 피격 임팩트 (스쿼시&스트레치 펀치): 맞는 순간 옆으로 늘고 위아래 눌렸다 튕김
 var _hit_t := 0.0
 const HIT_DUR := 0.15
+const RANGED_WINDUP := 0.48
+const CHARGE_WINDUP := 0.55
+
+
+func _melee_windup_duration() -> float:
+	return 0.58 if elite else 0.36
+
+
+func _melee_strike_duration() -> float:
+	return 0.20 if elite else 0.16
+
+
+func _melee_recovery_duration() -> float:
+	return 0.82 if elite else 0.52
+
+
+func _melee_reach() -> float:
+	return radius + (50.0 if elite else 30.0)
+
+
+func _ranged_windup_duration() -> float:
+	return RANGED_WINDUP + (0.14 if elite else 0.0)
+
+
+func _charge_windup_duration() -> float:
+	return CHARGE_WINDUP + (0.18 if elite else 0.0)
+
+
+# Main의 충돌 루프는 단순 접촉 대신 실제 공격 활성 프레임과 예고된 범위를 확인한다.
+func can_damage_player(target: Vector2, target_radius: float) -> bool:
+	if _dying:
+		return false
+	match behavior:
+		"ranged":
+			return false
+		"charge":
+			return _cstate == 2 and position.distance_to(target) <= radius + target_radius + 5.0
+		_:
+			if _melee_state != 2:
+				return false
+			var to_target := target - position
+			if to_target.length() > _melee_reach() + target_radius:
+				return false
+			# 정예는 원형 강타, 일반 적은 고정 방향 부채꼴 베기다.
+			if elite or to_target.length_squared() <= 0.01:
+				return true
+			return absf(_strike_dir.angle_to(to_target.normalized())) <= 0.72
 
 func _ready() -> void:
 	add_to_group("enemies")
@@ -151,63 +203,104 @@ func _process(delta: float) -> void:
 		# 뱀서식: 정면 스프라이트를 항상 플레이어 쪽으로 좌우 반전 (상하 이동 중에도 방향감)
 		if abs(to.x) > 4.0:
 			_face_left = to.x < 0.0
-		# 정지형(원진 이벤트 등): 추격하지 않고 제자리 고정 (피격 넉백·소멸만 적용)
-		if hold:
-			queue_redraw()
-			return
 		var dir: Vector2 = to.normalized() if d > 1.0 else Vector2.ZERO
 		match behavior:
 			"ranged":
-				# 사수: 사거리 유지(가까우면 후퇴, 멀면 접근) + 주기 발사
-				var pref := radius + 190.0
-				if d < pref - 40.0:
-					_move_on_stage(position - dir * 600.0, speed * 0.9 * slow_factor * delta)
-				elif d > pref + 40.0:
-					_move_on_stage(pl.position, speed * slow_factor * delta)
-				_attacking = false
-				_shoot_cd -= delta
-				if _shoot_cd <= 0.0 and d < 460.0 and _hitstop <= 0.0:
-					_shoot_cd = 1.7
-					var m := get_parent()
-					if m and m.has_method("spawn_enemy_arrow"):
-						m.spawn_enemy_arrow(position, dir, touch_damage * 1.1, tier.get("shot_chill", false))
+				# 사수: 방향을 잠근 조준선을 먼저 보여준 뒤 발사한다.
+				if _shoot_windup > 0.0:
+					_shoot_windup -= delta
+					_attacking = true
+					_atk_t += delta
+					if _shoot_windup <= 0.0:
+						_shoot_cd = 1.7
+						_attacking = false
+						var m := get_parent()
+						if m and m.has_method("spawn_enemy_arrow"):
+							m.spawn_enemy_arrow(position, _shoot_lock, touch_damage * 1.1, tier.get("shot_chill", false))
+				else:
+					var pref := radius + 190.0
+					if not hold:
+						if d < pref - 40.0:
+							_move_on_stage(position - dir * 600.0, speed * 0.9 * slow_factor * delta)
+						elif d > pref + 40.0:
+							_move_on_stage(pl.position, speed * slow_factor * delta)
+					_attacking = false
+					_shoot_cd -= delta
+					if _shoot_cd <= 0.0 and d < 460.0 and _hitstop <= 0.0:
+						_shoot_windup = _ranged_windup_duration()
+						_shoot_lock = dir if dir != Vector2.ZERO else Vector2.DOWN
+						_atk_t = 0.0
 			"charge":
-				# 돌진: 접근→예열(정지 깜빡)→고속 돌진→쿨다운
+				# 돌진: 접근→고정된 경로 예고→고속 돌진→쿨다운
 				match _cstate:
 					0:
 						_attacking = false
-						if d > 1.0:
+						if d > 1.0 and not hold:
 							_move_on_stage(pl.position, speed * slow_factor * delta)
 						if d < radius + 210.0:
-							_cstate = 1; _ctimer = 0.5; _clock = dir
+							_cstate = 1
+							_ctimer = _charge_windup_duration()
+							_clock = dir if dir != Vector2.ZERO else Vector2.DOWN
+							_atk_t = 0.0
 					1:
 						_ctimer -= delta
-						_flash_t = max(_flash_t, 0.06)
+						_attacking = true
+						_atk_t += delta
 						if _ctimer <= 0.0:
-							_cstate = 2; _ctimer = 0.4; _clock = dir
+							_cstate = 2
+							_ctimer = 0.4
 					2:
 						_ctimer -= delta
 						_move_on_stage(position + _clock * 800.0, max(speed * 2.6, 340.0) * slow_factor * delta)
 						_attacking = true
+						_atk_t += delta
 						if _ctimer <= 0.0:
-							_cstate = 3; _ctimer = 1.4
+							_cstate = 3
+							_ctimer = 1.4
 					3:
+						_attacking = false
 						_ctimer -= delta
-						if d > 1.0:
+						if d > 1.0 and not hold:
 							_move_on_stage(pl.position, speed * 0.5 * slow_factor * delta)
 						if _ctimer <= 0.0:
 							_cstate = 0
 			_:
-				# 기본 추격 (자폭/분열도 여기 — 죽을 때 Main에서 처리)
-				_attacking = d < radius + 26.0
-				if _attacking:
-					_atk_t += delta
-					if d > radius + 8.0:
-						_move_on_stage(pl.position, speed * 0.35 * slow_factor * delta)
-				else:
-					_atk_t = 0.0
-					if d > 1.0:
-						_move_on_stage(pl.position, speed * slow_factor * delta)
+				# 기본 근접: 추격→부채꼴/원형 예고→짧은 타격→회복.
+				# 자폭·분열도 죽기 전까지는 이 공통 공격을 사용한다.
+				match _melee_state:
+					0:
+						_attacking = false
+						if d <= _melee_reach() + 34.0:
+							_melee_state = 1
+							_melee_t = _melee_windup_duration()
+							_strike_dir = dir if dir != Vector2.ZERO else Vector2.DOWN
+							_atk_t = 0.0
+						elif d > 1.0 and not hold:
+							_move_on_stage(pl.position, speed * slow_factor * delta)
+					1:
+						_attacking = true
+						_atk_t += delta
+						_melee_t -= delta
+						if _melee_t <= 0.0:
+							_melee_state = 2
+							_melee_t = _melee_strike_duration()
+					2:
+						_attacking = true
+						_atk_t += delta
+						_melee_t -= delta
+						if not hold:
+							var strike_speed := maxf(speed * (1.35 if elite else 2.2), 115.0 if elite else 190.0)
+							_move_on_stage(position + _strike_dir * 600.0, strike_speed * slow_factor * delta)
+						if _melee_t <= 0.0:
+							_melee_state = 3
+							_melee_t = _melee_recovery_duration()
+					3:
+						_attacking = false
+						_melee_t -= delta
+						if d > _melee_reach() + 16.0 and not hold:
+							_move_on_stage(pl.position, speed * 0.22 * slow_factor * delta)
+						if _melee_t <= 0.0:
+							_melee_state = 0
 	# 적끼리 밀어내기: 겹친 무리를 벌려 뱀서식 '벽'을 만듦. walkable 보정 경유(벽 통과 방지).
 	if sep != Vector2.ZERO:
 		_move_on_stage(position + sep, sep.length())
@@ -276,6 +369,64 @@ func shove(from: Vector2, force: float) -> void:
 		_kb = away.normalized() * force * resist
 
 
+func _draw_attack_warning() -> void:
+	var danger := Color(1.0, 0.18, 0.10)
+	if behavior == "ranged" and _shoot_windup > 0.0:
+		var aim_p := clampf(1.0 - _shoot_windup / _ranged_windup_duration(), 0.0, 1.0)
+		var aim_end := _shoot_lock * 460.0
+		draw_line(Vector2.ZERO, aim_end, Color(danger.r, danger.g, danger.b, 0.16 + aim_p * 0.30), 2.0 + aim_p * 2.0)
+		# 진행하는 밝은 마디가 발사 시점을 읽게 한다.
+		var bead := _shoot_lock * 460.0 * aim_p
+		draw_circle(bead, 3.0 + aim_p * 2.5, Color(1.0, 0.82, 0.45, 0.65 + aim_p * 0.30))
+		var aim_angle := _shoot_lock.angle()
+		draw_arc(Vector2.ZERO, radius + 8.0, aim_angle - PI * 0.45, aim_angle + PI * 0.45, 18,
+			Color(1.0, 0.55, 0.24, 0.45 + aim_p * 0.35), 2.5)
+		return
+	if behavior == "charge" and _cstate == 1:
+		var charge_p := clampf(1.0 - _ctimer / _charge_windup_duration(), 0.0, 1.0)
+		var charge_len := maxf(speed * 2.6, 340.0) * 0.4
+		var charge_end := _clock * charge_len
+		var charge_side := _clock.orthogonal() * (radius + 7.0)
+		var charge_shape := PackedVector2Array([
+			-charge_side, charge_side, charge_end + charge_side, charge_end - charge_side
+		])
+		draw_colored_polygon(charge_shape, Color(danger.r, danger.g, danger.b, 0.07 + charge_p * 0.12))
+		draw_line(-charge_side, charge_end - charge_side, Color(danger.r, danger.g, danger.b, 0.42 + charge_p * 0.38), 2.5)
+		draw_line(charge_side, charge_end + charge_side, Color(danger.r, danger.g, danger.b, 0.42 + charge_p * 0.38), 2.5)
+		draw_arc(charge_end, radius + 7.0, 0.0, TAU, 24, Color(1.0, 0.62, 0.24, 0.45 + charge_p * 0.40), 3.0)
+		return
+	if behavior != "" and behavior != "exploder" and behavior != "splitter":
+		return
+	if _melee_state != 1 and _melee_state != 2:
+		return
+	var striking := _melee_state == 2
+	var melee_p := 1.0 if striking else clampf(1.0 - _melee_t / _melee_windup_duration(), 0.0, 1.0)
+	var reach := _melee_reach()
+	var fill_alpha := 0.20 if striking else 0.045 + melee_p * 0.075
+	var edge_alpha := 0.95 if striking else 0.36 + melee_p * 0.48
+	if elite:
+		draw_circle(Vector2.ZERO, reach, Color(danger.r, danger.g, danger.b, fill_alpha))
+		var closing_radius := lerpf(reach * 1.42, reach, melee_p)
+		draw_arc(Vector2.ZERO, closing_radius, 0.0, TAU, 40,
+			Color(1.0, 0.48, 0.16, edge_alpha), 3.0 + melee_p * 2.0)
+		if melee_p > 0.62:
+			draw_arc(Vector2.ZERO, reach * 0.52, 0.0, TAU, 32,
+				Color(1.0, 0.86, 0.42, edge_alpha * 0.65), 2.5)
+	else:
+		var base := _strike_dir.angle()
+		var cone := PackedVector2Array([Vector2.ZERO])
+		for i in 13:
+			var a := base - 0.72 + 1.44 * float(i) / 12.0
+			cone.append(Vector2.from_angle(a) * reach)
+		draw_colored_polygon(cone, Color(danger.r, danger.g, danger.b, fill_alpha))
+		draw_arc(Vector2.ZERO, reach, base - 0.72, base + 0.72, 20,
+			Color(1.0, 0.48, 0.16, edge_alpha), 2.0 + melee_p * 1.8)
+		draw_line(Vector2.ZERO, Vector2.from_angle(base - 0.72) * reach,
+			Color(danger.r, danger.g, danger.b, edge_alpha * 0.60), 1.5)
+		draw_line(Vector2.ZERO, Vector2.from_angle(base + 0.72) * reach,
+			Color(danger.r, danger.g, danger.b, edge_alpha * 0.60), 1.5)
+
+
 func _draw() -> void:
 	# 죽음 연출: 잠깐 흰빛으로 팽창 → 쪼그라들며 위로 떠올라 사라짐 (뱀서식 펑)
 	if _dying:
@@ -294,6 +445,7 @@ func _draw() -> void:
 			var tint := Color(2.6, 2.6, 2.8, a) if p < 0.22 else Color(1.1, 1.0, 1.05, a)
 			draw_texture_rect(dtex, Rect2(Vector2(-w / 2.0, -w / 2.0 + yoff), Vector2(w, w)), false, tint)
 		return
+	_draw_attack_warning()
 	if slow_factor < 1.0:
 		draw_circle(Vector2.ZERO, radius + 3.0, Color(0.5, 0.8, 1.0, 0.28))
 	# 엘리트 HP바 (뱀서식: 큰 개체만 표시. 잡몹은 히트플래시로만). 머리 위 금색 바.

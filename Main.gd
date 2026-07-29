@@ -62,6 +62,48 @@ const WNAMES := {
 	"chain_bolt": "연쇄뇌전", "frost_ring": "서리고리", "blood_sword": "흡혈검", "cleave": "검기",
 	"excalibur": "엑스칼리버", "void_orb": "공허구",
 }
+
+# 장비 무기 5종은 캐릭터 수와 별개인 전투 아키타입이다.
+# 캐릭터는 고유 패시브·Q를, 현재 주무기는 자동공격·E를 결정한다.
+const WEAPON_ACTIVE_DEFS := {
+	"sword": {"name": "반격의 호", "cd": 6.0, "glyph": "⚔", "icon": "res://assets/items/gear_sword.png",
+		"desc": "짧게 무적이 되고 전방을 넓게 베어 밀쳐냅니다."},
+	"axe": {"name": "파쇄 강타", "cd": 7.5, "glyph": "◆", "icon": "res://assets/items/gear_axe.png",
+		"desc": "주변을 내려쳐 큰 피해와 경직을 줍니다."},
+	"staff": {"name": "원소 폭발", "cd": 6.5, "glyph": "✦", "icon": "res://assets/items/gear_staff.png",
+		"desc": "조준 지점에 현재 속성의 폭발을 일으킵니다."},
+	"dagger": {"name": "그림자 난무", "cd": 4.0, "glyph": "✣", "icon": "res://assets/items/gear_dagger.png",
+		"desc": "치명타 확률이 높은 단검을 빠르게 난사합니다."},
+	"spear": {"name": "돌파 찌르기", "cd": 5.5, "glyph": "➤", "icon": "res://assets/items/gear_spear.png",
+		"desc": "짧게 돌진한 뒤 긴 직선을 관통합니다."},
+}
+
+# 모든 시작·드롭·해금 무기를 5개 조작 문법에 연결한다. 새 무기를 추가하면 테스트가 누락을 잡는다.
+const WEAPON_ACTIVE_ARCHETYPE := {
+	"arrow": "dagger", "blade": "sword", "aura": "staff", "lightning": "staff",
+	"frost": "staff", "knife": "dagger", "fireball": "staff", "boomerang": "dagger",
+	"holy": "staff", "venom": "dagger", "whip": "sword", "chakram": "dagger",
+	"spear": "spear", "starfall": "staff", "flamethrower": "staff", "ice_lance": "spear",
+	"crossbow": "spear", "holy_cross": "staff", "poison_cloud": "staff", "quake": "axe",
+	"spread_shot": "dagger", "soul_bolt": "staff", "holy_beam": "spear", "bone_spiral": "staff",
+	"moonlight": "staff", "axe": "axe", "homing_skull": "staff", "thorn_burst": "staff",
+	"chain_bolt": "staff", "frost_ring": "staff", "blood_sword": "sword", "cleave": "sword",
+	"excalibur": "sword", "void_orb": "staff",
+}
+
+# 장비를 끼지 않은 캐릭터는 같은 5개 조작 문법 안에서도 고유 시작 무기 이름을 유지한다.
+# 실제 장비 무기는 WEAPON_ACTIVE_DEFS의 보편적인 명칭을 사용해 교체 결과를 예측하기 쉽게 한다.
+const STARTING_WEAPON_ACTIVE_VARIANTS := {
+	"poison_cloud": {"name": "역병 폭발", "desc": "조준 지점에 암흑 역병을 터뜨려 적을 둔화합니다."},
+	"aura": {"name": "성역 파동", "desc": "자신을 중심으로 신성 파동을 일으키고 생명력을 회복합니다."},
+	"blood_sword": {"name": "혈월 반격", "desc": "짧게 무적이 되어 베고, 적중한 피를 흡수합니다."},
+	"fireball": {"name": "화염 폭발", "desc": "조준 지점에 강력한 화염 폭발을 일으킵니다."},
+	"spread_shot": {"name": "속사 난무", "desc": "치명타 확률이 높은 총탄을 부채꼴로 난사합니다."},
+	"bone_spiral": {"name": "뼈 폭풍", "desc": "조준 지점에서 암흑 뼈 폭풍을 폭발시킵니다."},
+	"moonlight": {"name": "월광 폭발", "desc": "조준 지점에 차가운 월광을 응축해 터뜨립니다."},
+	"ice_lance": {"name": "빙하 돌진", "desc": "짧게 돌진한 뒤 적을 둔화하는 얼음창으로 관통합니다."},
+	"chain_bolt": {"name": "연쇄 폭발", "desc": "조준 지점에 암흑 뇌전을 응축해 폭발시킵니다."},
+}
 # 무기별 발사 섬광 (색 + 스타일). style: "slash"(전방 부채꼴)/"spin"(회전)/"ring"(방사링)/"burst"(파티클)
 # 신규 무기 위주로 발사 순간 생동감 부여 — 기존 무기는 자체 이펙트가 있어 제외.
 # "slash"(반투명 부채꼴) 스타일은 전면 폐기 — 투사체가 이미 날아가는데 그 위에
@@ -219,23 +261,6 @@ const EVO_TINT := {
 func _evo_tint(kind: String) -> Color:
 	return EVO_TINT.get(kind, Color(1.3, 1.15, 0.7))
 
-# 아르카나: 특정 레벨 도달 시 3장 중 1택하는 강력한 운명 카드 (뱀서 Arcana). 런 1회씩.
-const ARCANA_MILE := [8, 16, 24]
-const ARCANA_DEFS := [
-	{"key": "war", "name": "Ⅰ 전쟁의 인장", "desc": "공격력 +25% · 쿨다운 -10%",
-		"icon": "res://assets/items/icon_spinach.png"},
-	{"key": "hunter", "name": "Ⅱ 사냥꾼의 눈", "desc": "치명타 확률 +15% · 치명 피해 +50%",
-		"icon": "res://assets/items/icon_keeneye.png"},
-	{"key": "tyrant", "name": "Ⅲ 폭군의 군림", "desc": "투사체 +2 · 효과범위 +20%",
-		"icon": "res://assets/items/icon_clone.png"},
-	{"key": "sanguine", "name": "Ⅳ 피의 갈망", "desc": "모든 무기 명중 시 흡혈 +0.5%",
-		"icon": "res://assets/items/icon_bloodsword.png"},
-	{"key": "tempest", "name": "Ⅴ 시간 왜곡", "desc": "쿨다운 -20% (초고속 연사)",
-		"icon": "res://assets/items/icon_tome.png"},
-	{"key": "abyss", "name": "Ⅵ 심연의 계약", "desc": "저주 +40% (적↑ · 경험치·골드 대폭↑)",
-		"icon": "res://assets/items/icon_skull.png"},
-]
-
 # 무기 조합: 두 무기 모두 Lv3+ → 조합 카드 등장 (조합당 1회)
 const COMBO_DEFS := [
 	{"key": "arrow_lightning", "a": "arrow", "b": "lightning", "t": "⚡스톰 애로우",
@@ -342,8 +367,8 @@ const RELIC_DEFS := [
 # 해금 무기: 무기키 → 필요 업적키 (미달성이면 카드 풀에 안 나옴)
 const UNLOCK_WEAPONS := {"knife": "knife_thrower", "excalibur": "hard_clear", "void_orb": "slayer"}
 
-# 런 축복(선택): 시작 전 1개 선택. 저주는 별도 다이얼(sel_curse)이 담당하므로
-# 여기서는 중립(기본)과 축복만 둔다 — 고정 [저주] 3종은 다이얼과 중복이라 제거됨.
+# 던전 가호(선택): 입장 전 1개 선택해 런의 성격을 바꾼다.
+# 위험과 보상은 난이도가 전담하고, 가호는 플레이 방식의 변주만 담당한다.
 const MODIFIERS := [
 	{"key": "none", "name": "기본", "desc": "추가 효과 없음",
 		"color": Color(0.6, 0.62, 0.68)},
@@ -360,14 +385,6 @@ const MODIFIERS := [
 	{"key": "volley", "name": "[축복] 다발 사격", "desc": "투사체 +1 · 골드 -30%",
 		"player_amount": 1, "gold": 0.7, "color": Color(1.0, 0.6, 0.75)},
 ]
-
-# ── 저주 단계 (런 전 다이얼로 선택): 뱀서 Curse — 난이도↑ 대가로 보상↑ ──
-# curse_mult가 적 수·체력·속도 + 골드·경험치 양쪽에 곱해지므로 단계가 곧 리스크/리워드.
-const CURSE_MAX := 5
-const CURSE_PER_LV := 0.14   # 단계당 저주 강도(적 강화) — Lv5 = 저주 +70%
-const CURSE_GREED := 0.08    # 단계당 추가 골드 보상
-const CURSE_XP := 0.05       # 단계당 추가 경험치 보상
-const CURSE_LOOT := 0.05     # 단계당 전리품 확률
 
 # ── 유물 세트 효과: 관련 유물 3종을 모두 해금하면 추가 보너스 (뱀서식 컬렉션 시너지) ──
 # 12종 유물을 4개 테마 세트로 묶었다. 세트 보너스는 전부 스탯형이라
@@ -531,17 +548,12 @@ var map_selection_borders: Array[Panel] = []
 var map_selection_badges: Array[Label] = []
 var map_detail_label: Label
 var map_confirm_button: Button
+var map_difficulty_buttons: Array[Button] = []
+var map_blessing_button: Button
 var unlocked_stage_count := 1
-var diff_panel: Control
-var modifier_panel: Control
 var sel_diff: Dictionary = {}
 var sel_stage := 0
 var sel_modifier: Dictionary = {}
-var sel_curse := 0                 # 런 전 선택한 저주 단계 (0~CURSE_MAX)
-var curse_dial_label: Label        # 저주 효과 설명 라벨
-var curse_level_label: Label       # "저주 Lv N/5" 라벨
-var curse_segments: Array = []     # 5칸 위험 게이지 세그먼트 Panel들
-var char_blessing_btn: Button      # 캐릭터 화면 축복 토글
 var options_panel: Control
 var achievements_panel: Control
 var ach_list_box: GridContainer
@@ -667,10 +679,12 @@ var diff_enemy_hp := 1.0
 var diff_enemy_speed := 1.0
 var diff_spawn := 1.0
 var diff_loot := 1.0   # 전리품(상자·아이템) 드랍 배수 (난이도별)
-var curse_mult := 1.0  # 저주 스탯: 적 강화(수·체력·속도) + 보상(골드·경험치) 증가 (skull 패시브)
-var arcana_count := 0        # 획득한 아르카나 수 (마일스톤 인덱스)
-var arcana_taken := {}       # 이미 뽑은 아르카나 key
-var arcana_lifesteal := 0.0  # 아르카나 「피의 갈망」: 모든 명중 흡혈
+var diff_gold_reward := 1.0
+var diff_xp_reward := 1.0
+var diff_gear_drop := 1.0
+var diff_rarity_luck := 0.0
+var run_pressure_mult := 1.0  # 패시브·유물이 런 중 추가하는 적 압박과 골드 보상
+var global_lifesteal := 0.0  # 유물·세트 효과가 부여하는 모든 무기 명중 흡혈
 var diff_label := ""
 
 # UI
@@ -679,11 +693,8 @@ var xp_bar: ProgressBar
 var ult_bar: ProgressBar        # 궁극기 충전 게이지 (하단 중앙)
 var ult_bar_label: Label        # "Q 궁극기" / "READY!"
 var ult_gauge := 0.0            # 0~1, 처치로 충전 → Q로 발동
-var skill_e_cd := 0.0           # E 스킬샷 남은 쿨다운
-var skill_space_cd := 0.0       # Space 노바 남은 쿨다운
-var skill_hud_label: Label      # E/Space 쿨다운 상태 표시
-const SKILL_E_MAX := 5.0
-const SKILL_SPACE_MAX := 8.0
+var skill_e_cd := 0.0           # 현재 주무기 E 액티브 남은 쿨다운
+var skill_hud_label: Label      # E 스킬과 Space 회피 상태 표시
 # 장비 시스템 (Phase 3): 3슬롯 + 등급별 랜덤 어픽스
 var equipped := {"weapon": {}, "armor": {}, "trinket": {}}   # 슬롯 → 아이템 딕셔너리
 var _equip_applied := {}        # stat → 현재 player에 적용된 총량 (교체 시 diff 제거용)
@@ -749,7 +760,10 @@ func _ready() -> void:
 	# UI/아이콘 픽셀 선명하게 (기본 linear → nearest)
 	get_viewport().canvas_item_default_texture_filter = Viewport.DEFAULT_CANVAS_ITEM_TEXTURE_FILTER_NEAREST
 	meta = Meta.load_data()
-	_ensure_gear_meta()   # Phase 5 저장 포맷 정리(구버전/중단된 세이브도 안전하게 보정)
+	var removed_dev_preview_gear := _ensure_gear_meta()   # Phase 5 저장 포맷 정리
+	if removed_dev_preview_gear:
+		# 개발 자동 캡처가 중단돼도 검수용 장비는 실제 보관함에 남지 않는다.
+		Meta.save_data(meta)
 	var startup_unlocks := _sync_meta_unlocks()
 	if not startup_unlocks.is_empty():
 		Meta.save_data(meta)
@@ -803,6 +817,7 @@ func _ready() -> void:
 func _seed_gear_ui_preview() -> void:
 	var current_weapon := {
 		"slot": "weapon", "rarity": "rare", "name": "심연의 단검", "gear_id": "preview-current-weapon", "lvl": 1,
+		"weapon_kind": "knife", "element": "dark",
 		"affixes": [{"stat": "damage_mult", "name": "공격력", "value": 0.1008, "base_value": 0.09, "pct": true}]}
 	var preview_armor := {
 		"slot": "armor", "rarity": "common", "name": "강철의 갑옷", "gear_id": "preview-armor", "lvl": 0,
@@ -812,6 +827,7 @@ func _seed_gear_ui_preview() -> void:
 		"affixes": [{"stat": "regen", "name": "재생", "value": 0.4704, "base_value": 0.36, "pct": false}, {"stat": "pickup_radius", "name": "자석", "value": 28.8, "base_value": 22.0, "pct": false}]}
 	var weapon_candidate := {
 		"slot": "weapon", "rarity": "epic", "name": "폭풍의 창", "gear_id": "preview-weapon-candidate", "lvl": 0,
+		"weapon_kind": "spear", "element": "ice",
 		"affixes": [{"stat": "damage_mult", "name": "공격력", "value": 0.145, "base_value": 0.145, "pct": true}, {"stat": "area_mult", "name": "범위", "value": 0.11, "base_value": 0.11, "pct": true}]}
 	var armor_candidate := {
 		"slot": "armor", "rarity": "rare", "name": "얼어붙은 로브", "gear_id": "preview-armor-candidate", "lvl": 0,
@@ -875,8 +891,9 @@ func _autoshot() -> void:
 		return
 	for scr in ["title", "char", "stage", "diff", "modifier", "shop", "ach", "collection", "opt"]:
 		if ("--screen=" + scr) in args:
-			var panel: Control = {"title": title_panel, "char": char_panel, "diff": diff_panel,
-				"stage": stage_select_panel, "modifier": modifier_panel,
+			# 구버전 diff/modifier 캡처 인자는 통합된 던전 준비 화면으로 호환한다.
+			var panel: Control = {"title": title_panel, "char": char_panel, "diff": stage_select_panel,
+				"stage": stage_select_panel, "modifier": stage_select_panel,
 				"shop": shop_panel, "ach": achievements_panel, "collection": collection_panel,
 				"opt": options_panel}[scr]
 			if scr == "shop":
@@ -905,7 +922,8 @@ func _autoshot() -> void:
 			_choose_stage_card(requested_stage)
 			if sel_stage != requested_stage:
 				selection_errors.append("card %d selected %d" % [requested_stage, sel_stage])
-			if map_detail_label == null or not ("선택: %d번" % requested_stage) in map_detail_label.text:
+			var expected_detail := "%d. %s" % [requested_stage, GameConfig.stage_info(requested_stage)["name"]]
+			if map_detail_label == null or not expected_detail in map_detail_label.text:
 				selection_errors.append("card %d detail did not refresh" % requested_stage)
 			if not _prepare_selected_stage():
 				selection_errors.append("card %d failed stage preparation" % requested_stage)
@@ -919,9 +937,106 @@ func _autoshot() -> void:
 			push_error(selection_error)
 		get_tree().quit(0 if selection_passed else 1)
 		return
+	# 진화 회귀 검사는 실제 사용자 로드아웃과 무관하게 캐릭터 시작 무기로 수행한다.
+	if "--evo-test" in args:
+		meta["loadout"] = {"weapon": {}, "armor": {}, "trinket": {}}
+	var active_preview := ""
+	for arg in args:
+		if arg.begins_with("--active-preview="):
+			var requested_active := arg.trim_prefix("--active-preview=")
+			if WEAPON_ACTIVE_DEFS.has(requested_active):
+				active_preview = requested_active
+	if active_preview != "":
+		var preview_weapon_kind := str({
+			"sword": "cleave", "axe": "axe", "staff": "soul_bolt",
+			"dagger": "knife", "spear": "spear",
+		}[active_preview])
+		var preview_element := str({
+			"sword": "phys", "axe": "fire", "staff": "fire",
+			"dagger": "dark", "spear": "ice",
+		}[active_preview])
+		var preview_active_def: Dictionary = WEAPON_ACTIVE_DEFS[active_preview]
+		var preview_loadout: Dictionary = (meta.get("loadout", {}) as Dictionary).duplicate(true)
+		preview_loadout["weapon"] = {
+			"slot": "weapon", "rarity": "epic", "name": "검수용 %s" % str(preview_active_def["name"]),
+			"gear_id": "active-preview-%s" % active_preview, "lvl": 0, "affixes": [],
+			"weapon_kind": preview_weapon_kind, "element": preview_element,
+			"icon": str(preview_active_def["icon"]),
+		}
+		meta["loadout"] = preview_loadout
 	title_panel.visible = false
 	sel_modifier = {}
 	_start_game(GameConfig.difficulties()[0])
+
+	# --active-preview=<sword|axe|staff|dagger|spear>: E 스킬과 HUD를 실제 렌더로 검수한다.
+	if active_preview != "":
+		if state == State.PAUSED:
+			_toggle_pause()
+		weapons.clear()
+		wtimer.clear()
+		xp_to_next = 999999
+		if stage_label:
+			stage_label.visible = false
+		if levelup_panel:
+			levelup_panel.visible = false
+		var impact_center := player.position + Vector2.RIGHT * 180.0
+		_current_wave["elite"] = 0.0
+		for i in 11:
+			var spawn_pos := impact_center
+			match active_preview:
+				"axe":
+					spawn_pos = player.position + Vector2.from_angle(TAU * i / 11.0) * 125.0
+				"staff":
+					spawn_pos = impact_center + Vector2.from_angle(TAU * i / 11.0) * 68.0
+				_:
+					var lane := float(i - 5) * 18.0
+					spawn_pos = player.position + Vector2(105.0 + absf(lane) * 2.2, lane)
+			if stage_layout:
+				spawn_pos = stage_layout.nearest_walkable(spawn_pos, 18.0)
+			_make_enemy(spawn_pos, false, null, 4.0, true)
+		for preview_enemy in get_tree().get_nodes_in_group("enemies"):
+			if is_instance_valid(preview_enemy):
+				preview_enemy.hp = 5000.0
+				preview_enemy.max_hp = 5000.0
+		await get_tree().process_frame
+		match active_preview:
+			"sword":
+				_fire_sword_active(Vector2.RIGHT)
+			"axe":
+				_fire_axe_active()
+			"staff":
+				_fire_staff_active(impact_center)
+			"dagger":
+				_fire_dagger_active(Vector2.RIGHT)
+			"spear":
+				_fire_spear_active(Vector2.RIGHT)
+		skill_e_cd = _weapon_active_cooldown()
+		_refresh_skill_hud()
+		# 숨긴 GUI 창은 Windows에서 1 FPS로 스로틀될 수 있다. 짧은 FX가 한 프레임 만에
+		# 사라지지 않도록 중간 프레임에 고정해 실제 모양을 안정적으로 캡처한다.
+		var preview_arrow_index := 0
+		for preview_node in get_children():
+			if preview_node is Effect:
+				preview_node.life = preview_node.max_life * 0.52
+				preview_node.process_mode = Node.PROCESS_MODE_DISABLED
+				preview_node.queue_redraw()
+			elif preview_node is FxAnim:
+				preview_node._t = 0.12
+				preview_node.process_mode = Node.PROCESS_MODE_DISABLED
+				preview_node.queue_redraw()
+			elif preview_node is Arrow:
+				preview_node.position += preview_node.velocity.normalized() * (54.0 + preview_arrow_index * 10.0)
+				preview_arrow_index += 1
+				preview_node.process_mode = Node.PROCESS_MODE_DISABLED
+				preview_node.queue_redraw()
+		await get_tree().process_frame
+		await get_tree().process_frame
+		var active_image := get_viewport().get_texture().get_image()
+		active_image.save_png("user://autoshot.png")
+		print("ACTIVE_PREVIEW %s" % active_preview)
+		print("AUTOSHOT SAVED: ", ProjectSettings.globalize_path("user://autoshot.png"))
+		get_tree().quit()
+		return
 
 	# --gemcap-test : 젬 상한 이후 XP 보존 + 현재 처치 위치 재등장 회귀 테스트.
 	if "--gemcap-test" in args:
@@ -982,7 +1097,7 @@ func _autoshot() -> void:
 		for difficulty in GameConfig.difficulties():
 			diff_enemy_hp = float(difficulty["enemy_hp"])
 			diff_enemy_speed = float(difficulty["enemy_speed"])
-			curse_mult = 1.0
+			run_pressure_mult = 1.0
 			for sample in samples:
 				var probe := Enemy.new()
 				probe.setup(GameConfig.tier_by_key(sample["key"]), float(sample["time"]))
@@ -1000,6 +1115,7 @@ func _autoshot() -> void:
 		var passed := (float(late_hp.get("easy", 0.0)) >= 350.0 and float(late_hp.get("easy", 0.0)) <= 800.0
 			and float(late_hp.get("normal", 0.0)) >= 800.0 and float(late_hp.get("normal", 0.0)) <= 1500.0
 			and float(late_hp.get("hard", 0.0)) >= 1200.0 and float(late_hp.get("hard", 0.0)) <= 2200.0
+			and float(late_hp.get("nightmare", 0.0)) >= 1700.0 and float(late_hp.get("nightmare", 0.0)) <= 3000.0
 			and late_touch >= 25.0 and late_touch <= 35.0 and stage_scale_ok)
 		print("BALANCE_TEST %s late_hp=%s touch=%.1f stage_multiplier_removed=%s" % ["PASS" if passed else "FAIL", late_hp, late_touch, stage_scale_ok])
 		if not passed:
@@ -1088,11 +1204,11 @@ func _autoshot() -> void:
 		meta["unlocked_relics"] = {}
 		var unlocked_names := _sync_meta_unlocks()
 		meta["unlocked_relics"]["witch_tear"] = true
-		curse_mult = 1.0
+		run_pressure_mult = 1.0
 		xp_mult = 1.0
 		greed_mult = 1.0
 		_apply_unlocked_relic_effects()
-		var relic_effect_ok := (is_equal_approx(curse_mult, 1.12)
+		var relic_effect_ok := (is_equal_approx(run_pressure_mult, 1.12)
 			and is_equal_approx(xp_mult, 1.12) and is_equal_approx(greed_mult, 1.12))
 		var passed := (_is_char_unlocked(GameConfig.characters()[4])
 			and _is_char_unlocked(GameConfig.characters()[6])
@@ -1283,11 +1399,15 @@ func _autoshot() -> void:
 	if "--mobs" in args:
 		if state == State.PAUSED:
 			_toggle_pause()
+		if stage_label:
+			stage_label.visible = false
 		await get_tree().create_timer(0.3, true, false, true).timeout
 		for i in 24:
 			var ang := TAU * i / 24.0
-			_make_enemy(player.position + Vector2.from_angle(ang) * randf_range(70.0, 240.0))
-		await get_tree().create_timer(0.4, true, false, true).timeout
+			var preview_distance := 76.0 if i == 0 else randf_range(70.0, 240.0)
+			_make_enemy(player.position + Vector2.from_angle(ang) * preview_distance, i == 0)
+		# 근거리 적의 예고 동작이 끝나기 전에 찍어 크기와 공격 가독성을 함께 검수한다.
+		await get_tree().create_timer(0.2, true, false, true).timeout
 		var imm := get_viewport().get_texture().get_image()
 		imm.save_png("user://autoshot.png")
 		print("AUTOSHOT SAVED: ", ProjectSettings.globalize_path("user://autoshot.png"))
@@ -1392,7 +1512,7 @@ func _process(delta: float) -> void:
 		if ach_toast_t <= 0.0 and ach_toast:
 			ach_toast.visible = false
 
-	# 뱀서식: 대시·궁극기 없음 — 이동(걷기)이 유일한 조작, 나머지는 전부 자동
+	# 자동 기본공격 위에 E 무기 스킬·Space 회피·Q 궁극기를 얹어 능동 전투 리듬을 만든다.
 
 	# 화면 흔들림 (옵션으로 끌 수 있음 — 멀미 대응)
 	if shake_t > 0.0:
@@ -1478,8 +1598,6 @@ func _physics_process(delta: float) -> void:
 	# 능동 스킬 쿨다운 감소 + HUD 갱신
 	if skill_e_cd > 0.0:
 		skill_e_cd = maxf(0.0, skill_e_cd - delta)
-	if skill_space_cd > 0.0:
-		skill_space_cd = maxf(0.0, skill_space_cd - delta)
 	_refresh_skill_hud()
 
 	var enemies := get_tree().get_nodes_in_group("enemies")
@@ -1654,13 +1772,14 @@ func _physics_process(delta: float) -> void:
 			continue
 		if e.position.distance_to(player.position) < e.radius + player.radius:
 			e.shove(player.position, 240.0)   # 몸박 넉백 (매 프레임 → 몸으로 막힘)
-			if not _touched and player.invuln <= 0.0:
-				apply_player_damage(max(1.0, e.touch_damage - player.armor))
-				player.invuln = 0.6
-				player.play_hurt()
-				shake_t = 0.15
-				play_sfx("hurt", -8.0, 0.3)
-				_touched = true
+		# 몸 자체는 서로 밀어내지만, 피해는 적이 예고한 타격의 활성 프레임에만 발생한다.
+		if not _touched and player.invuln <= 0.0 and e.can_damage_player(player.position, player.radius):
+			apply_player_damage(max(1.0, e.touch_damage - player.armor))
+			player.invuln = 0.6
+			player.play_hurt()
+			shake_t = 0.15
+			play_sfx("hurt", -8.0, 0.3)
+			_touched = true
 	if player.invuln <= 0.0 and boss and is_instance_valid(boss):
 		if boss.position.distance_to(player.position) < boss.radius + player.radius:
 			var boss_touch := (22.0 + stage_num * 3.0) * sqrt(diff_enemy_hp)
@@ -1673,11 +1792,13 @@ func _physics_process(delta: float) -> void:
 		if not is_instance_valid(ea):
 			continue
 		if ea.position.distance_to(player.position) < ea.radius + player.radius:
-			apply_player_damage(max(1.0, ea.damage - player.armor))
-			player.play_hurt()
-			if ea.chill:
-				player.slow_t = 1.5
-			play_sfx("hurt", -8.0, 0.3)
+			if player.invuln <= 0.0:
+				apply_player_damage(max(1.0, ea.damage - player.armor))
+				player.invuln = 0.6
+				player.play_hurt()
+				if ea.chill:
+					player.slow_t = 1.5
+				play_sfx("hurt", -8.0, 0.3)
 			ea.queue_free()
 
 	if player.hp <= 0:
@@ -3087,9 +3208,12 @@ func _weapon_muzzle(kind: String) -> void:
 
 
 func _apply_arrow_hit(a, target) -> void:
-	# 치명타 판정 (매의 눈/광전사의 인장 패시브)
-	var is_crit: bool = player.crit_chance > 0.0 and randf() < player.crit_chance
-	var dmg: float = a.damage * (player.crit_mult if is_crit else 1.0)
+	# 치명타 판정 (플레이어 패시브와 투사체 고유 보정 중 높은 값을 사용).
+	# Arrow의 crit 필드는 예전부터 있었지만 실제 판정에서 빠져 있어 단검 액티브가 활용하지 못했다.
+	var projectile_crit_chance := maxf(player.crit_chance, float(a.crit_chance))
+	var projectile_crit_mult := maxf(player.crit_mult, float(a.crit_mult))
+	var is_crit: bool = projectile_crit_chance > 0.0 and randf() < projectile_crit_chance
+	var dmg: float = a.damage * (projectile_crit_mult if is_crit else 1.0)
 	target.take_damage(dmg, is_crit)
 	play_sfx("hit", -18.0, 0.07)
 	# 모든 명중에 방향성 임팩트 스파크(때리는 맛 v2). 진행방향으로 샤드가 튀고 흰 코어가 팝.
@@ -3102,13 +3226,13 @@ func _apply_arrow_hit(a, target) -> void:
 	hf.life = (0.20 if is_crit else 0.14)
 	hf.max_life = hf.life
 	add_child(hf)
-	# 흡혈: 명중 피해의 일부를 체력으로 회복 (흡혈검 + 아르카나 「피의 갈망」)
-	var ls: float = a.lifesteal + arcana_lifesteal
+	# 흡혈: 무기 자체 흡혈 + 모든 명중에 적용되는 유물 흡혈
+	var ls: float = a.lifesteal + global_lifesteal
 	if ls > 0.0:
 		player.hp = min(player.max_hp, player.hp + dmg * ls)
 	# 흡혈 연출: 피가 적에게서 플레이어로 빨려감.
-	# a.lifesteal(흡혈검 본체)에만 — 아르카나 「피의 갈망」은 모든 명중에 붙어서
-	# 여기에 걸면 투사체 폭주 시 이펙트가 폭증함.
+	# 무기 자체 흡혈에만 연출을 붙인다. 유물 흡혈까지 매 명중마다 연출하면
+	# 투사체가 많은 빌드에서 이펙트가 폭증한다.
 	if a.lifesteal > 0.0:
 		var df := Effect.new()
 		df.kind = "drain"
@@ -3234,8 +3358,8 @@ func _spawn_wave() -> void:
 	var cur := get_tree().get_nodes_in_group("enemies").size()
 	if cur >= cap:
 		return
-	# 웨이브 규모: 초반 10 → 시간당 증가. 저주로 밀도 증가. (8/10 → 10/8 상향)
-	var cnt: int = min(84, int((10 + int(time_survived / 8.0)) * curse_mult * density))
+	# 웨이브 규모: 초반 10 → 시간당 증가. 런 중 위협 효과로 밀도 증가.
+	var cnt: int = min(84, int((10 + int(time_survived / 8.0)) * run_pressure_mult * density))
 	cnt = min(cnt, cap - cur)
 	for i in cnt:
 		_spawn_one()
@@ -3314,9 +3438,9 @@ func _make_enemy(pos: Vector2, force_elite := false, tier_override = null, despa
 func _apply_enemy_run_scaling(e: Enemy, at_time: float) -> void:
 	# 시간 경과 강화 (30분 기준): 웨이브 티어/밀도와 중복 폭증하지 않는 완만한 마감 보정.
 	var tprog: float = clampf(at_time / RUN_TIME, 0.0, 1.0)
-	e.hp *= diff_enemy_hp * (1.0 + tprog * 0.85) * curse_mult          # 최대 +85% HP
+	e.hp *= diff_enemy_hp * (1.0 + tprog * 0.85) * run_pressure_mult   # 최대 +85% HP
 	e.touch_damage *= (1.0 + tprog * 0.22)                             # 최대 +22% 접촉피해
-	e.speed *= diff_enemy_speed * (1.0 + tprog * 0.08 + (curse_mult - 1.0) * 0.5)  # 최대 +8% 속도
+	e.speed *= diff_enemy_speed * (1.0 + tprog * 0.08 + (run_pressure_mult - 1.0) * 0.5)  # 최대 +8% 속도
 
 
 # 적은 막힌 지형을 넘지 않고, 직접 경로가 막히면 각도를 바꿔 우회한다.
@@ -3710,7 +3834,7 @@ const COIN_CAP := 60   # 코인 노드 상한 (성능). 초과 시 즉시 적립
 func _spawn_coin(pos: Vector2, value: int) -> void:
 	# 골드를 바닥에 떨궈 자석으로 빨려오게 (뱀서식 파밍 쾌감). 상한 초과 시 즉시 적립.
 	if get_tree().get_nodes_in_group("coins").size() >= COIN_CAP:
-		run_gold += int(round(value * greed_mult * curse_mult))
+		run_gold += int(round(value * greed_mult * run_pressure_mult))
 		return
 	var c := Coin.new()
 	c.value = value
@@ -3827,7 +3951,7 @@ func _chest_fanfare(count: int) -> void:
 
 
 func collect_coin(value: int) -> void:
-	run_gold += int(round(value * greed_mult * curse_mult))
+	run_gold += int(round(value * greed_mult * run_pressure_mult))
 	play_sfx("coin", -12.0, 0.08)
 
 
@@ -4020,7 +4144,7 @@ func on_breakable_destroyed(b) -> void:
 	fx.life = 0.35
 	fx.max_life = 0.35
 	add_child(fx)
-	# 골드 분출 (다발) + 저주/탐욕은 collect_coin에서 반영
+	# 골드 분출 (다발) + 런 위협/탐욕은 collect_coin에서 반영
 	var coins: int = 2 + randi() % 3 + int(stage_num)
 	for i in coins:
 		_spawn_coin(pos + Vector2.from_angle(randf() * TAU) * randf_range(6.0, 26.0), 1 + int(stage_num / 2))
@@ -4227,8 +4351,8 @@ func _event_elite_pack() -> void:
 
 
 func _gain_xp(amount: int) -> void:
-	# 저주(curse_mult)는 이미 적 수를 늘려 젬을 더 뿌린다. 젬당 XP까지 곱하면 이중 뻥튀기라
-	# 고저주 런이 폭주(24초에 Lv9). 저주의 경험치 보상은 xp_mult에 별도 반영되므로 여기선 제외.
+	# 런 위협 효과는 이미 적 수를 늘려 젬을 더 뿌린다. 젬당 XP까지 곱하면
+	# 성장 속도가 이중으로 폭증하므로 경험치에는 xp_mult만 적용한다.
 	xp += int(round(amount * xp_mult))
 	while xp >= xp_to_next:
 		xp -= xp_to_next
@@ -4248,7 +4372,7 @@ func _gain_xp(amount: int) -> void:
 # Lv25에서 943까지 뛰던 2차식 대신 뱀서식 선형 성장 + Lv20 이후 완만한 보정을 사용한다.
 func _xp_requirement(current_level: int) -> int:
 	var late_level: int = maxi(0, current_level - 20)
-	# 레벨업 속도 하향(사장님 요청, 재상향): 요구 XP 2.5배. 저주 이중 뻥튀기 제거와 함께 적용.
+	# 레벨업 속도 하향(사장님 요청, 재상향): 요구 XP 2.5배. 위협 효과의 XP 이중 적용도 제거.
 	return int((8 + current_level * 5 + int(pow(float(late_level), 1.35) * 0.65)) * 2.5)
 
 
@@ -4281,10 +4405,10 @@ const RARITY_COL := {
 const RARITY_ORDER := {"common": 1, "rare": 2, "epic": 3, "legendary": 4}
 
 
-# 레벨업 카드 등급 뽑기. 럭(영구강화 luck)이 높을수록 상위 등급 확률↑.
+# 레벨업 카드·장비 등급 뽑기. 영구 럭과 호출부의 추가 럭이 높을수록 상위 등급 확률↑.
 # 기본: legendary 2.5% · epic 8% · rare 24% · 나머지 common.
-func _roll_rarity() -> String:
-	var luck := float(int(meta.get("up", {}).get("luck", 0)))
+func _roll_rarity(bonus_luck: float = 0.0) -> String:
+	var luck := float(int(meta.get("up", {}).get("luck", 0))) + bonus_luck
 	var leg := 0.025 + luck * 0.004
 	var epi := 0.08 + luck * 0.008
 	var rar := 0.24 + luck * 0.010
@@ -4353,7 +4477,7 @@ const FORGE_SALVAGE_BASE := {"common": 5, "rare": 12, "epic": 28, "legendary": 6
 # 랜덤 장비 1개 생성 (등급은 _roll_rarity 재활용 → 럭 반영)
 func _roll_gear() -> Dictionary:
 	var slot: String = EQUIP_SLOTS[randi() % EQUIP_SLOTS.size()]
-	var rarity := _roll_rarity()
+	var rarity := _roll_rarity(diff_rarity_luck)
 	var pool: Array = GEAR_AFFIXES.duplicate()
 	pool.shuffle()
 	var affs: Array = []
@@ -4372,7 +4496,8 @@ func _roll_gear() -> Dictionary:
 
 # 처치 지점에서 확률적으로 장비 드롭 (엘리트/보스는 높게)
 func _maybe_drop_gear(pos: Vector2, elite: bool) -> void:
-	if randf() < (0.35 if elite else 0.02):
+	var drop_chance := (0.35 if elite else 0.02) * diff_gear_drop
+	if randf() < minf(0.90, drop_chance):
 		_spawn_gear_pickup(pos, _roll_gear())
 
 
@@ -4436,9 +4561,12 @@ func _apply_equipment() -> void:
 	for stat in totals.keys():
 		_equip_stat(str(stat), float(totals[stat]))
 	_equip_applied = totals
-	# 공격 속성 = 장착한 무기의 속성 (없으면 물리). 상성 판정 기준.
-	attack_element = str(equipped.get("weapon", {}).get("element", "phys"))
+	# 공격 속성 = 장착 무기 속성. 무기가 없으면 캐릭터의 고유 시작 속성을 사용한다.
+	# Q는 장비와 무관하게 언제나 캐릭터 고유 속성을 유지한다.
+	var equipped_weapon: Dictionary = equipped.get("weapon", {})
+	attack_element = str(equipped_weapon.get("element", _char_skill_element()))
 	_refresh_equip_hud()
+	_refresh_skill_hud()
 
 
 func _equip_stat(stat: String, v: float) -> void:
@@ -4630,6 +4758,19 @@ func _gear_detail_text(it: Dictionary) -> String:
 		"%s %s%s" % [str(RARITY_TAG.get(str(it.get("rarity", "")), "")), str(it.get("name", "장비")), forge_tag],
 		"%s" % str(EQUIP_SLOT_NAME.get(str(it.get("slot", "")), "장비")),
 	]
+	if str(it.get("slot", "")) == "weapon":
+		var weapon_kind := str(it.get("weapon_kind", ""))
+		var active_def := _weapon_active_def_for_kind(weapon_kind)
+		lines.append("자동공격  %s · %s 속성" % [
+			str(WNAMES.get(weapon_kind, "기본 공격")),
+			str(ELEMENT_NAME.get(str(it.get("element", "phys")), "물리")),
+		])
+		lines.append("E %s %s  (기본 %.1f초)" % [
+			str(active_def.get("glyph", "•")),
+			str(active_def.get("name", "무기 스킬")),
+			float(active_def.get("cd", 0.0)),
+		])
+		lines.append(str(active_def.get("desc", "")))
 	for raw_affix in it.get("affixes", []):
 		if not (raw_affix is Dictionary):
 			continue
@@ -4797,6 +4938,8 @@ func _normalize_persistent_gear(it: Dictionary) -> Dictionary:
 	var normalized: Dictionary = it.duplicate(true)
 	if not _is_valid_gear(normalized):
 		return {}
+	if str(normalized.get("gear_id", "")).begins_with("active-preview-"):
+		return {}
 	normalized.erase("_found")
 	var lv := _gear_level(normalized)
 	normalized["lvl"] = lv
@@ -4845,12 +4988,16 @@ func _forge_find_stash_index(stash: Array, it: Dictionary) -> int:
 
 
 # meta.cfg의 장비 데이터를 정리하고, 로드아웃은 반드시 보관함의 같은 아이템을 참조하게 만든다.
-func _ensure_gear_meta() -> void:
+func _ensure_gear_meta() -> bool:
 	var clean_stash: Array = []
+	var removed_dev_preview_gear := false
 	var raw_stash = meta.get("stash", [])
 	if raw_stash is Array:
 		for raw in raw_stash:
 			if raw is Dictionary:
+				if str((raw as Dictionary).get("gear_id", "")).begins_with("active-preview-"):
+					removed_dev_preview_gear = true
+					continue
 				var stash_item := _normalize_persistent_gear(raw as Dictionary)
 				if not stash_item.is_empty() and _forge_find_stash_index(clean_stash, stash_item) < 0:
 					clean_stash.append(stash_item)
@@ -4860,6 +5007,9 @@ func _ensure_gear_meta() -> void:
 		for slot in EQUIP_SLOTS:
 			var raw = (raw_loadout as Dictionary).get(slot, {})
 			if raw is Dictionary and not (raw as Dictionary).is_empty():
+				if str((raw as Dictionary).get("gear_id", "")).begins_with("active-preview-"):
+					removed_dev_preview_gear = true
+					continue
 				var loadout_item := _normalize_persistent_gear(raw as Dictionary)
 				if not loadout_item.is_empty() and str(loadout_item["slot"]) == slot:
 					var loadout_idx := _forge_find_stash_index(clean_stash, loadout_item)
@@ -4869,6 +5019,7 @@ func _ensure_gear_meta() -> void:
 					clean_loadout[slot] = (clean_stash[loadout_idx] as Dictionary).duplicate(true)
 	meta["stash"] = clean_stash
 	meta["loadout"] = clean_loadout
+	return removed_dev_preview_gear
 
 
 func _forge_upgrade_cost(it: Dictionary, at_level: int = -1) -> int:
@@ -5336,22 +5487,14 @@ func _build_inventory_ui(s: Vector2, overlay: CanvasLayer) -> void:
 func _populate_levelup() -> void:
 	_fill_lvl_inv()
 	_fill_lvl_stats()
-	var picks: Array
-	# 아르카나 마일스톤 도달 → 운명 카드 3장 (일반 카드 대신)
-	var is_arcana: bool = arcana_count < ARCANA_MILE.size() and level >= ARCANA_MILE[arcana_count]
-	if is_arcana:
-		picks = _arcana_options()
-		if levelup_title:
-			levelup_title.text = "◈ 아르카나 선택 ◈"
-	else:
-		picks = _pick3(_card_options())
+	var picks: Array = _pick3(_card_options())
 	_cur_picks = picks
 	var top_rarity := ""   # 이번 판 카드 중 최고 등급 (등장 연출용)
 	for i in 3:
 		var c: Dictionary = picks[i]
-		# 카드 등급 뽑기 (뽑기운!): 보유 강화 카드에만 굴림. 아르카나·신규·조합은 자체 등급 유지.
+		# 카드 등급 뽑기 (뽑기운!): 보유 강화 카드에만 굴림. 신규·조합은 자체 등급 유지.
 		# 럭 스탯이 높을수록 상위 등급 확률↑. epic/legendary는 강화 레벨을 추가로 얹는다.
-		if not is_arcana and bool(c.get("owned", false)):
+		if bool(c.get("owned", false)):
 			var rr := _roll_rarity()
 			c["r"] = rr
 			c["rbonus"] = {"legendary": 2, "epic": 1}.get(rr, 0)
@@ -5408,8 +5551,8 @@ func _fill_stats_grid(box: GridContainer) -> void:
 	_stat_row(box, II + "icon_crown.png", "성장", _stat_pct(xp_mult))
 	_stat_row(box, II + "coin.png", "탐욕", _stat_pct(greed_mult))
 	_stat_row(box, II + "magnet.png", "자석", "%d" % int(player.pickup_radius))
-	if curse_mult > 1.0:
-		_stat_row(box, II + "icon_skull.png", "저주", _stat_pct(curse_mult))
+	if run_pressure_mult > 1.0:
+		_stat_row(box, II + "icon_skull.png", "위협", _stat_pct(run_pressure_mult))
 
 
 # 스탯 한 줄(아이콘·이름·값)을 그리드에 추가 (뱀서식 스탯 패널)
@@ -5750,52 +5893,6 @@ func _card_options() -> Array:
 	return opts
 
 
-# 아르카나 3장 (미획득 중 무작위). 강력한 런 지속 효과.
-func _arcana_options() -> Array:
-	var avail: Array = []
-	for a in ARCANA_DEFS:
-		if not arcana_taken.has(a["key"]):
-			avail.append(a)
-	avail.shuffle()
-	var out: Array = []
-	for i in min(3, avail.size()):
-		var a: Dictionary = avail[i]
-		var key: String = a["key"]
-		out.append({"r": "legendary", "t": "arcana", "title": a["name"], "desc": a["desc"],
-			"icon": a["icon"], "act": func() -> void: _take_arcana(key)})
-	# 아르카나가 3개 미만 남으면 리밋 카드로 보충
-	var lb_used := {}
-	while out.size() < 3:
-		var lb := _limit_break_card(lb_used)
-		lb_used[lb["title"]] = true
-		out.append(lb)
-	return out
-
-
-func _take_arcana(key: String) -> void:
-	arcana_taken[key] = true
-	arcana_count += 1
-	match key:
-		"war":
-			player.damage_mult += 0.18
-			player.cooldown_mult = max(0.35, player.cooldown_mult * 0.92)
-		"hunter":
-			player.crit_chance += 0.12
-			player.crit_mult += 0.4
-		"tyrant":
-			player.amount += 1
-			player.area_mult += 0.18
-		"sanguine":
-			arcana_lifesteal += 0.005   # 전체 흡혈 대폭 하향 (명중 폭주로 무한회복 방지)
-		"tempest":
-			player.cooldown_mult = max(0.35, player.cooldown_mult * 0.85)
-		"abyss":
-			curse_mult += 0.35
-	_flash(Color(0.7, 0.4, 1.0, 0.55))   # 아르카나 보라 플래시
-	shake_t = max(shake_t, 0.25)
-	play_sfx("levelup", -2.0)
-
-
 # 리밋 브레이크 카드 풀 (중복 회피). 모든 성장 소진 후 레벨업이 낭비되지 않게.
 func _limit_break_card(used: Dictionary) -> Dictionary:
 	var pool := [
@@ -5892,7 +5989,7 @@ func _add_passive(key: String) -> void:
 			player.speed *= 1.08
 			player.pickup_radius += 15.0
 		"skull":
-			curse_mult += 0.12
+			run_pressure_mult += 0.12
 
 
 # 진화 조건 안내 문구
@@ -6090,7 +6187,9 @@ func _add_weapon(k: String) -> void:
 	# 한 번이라도 획득한 무기의 레시피는 이후 도감에서 재료까지 공개한다.
 	if EVO_RECIPE.has(k) and not meta.get("evo_known", {}).get(k, false):
 		meta.get_or_add("evo_known", {})[k] = true
-		Meta.save_data(meta)
+		# 자동 캡처·회귀 검사는 실제 사용자 세이브를 절대 변경하지 않는다.
+		if not "--autoshot" in OS.get_cmdline_user_args():
+			Meta.save_data(meta)
 
 func _p_hp() -> void:
 	player.max_hp += 25.0
@@ -6209,7 +6308,7 @@ func _apply_unlocked_relic_effects() -> void:
 	# _start_run에서 무기 추가·스탯 계산이 끝난 뒤 호출된다. yellow_sign(도감)·milky_map(지도)는
 	# 각각 도감/일시정지 화면에서 처리하므로 여기서는 스탯형 유물만 다룬다.
 	if _has_relic("witch_tear"):
-		curse_mult *= 1.12                           # 저주 +12% (고위험 고보상)
+		run_pressure_mult *= 1.12                    # 런 위협 +12% (고위험 고보상)
 		xp_mult *= 1.12                              # 경험치 +12%
 		greed_mult *= 1.12                           # 골드 +12%
 	if _has_relic("golden_mask"):
@@ -6222,7 +6321,7 @@ func _apply_unlocked_relic_effects() -> void:
 		player.armor += 1.0                          # 방어력 +1
 		player.regen += 0.25                         # 재생 +0.25/초
 	if _has_relic("black_chalice"):
-		arcana_lifesteal += 0.015                    # 모든 피해에 흡혈 1.5%
+		global_lifesteal += 0.015                    # 모든 피해에 흡혈 1.5%
 	if _has_relic("abyss_eye"):
 		xp_mult *= 1.10                              # 경험치 +10%
 	if _has_relic("soul_lantern"):
@@ -6235,124 +6334,32 @@ func _apply_unlocked_relic_effects() -> void:
 	# great_gospel(시작 무기 +1레벨)은 무기가 추가된 뒤라야 해 _start_run 무기 블록에서 처리한다.
 
 
-# 캐릭터 화면 축복 토글 라벨 갱신 (sel_modifier 빈={}=기본, MODIFIERS[1]=축복)
-func _refresh_blessing_btn() -> void:
-	if char_blessing_btn == null:
+# 던전 선택 화면의 가호 버튼. 클릭할 때마다 가호를 순환한다.
+func _refresh_stage_blessing() -> void:
+	if map_blessing_button == null:
 		return
 	var m: Dictionary = sel_modifier
 	if m.is_empty() or str(m.get("key", "none")) == "none":
-		char_blessing_btn.text = "축복 없음  (클릭해 순환 ▶)"
-		char_blessing_btn.modulate = Color(0.72, 0.74, 0.8)
+		map_blessing_button.text = "가호: 없음 · 클릭해 변경"
+		map_blessing_button.tooltip_text = "추가 효과 없이 원정합니다."
+		map_blessing_button.modulate = Color(0.72, 0.74, 0.8)
 	else:
-		char_blessing_btn.text = "%s\n%s" % [str(m.get("name", "")).replace("[축복] ", "✦ "), str(m.get("desc", ""))]
-		char_blessing_btn.modulate = m.get("color", Color(0.6, 0.85, 1.0))
+		var blessing_name := str(m.get("name", "")).replace("[축복] ", "")
+		map_blessing_button.text = "가호: %s · %s" % [blessing_name, str(m.get("desc", ""))]
+		map_blessing_button.tooltip_text = str(m.get("desc", ""))
+		map_blessing_button.modulate = m.get("color", Color(0.6, 0.85, 1.0))
 
 
-# 저주 위험 게이지를 parent에 (ox,oy) 기준으로 짓는다 (640×92 프레임 + 해골 + 5칸 세그먼트).
-func _build_curse_gauge(parent: Control, ox: float, oy: float) -> void:
-	var bw := 640.0
-	var bh := 92.0
-	var cx := ox + bw / 2.0
-	var box := Panel.new()
-	box.position = Vector2(ox, oy)
-	box.size = Vector2(bw, bh)
-	box.add_theme_stylebox_override("panel", _bar_bg())   # 다크 + 금테 (HUD 게이지와 통일)
-	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	parent.add_child(box)
-	var skull := TextureRect.new()
-	skull.texture = Assets.tex("res://assets/items/icon_skull.png")
-	skull.position = Vector2(ox + 22, oy + 24)
-	skull.size = Vector2(44, 44)
-	skull.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	skull.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	skull.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	parent.add_child(skull)
-	var title := Label.new()
-	title.text = "저주  CURSE"
-	title.position = Vector2(ox + 78, oy + 12)
-	title.size = Vector2(240, 28)
-	title.add_theme_font_size_override("font_size", 21)
-	title.add_theme_color_override("font_color", Color(0.9, 0.7, 0.7))
-	parent.add_child(title)
-	curse_level_label = Label.new()
-	curse_level_label.position = Vector2(ox + bw - 230, oy + 12)
-	curse_level_label.size = Vector2(210, 28)
-	curse_level_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	curse_level_label.add_theme_font_size_override("font_size", 21)
-	parent.add_child(curse_level_label)
-	var seg_w := 46.0
-	var seg_gap := 8.0
-	var seg_total := CURSE_MAX * seg_w + (CURSE_MAX - 1) * seg_gap
-	var seg_start := cx - seg_total / 2.0
-	var seg_y := oy + 50.0
-	var minus := Button.new()
-	minus.text = "◀"
-	minus.position = Vector2(seg_start - 58, seg_y - 2)
-	minus.size = Vector2(46, 30)
-	minus.add_theme_font_size_override("font_size", 20)
-	_style_button(minus, "res://assets/ui/button.png", 10.0, 2.0)
-	minus.pressed.connect(func() -> void:
-		sel_curse = maxi(0, sel_curse - 1)
-		play_sfx("hit", -18.0, 0.1)
-		_refresh_curse_dial())
-	parent.add_child(minus)
-	curse_segments.clear()
-	for i in CURSE_MAX:
-		var seg := Panel.new()
-		seg.position = Vector2(seg_start + i * (seg_w + seg_gap), seg_y)
-		seg.size = Vector2(seg_w, 24)
-		seg.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		parent.add_child(seg)
-		curse_segments.append(seg)
-	var plus := Button.new()
-	plus.text = "▶"
-	plus.position = Vector2(seg_start + seg_total + 12, seg_y - 2)
-	plus.size = Vector2(46, 30)
-	plus.add_theme_font_size_override("font_size", 20)
-	_style_button(plus, "res://assets/ui/button.png", 10.0, 2.0)
-	plus.pressed.connect(func() -> void:
-		sel_curse = mini(CURSE_MAX, sel_curse + 1)
-		play_sfx("hit", -18.0, 0.1)
-		_refresh_curse_dial())
-	parent.add_child(plus)
-	curse_dial_label = Label.new()
-	curse_dial_label.position = Vector2(ox, oy + bh + 6)
-	curse_dial_label.size = Vector2(bw, 34)
-	curse_dial_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	curse_dial_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	curse_dial_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	curse_dial_label.add_theme_font_size_override("font_size", 14)
-	parent.add_child(curse_dial_label)
-	_refresh_curse_dial()
-
-
-# 저주 게이지 갱신: 세그먼트 채움(주황→핏빛) + 레벨/효과 라벨 + 위험도 색상
-func _refresh_curse_dial() -> void:
-	if curse_dial_label == null:
-		return
-	# 세그먼트: 채워진 칸은 위험도에 따라 주황→핏빛, 빈 칸은 다크
-	for i in curse_segments.size():
-		var seg: Panel = curse_segments[i]
-		if i < sel_curse:
-			var t := float(i) / float(maxi(1, CURSE_MAX - 1))   # 0=주황 → 1=핏빛
-			seg.add_theme_stylebox_override("panel", _fill_box(Color.from_hsv(lerpf(0.08, 0.0, t), 0.85, 1.0)))
-		else:
-			seg.add_theme_stylebox_override("panel", _fill_box(Color(0.16, 0.14, 0.17)))
-	var f := float(sel_curse) / float(CURSE_MAX)
-	var danger := Color(1.0, 0.85 - 0.55 * f, 0.4 - 0.38 * f)   # 금색 → 붉은색
-	if curse_level_label:
-		curse_level_label.text = "Lv %d / %d" % [sel_curse, CURSE_MAX]
-		curse_level_label.add_theme_color_override("font_color", danger if sel_curse > 0 else Color(0.6, 0.62, 0.68))
-	if sel_curse <= 0:
-		curse_dial_label.text = "저주 없음 — 표준 난이도 (▶ 로 위험을 올려 보상을 키우세요)"
-		curse_dial_label.add_theme_color_override("font_color", Color(0.62, 0.64, 0.7))
-		return
-	var risk := int(round(CURSE_PER_LV * sel_curse * 100.0))
-	var g := int(round(CURSE_GREED * sel_curse * 100.0))
-	var xp := int(round(CURSE_XP * sel_curse * 100.0))
-	var lt := int(round(CURSE_LOOT * sel_curse * 100.0))
-	curse_dial_label.text = "적 수·체력·속도 +%d%%   ▶   골드 +%d%% · 경험치 +%d%% · 전리품 +%d%%" % [risk, g, xp, lt]
-	curse_dial_label.add_theme_color_override("font_color", danger)
+func _cycle_stage_blessing() -> void:
+	var current_key := str(sel_modifier.get("key", "none"))
+	var current_index := 0
+	for i in MODIFIERS.size():
+		if str(MODIFIERS[i].get("key", "none")) == current_key:
+			current_index = i
+			break
+	sel_modifier = MODIFIERS[(current_index + 1) % MODIFIERS.size()]
+	play_sfx("hit", -18.0, 0.1)
+	_refresh_stage_blessing()
 
 
 # 유물 세트 3종을 모두 해금했는지
@@ -6366,7 +6373,7 @@ func _has_relic_set(relics: Array) -> bool:
 # 유물 세트 시너지 보너스 적용 (개별 유물 효과 뒤, player 보장 시점에 호출)
 func _apply_relic_set_effects() -> void:
 	if _has_relic_set(RELIC_SETS[0]["relics"]):        # 심연의 계약
-		curse_mult *= 1.15
+		run_pressure_mult *= 1.15
 		xp_mult *= 1.12
 		if player: player.speed *= 1.05
 	if _has_relic_set(RELIC_SETS[1]["relics"]):        # 연금술사의 보고
@@ -6375,7 +6382,7 @@ func _apply_relic_set_effects() -> void:
 			player.pickup_radius += 40.0
 			player.area_mult += 0.08
 	if _has_relic_set(RELIC_SETS[2]["relics"]):        # 불멸의 심장
-		arcana_lifesteal += 0.02
+		global_lifesteal += 0.02
 		if player:
 			player.max_hp *= 1.12
 			player.hp = player.max_hp
@@ -6396,18 +6403,28 @@ func _prepare_selected_stage() -> bool:
 	return stage_layout != null and int(stage_layout.stage_id) == map_stage and stage_map_texture != null
 
 
+func _apply_difficulty_profile(d: Dictionary) -> void:
+	var profile := d if not d.is_empty() else _difficulty_by_key("normal")
+	sel_diff = profile.duplicate(true)
+	diff_enemy_hp = float(profile.get("enemy_hp", 1.0))
+	diff_enemy_speed = float(profile.get("enemy_speed", 1.0))
+	diff_spawn = float(profile.get("spawn", 1.0))
+	diff_loot = float(profile.get("loot", 1.0))
+	diff_gold_reward = float(profile.get("gold", 1.0))
+	diff_xp_reward = float(profile.get("xp", 1.0))
+	diff_gear_drop = float(profile.get("gear", 1.0))
+	diff_rarity_luck = float(profile.get("rarity_luck", 0.0))
+	diff_label = str(profile.get("label", "보통"))
+
+
 func _start_game(d: Dictionary) -> void:
 	if not _prepare_selected_stage():
 		push_error("Selected stage failed to initialize: %d" % sel_stage)
 	decorations.clear()
 	# 던전 모드: 선택 던전 번호를 난이도 티어로 고정(빙하=3층 몹 등). 캠페인/심연은 1에서 시작.
 	stage_num = map_stage if map_stage > 0 else 1
-	diff_enemy_hp = d["enemy_hp"]
-	diff_enemy_speed = d["enemy_speed"]
-	diff_spawn = d["spawn"]
-	diff_loot = float(d.get("loot", 1.0))
-	diff_label = d["label"]
-	# 모디파이어(저주/축복) 적용
+	_apply_difficulty_profile(d)
+	# 가호 적용
 	var mod := sel_modifier
 	diff_enemy_hp *= float(mod.get("enemy_hp", 1.0))
 	diff_enemy_speed *= float(mod.get("enemy_speed", 1.0))
@@ -6425,19 +6442,13 @@ func _start_game(d: Dictionary) -> void:
 	player.area_mult += 0.05 * up.get("area", 0)
 	player.amount += int(up.get("amount", 0)) / 2   # 추가 투사체: 2Lv당 +1 (뱀서 Amount PowerUp)
 	diff_loot *= 1.0 + 0.08 * up.get("luck", 0)      # 상자·전리품 확률
-	greed_mult = (1.0 + 0.12 * up.get("greed", 0)) * float(mod.get("gold", 1.0))
-	xp_mult = (1.0 + 0.08 * up.get("xp", 0)) * float(mod.get("xp", 1.0))
+	greed_mult = ((1.0 + 0.12 * up.get("greed", 0))
+		* float(mod.get("gold", 1.0)) * diff_gold_reward)
+	xp_mult = ((1.0 + 0.08 * up.get("xp", 0))
+		* float(mod.get("xp", 1.0)) * diff_xp_reward)
 	revives = int(up.get("revive", 0))
-	curse_mult = 1.0   # 저주 스탯 초기화 (skull 패시브로 상승)
-	# 저주 단계(런 전 다이얼): 적 강화 + 보상 증가. curse_mult가 양쪽에 곱해져 자동 성립.
-	if sel_curse > 0:
-		curse_mult *= 1.0 + CURSE_PER_LV * sel_curse   # 적 수·체력·속도 ↑ (골드·경험치도 동반 ↑)
-		greed_mult *= 1.0 + CURSE_GREED * sel_curse    # 추가 골드 보상
-		xp_mult *= 1.0 + CURSE_XP * sel_curse          # 추가 경험치 보상
-		diff_loot *= 1.0 + CURSE_LOOT * sel_curse      # 전리품 확률
-	arcana_count = 0
-	arcana_taken = {}
-	arcana_lifesteal = 0.0
+	run_pressure_mult = 1.0   # 패시브·유물의 런 중 추가 위협은 매 원정 초기화
+	global_lifesteal = 0.0
 	# 캐릭터 적용 (특화 배수 포함)
 	player.stages_data = GameConfig.char_stages(sel_char["key"])
 	player.set_stage(0)
@@ -6447,14 +6458,14 @@ func _start_game(d: Dictionary) -> void:
 	char_melee = float(sel_char.get("melee", 1.0))
 	char_ranged = float(sel_char.get("ranged", 1.0))
 	char_range = float(sel_char.get("range", 1.0))
-	# 축복 모디파이어 플레이어 보정 (이동속도·투사체는 성장 baseline 캡처 전에 적용)
+	# 가호 플레이어 보정 (이동속도·투사체는 성장 baseline 캡처 전에 적용)
 	player.speed *= float(mod.get("player_speed", 1.0))
 	player.amount += int(mod.get("player_amount", 0))
 	# 성장 특성 초기화 (speed 성장은 이 기준 속도의 %로 더함)
 	_growth_tier = 0
 	_base_speed = player.speed
-	player.max_hp *= float(d["player_hp"])
-	player.max_hp *= float(mod.get("player_hp", 1.0))   # 축복 최대 체력 보정
+	player.max_hp *= float(sel_diff.get("player_hp", 1.0))
+	player.max_hp *= float(mod.get("player_hp", 1.0))   # 가호 최대 체력 보정
 	player.hp = player.max_hp
 	_apply_unlocked_relic_effects()
 	_apply_relic_set_effects()
@@ -6463,7 +6474,9 @@ func _start_game(d: Dictionary) -> void:
 	run_gold = 0
 	ult_gauge = 0.0
 	skill_e_cd = 0.0
-	skill_space_cd = 0.0
+	player.dodge_t = 0.0
+	player.dodge_cd = 0.0
+	player.invuln = 0.0
 	# 런 시작: 마을 로드아웃(장착 세트)을 깊은복사로 이월. 런 중 변경이 마을 원본을 오염시키지 않음.
 	_ensure_gear_meta()
 	equipped = {"weapon": {}, "armor": {}, "trinket": {}}
@@ -6518,7 +6531,7 @@ func _start_game(d: Dictionary) -> void:
 	var sw2 := str(sel_char.get("weapon2", ""))
 	if sw2 != "":
 		_add_weapon(sw2)
-	# 모디파이어 「축복받은 시작」: 시작 무기를 추가 레벨로
+	# 가호 「축복받은 시작」: 시작 무기를 추가 레벨로
 	if mod.has("start_weapon"):
 		for j in int(mod["start_weapon"]) - 1:
 			_upgrade_weapon(sw)
@@ -6547,10 +6560,6 @@ func _start_game(d: Dictionary) -> void:
 		char_panel.visible = false
 	if stage_select_panel:
 		stage_select_panel.visible = false
-	if diff_panel:
-		diff_panel.visible = false
-	if modifier_panel:
-		modifier_panel.visible = false
 	state = State.PLAYING
 	get_tree().paused = false
 	_update_ui()
@@ -6618,7 +6627,7 @@ func _show_end(title: String, win: bool) -> void:
 	if win:
 		_grant_ach("first_win")
 		_grant_ach("win_" + str(sel_char.get("key", "corvius")))
-		if diff_label == "어려움":
+		if str(sel_diff.get("key", "")) in ["hard", "nightmare"]:
 			_grant_ach("hard_clear")
 		if not used_revive:
 			_grant_ach("no_revive")
@@ -6708,12 +6717,18 @@ func _continue_abyss() -> void:
 # ---------------------------------------------------------------------
 #  일시정지 (ESC)
 # ---------------------------------------------------------------------
-# E/Space 스킬 쿨다운 HUD 갱신 (준비=밝게, 쿨=남은 초)
+# E 스킬과 Space 회피 HUD 갱신 (준비=체크, 쿨=남은 초)
 func _refresh_skill_hud() -> void:
 	if skill_hud_label == null:
 		return
-	var et := "E ✓" if skill_e_cd <= 0.0 else "E %.0f" % ceil(skill_e_cd)
-	var st := "Space ✓" if skill_space_cd <= 0.0 else "Space %.0f" % ceil(skill_space_cd)
+	var active_def := _current_weapon_active_def()
+	var active_label := "%s %s" % [
+		str(active_def.get("glyph", "•")),
+		str(active_def.get("name", "무기 스킬")),
+	]
+	var et := "E %s ✓" % active_label if skill_e_cd <= 0.0 else "E %s %.1f" % [active_label, skill_e_cd]
+	var dodge_cd := player.dodge_cd if player else 0.0
+	var st := "Space 회피 ✓" if dodge_cd <= 0.0 else "Space 회피 %.1f" % dodge_cd
 	skill_hud_label.text = "%s     %s" % [et, st]
 
 
@@ -6759,62 +6774,277 @@ func _char_skill_element() -> String:
 	return str((CHAR_SKILLS.get(str(sel_char.get("key", "")), {}) as Dictionary).get("element", "phys"))
 
 
-func _fire_skillshot() -> void:
+func _primary_weapon_kind() -> String:
+	var equipped_weapon: Dictionary = equipped.get("weapon", {})
+	var gear_kind := str(equipped_weapon.get("weapon_kind", ""))
+	if gear_kind != "" and WEAPON_ACTIVE_ARCHETYPE.has(gear_kind):
+		return gear_kind
+	var starting_kind := str(sel_char.get("weapon", "soul_bolt"))
+	return starting_kind if WEAPON_ACTIVE_ARCHETYPE.has(starting_kind) else "soul_bolt"
+
+
+func _weapon_active_archetype(kind: String) -> String:
+	return str(WEAPON_ACTIVE_ARCHETYPE.get(kind, "staff"))
+
+
+func _weapon_active_def_for_kind(kind: String) -> Dictionary:
+	return WEAPON_ACTIVE_DEFS.get(_weapon_active_archetype(kind), WEAPON_ACTIVE_DEFS["staff"])
+
+
+func _current_weapon_active_def() -> Dictionary:
+	var weapon_kind := _primary_weapon_kind()
+	var active_def := _weapon_active_def_for_kind(weapon_kind).duplicate(true)
+	if equipped.get("weapon", {}).is_empty() and STARTING_WEAPON_ACTIVE_VARIANTS.has(weapon_kind):
+		var variant: Dictionary = STARTING_WEAPON_ACTIVE_VARIANTS[weapon_kind]
+		for key in variant:
+			active_def[key] = variant[key]
+	return active_def
+
+
+func _weapon_active_cooldown() -> float:
+	var active_def := _current_weapon_active_def()
+	var cooldown_mult := player.cooldown_mult if player else 1.0
+	return maxf(1.0, float(active_def.get("cd", 6.0)) * cooldown_mult)
+
+
+func _active_skill_element() -> String:
+	var equipped_weapon: Dictionary = equipped.get("weapon", {})
+	return str(equipped_weapon.get("element", _char_skill_element()))
+
+
+func _skill_aim_direction() -> Vector2:
 	if player == null:
-		return
-	var dir: Vector2 = get_global_mouse_position() - player.position
-	dir = dir.normalized() if dir.length() > 1.0 else Vector2.RIGHT
-	var reach := 720.0
-	var width := 34.0
-	var elem := _char_skill_element()
-	var col: Color = ELEMENT_COL.get(elem, Color(0.5, 0.9, 1.0))
-	var dmg: float = 120.0 * player.damage_mult * (1.0 + time_survived / 300.0)
-	for e in get_tree().get_nodes_in_group("enemies"):
-		if not is_instance_valid(e):
+		return Vector2.RIGHT
+	var dir := get_global_mouse_position() - player.position
+	if dir.length_squared() < 64.0:
+		dir = player._last_dir
+	return dir.normalized() if dir.length_squared() > 0.01 else Vector2.RIGHT
+
+
+func _skill_target_point(max_range: float = 520.0) -> Vector2:
+	var dir := _skill_aim_direction()
+	var to_mouse := get_global_mouse_position() - player.position
+	var distance := clampf(to_mouse.length(), 110.0, max_range)
+	var target := player.position + dir * distance
+	if stage_layout:
+		target = stage_layout.nearest_walkable(target, 4.0)
+	return target
+
+
+func _weapon_active_damage(base_damage: float, melee: bool) -> float:
+	var role_mult := char_melee if melee else char_ranged
+	var run_scale := 1.0 + minf(time_survived / 600.0, 3.0)
+	return base_damage * player.damage_mult * role_mult * run_scale
+
+
+func _damage_active_target(target, damage: float, element: String, crit: bool = false) -> void:
+	if target is Boss:
+		target.take_damage(damage, crit, element)
+	else:
+		target.take_damage(damage, crit, false, element)
+
+
+func _fire_weapon_active() -> bool:
+	if player == null:
+		return false
+	var dir := _skill_aim_direction()
+	player._face_direction(dir)
+	match _weapon_active_archetype(_primary_weapon_kind()):
+		"sword":
+			_fire_sword_active(dir)
+		"axe":
+			_fire_axe_active()
+		"dagger":
+			_fire_dagger_active(dir)
+		"spear":
+			_fire_spear_active(dir)
+		_:
+			_fire_staff_active()
+	return true
+
+
+# 검 — 반격의 호: 짧은 무적과 넓은 전방 베기로 위험한 근접전을 뒤집는다.
+func _fire_sword_active(dir: Vector2) -> void:
+	var element := _active_skill_element()
+	var col: Color = ELEMENT_COL.get(element, Color.WHITE)
+	var reach := 180.0 * player.area_mult
+	var damage := _weapon_active_damage(108.0, true)
+	var blood_variant: bool = equipped.get("weapon", {}).is_empty() and _primary_weapon_kind() == "blood_sword"
+	var blood_heal := 0.0
+	player.invuln = maxf(player.invuln, 0.42)
+	player.play_attack()
+	for target in _enemies_and_boss():
+		if not is_instance_valid(target):
 			continue
-		var to: Vector2 = e.position - player.position
-		var along: float = to.dot(dir)
-		if along < 0.0 or along > reach:
-			continue
-		if (to - dir * along).length() < width + e.radius:
-			e.take_damage(dmg, true, false, elem)
-			e.shove(player.position, 130.0)
-	if boss and is_instance_valid(boss):
-		var tb: Vector2 = boss.position - player.position
-		var al: float = tb.dot(dir)
-		if al > 0.0 and al < reach and (tb - dir * al).length() < width + boss.radius:
-			boss.take_damage(dmg * 1.5, true, elem)
-	# 코드 빔(bolt)을 플레이어→방향으로 (캐릭터 속성색)
-	var beam := Effect.new()
-	beam.kind = "bolt"
-	beam.position = player.position + dir * reach
-	beam.from_global = player.position
-	beam.col = col
-	beam.life = 0.24
-	beam.max_life = 0.24
-	add_child(beam)
-	play_sfx("hit", -6.0)
+		var to: Vector2 = (target as Node2D).position - player.position
+		if to.length() <= reach + float(target.radius) and to.normalized().dot(dir) > 0.22:
+			_damage_active_target(target, damage, element)
+			if blood_variant:
+				blood_heal += damage * 0.06
+			if target.has_method("shove"):
+				target.shove(player.position, 240.0)
+	if blood_heal > 0.0:
+		player.hp = minf(player.max_hp, player.hp + minf(blood_heal, player.max_hp * 0.12))
+	_break_near(player.position + dir * reach * 0.45, reach * 0.75, damage)
+	_spawn_proc_fx("cleave", player.position, reach, col, 0.34, dir, player.position + dir * reach)
+	play_sfx("shoot", -7.0, 0.08)
 	shake_t = maxf(shake_t, 0.12)
 
 
-# Space 노바: 플레이어 주변 원형 폭발 (넉백+딜). 포위 대응 스킬.
-func _fire_nova() -> void:
-	if player == null:
-		return
-	var rad := 220.0
-	var elem := _char_skill_element()
-	var col: Color = ELEMENT_COL.get(elem, Color(0.4, 0.9, 1.0))
-	var dmg: float = 70.0 * player.damage_mult * (1.0 + time_survived / 300.0)
-	for e in get_tree().get_nodes_in_group("enemies"):
-		if is_instance_valid(e) and player.position.distance_to(e.position) < rad + e.radius:
-			e.take_damage(dmg, true, false, elem)
-			e.shove(player.position, 320.0)
-	if boss and is_instance_valid(boss) and player.position.distance_to(boss.position) < rad + boss.radius:
-		boss.take_damage(dmg, true, elem)
-	_spawn_proc_fx("ring", player.position, rad * 2.0, col, 0.4)
-	_spawn_proc_fx("burst", player.position, rad * 0.5, col.lightened(0.3), 0.35)
-	play_sfx("ult", -12.0)
-	shake_t = maxf(shake_t, 0.18)
+# 도끼 — 파쇄 강타: 주변을 확실히 비우는 느리고 강한 군중 제어기.
+func _fire_axe_active() -> void:
+	var element := _active_skill_element()
+	var col: Color = ELEMENT_COL.get(element, Color(0.9, 0.65, 0.3))
+	var radius := 172.0 * player.area_mult
+	var damage := _weapon_active_damage(152.0, true)
+	player.play_attack()
+	for target in _enemies_and_boss():
+		if not is_instance_valid(target):
+			continue
+		if player.position.distance_to((target as Node2D).position) <= radius + float(target.radius):
+			_damage_active_target(target, damage, element)
+			if target.has_method("apply_slow"):
+				target.apply_slow(0.72, 1.8)
+			if target.has_method("shove"):
+				target.shove(player.position, 330.0)
+	_break_near(player.position, radius, damage)
+	_spawn_proc_fx("ring", player.position, radius, col, 0.46)
+	_spawn_proc_fx("burst", player.position, radius * 0.7, col, 0.32)
+	spawn_fx("fx_quake_spike", player.position, radius * 0.95)
+	play_sfx("ult", -9.0, 0.10)
+	shake_t = maxf(shake_t, 0.22)
+
+
+# 지팡이 — 원소 폭발: 같은 조작이어도 장비 접두 속성에 따라 부가효과가 바뀐다.
+func _fire_staff_active(target_override: Vector2 = Vector2.ZERO) -> void:
+	var element := _active_skill_element()
+	var col: Color = ELEMENT_COL.get(element, Color(0.65, 0.85, 1.0))
+	var character_weapon: bool = equipped.get("weapon", {}).is_empty()
+	var primary_kind := _primary_weapon_kind()
+	var target_point := target_override if target_override != Vector2.ZERO else _skill_target_point()
+	if character_weapon and primary_kind == "aura":
+		target_point = player.position
+	var radius := 118.0 * player.area_mult
+	var damage := _weapon_active_damage(126.0, false)
+	if element == "fire":
+		damage *= 1.15
+	elif element == "holy":
+		player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.06)
+	player.play_attack()
+	for target in _enemies_and_boss():
+		if not is_instance_valid(target):
+			continue
+		if target_point.distance_to((target as Node2D).position) <= radius + float(target.radius):
+			_damage_active_target(target, damage, element)
+			if element == "ice" and target.has_method("apply_slow"):
+				target.apply_slow(0.62, 2.4)
+			elif element == "dark" and target.has_method("apply_slow"):
+				target.apply_slow(0.38, 1.8)
+			elif element == "phys" and target.has_method("shove"):
+				target.shove(target_point, 190.0)
+	_break_near(target_point, radius, damage)
+	_spawn_proc_fx("ring", target_point, radius, col, 0.42)
+	_spawn_proc_fx("burst", target_point, radius * 0.72, col, 0.36)
+	match element:
+		"fire":
+			spawn_fx("fx_explosion", target_point, radius * 1.25)
+		"ice":
+			spawn_fx("fx_absolzero", target_point, radius * 1.35)
+		"holy":
+			spawn_fx("fx_judgment", target_point, radius * 1.35)
+		"dark":
+			spawn_fx("fx_plague", target_point, radius * 1.35)
+		_:
+			spawn_fx("fx_quake_spike", target_point, radius * 1.15)
+	play_sfx("ult", -10.0, 0.08)
+	shake_t = maxf(shake_t, 0.14)
+
+
+# 단검 — 그림자 난무: 좁은 부채꼴에 고유 치명타 보정을 가진 단검을 쏟아낸다.
+func _fire_dagger_active(dir: Vector2) -> void:
+	var element := _active_skill_element()
+	var col: Color = ELEMENT_COL.get(element, Color(0.85, 0.9, 1.0))
+	var shots := 7 + mini(player.amount, 3)
+	var damage := _weapon_active_damage(27.0, false)
+	var primary_kind := _primary_weapon_kind()
+	player.play_attack()
+	for i in shots:
+		var dagger := Arrow.new()
+		dagger.damage = damage
+		dagger.pierce = 0
+		dagger.radius = 6.0
+		dagger.crit_chance = 0.55
+		dagger.crit_mult = 2.2
+		match primary_kind:
+			"spread_shot":
+				dagger.anim_dir = "res://assets/anim/proj_bullet"
+				dagger.sprite_path = "res://assets/items/icon_spreadshot.png"
+				dagger.scale_mul = 0.85
+			"arrow":
+				dagger.anim_dir = "res://assets/anim/proj_arrow"
+				dagger.sprite_path = "res://assets/items/arrow.png"
+			"venom":
+				dagger.anim_dir = "res://assets/anim/proj_venom"
+				dagger.sprite_path = "res://assets/items/icon_venom.png"
+			"boomerang":
+				dagger.anim_dir = "res://assets/anim/proj_boomerang"
+				dagger.sprite_path = "res://assets/items/icon_boomerang.png"
+				dagger.spin = 20.0
+			"chakram":
+				dagger.anim_dir = "res://assets/anim/proj_chakram"
+				dagger.sprite_path = "res://assets/items/icon_chakram.png"
+				dagger.spin = 22.0
+			_:
+				dagger.anim_dir = "res://assets/anim/proj_knife"
+				dagger.sprite_path = "res://assets/items/sword.png"
+				dagger.spin = 24.0
+				dagger.scale_mul = 0.95
+		dagger.trail = true
+		dagger.trail_col = col
+		dagger.life = 0.92 * char_range
+		dagger.position = player.position + Vector2(randf_range(-5.0, 5.0), randf_range(-5.0, 5.0))
+		var spread := (float(i) - float(shots - 1) / 2.0) * 0.105
+		dagger.velocity = dir.rotated(spread + randf_range(-0.025, 0.025)) * 920.0
+		add_child(dagger)
+	_spawn_proc_fx("burst", player.position + dir * 22.0, 42.0, col, 0.20, dir)
+	play_sfx("shoot", -10.0, 0.06)
+	shake_t = maxf(shake_t, 0.07)
+
+
+# 창 — 돌파 찌르기: 짧은 무적 돌진 뒤 일직선의 적을 모두 관통한다.
+func _fire_spear_active(dir: Vector2) -> void:
+	var element := _active_skill_element()
+	var col: Color = ELEMENT_COL.get(element, Color(0.8, 0.9, 1.0))
+	var ice_variant: bool = equipped.get("weapon", {}).is_empty() and _primary_weapon_kind() == "ice_lance"
+	var lunge_target := player.position + dir * 78.0
+	if stage_layout:
+		lunge_target = stage_layout.resolve_move(player.position, lunge_target, player.radius)
+	else:
+		lunge_target.x = clampf(lunge_target.x, player.radius, player.world_size.x - player.radius)
+		lunge_target.y = clampf(lunge_target.y, player.radius, player.world_size.y - player.radius)
+	player.position = lunge_target
+	player.invuln = maxf(player.invuln, 0.24)
+	player.play_attack()
+	var spear := Arrow.new()
+	spear.damage = _weapon_active_damage(146.0, false)
+	spear.pierce = 99
+	spear.radius = 11.0
+	spear.anim_dir = "res://assets/anim/proj_icelance" if ice_variant else "res://assets/anim/proj_spear"
+	spear.sprite_path = "res://assets/items/icon_icelance.png" if ice_variant else "res://assets/items/icon_spear.png"
+	spear.scale_mul = 1.65
+	spear.trail = true
+	spear.trail_col = col
+	if ice_variant:
+		spear.slow_amount = 0.58
+		spear.slow_time = 2.2
+		spear.fx_hit = "fx_frost"
+	spear.life = 1.05 * char_range
+	spear.position = player.position
+	spear.velocity = dir * 980.0
+	add_child(spear)
+	_spawn_proc_fx("slash", player.position, 92.0, col, 0.22, dir, player.position + dir * 92.0)
+	play_sfx("dash", -8.0, 0.08)
+	shake_t = maxf(shake_t, 0.11)
 
 
 # 궁극기: 화면 전역 대형 폭발 (능동 스킬 Phase 1). 게이지 소모.
@@ -6934,16 +7164,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		if state == State.PLAYING and ult_gauge >= 1.0:
 			_fire_ultimate()
 			get_viewport().set_input_as_handled()
-	# E: 스킬샷 (쿨다운) / Space: 노바 (쿨다운)
+	# E: 현재 주무기 아키타입 액티브 / Space: 이동 방향 회피
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_E:
 		if state == State.PLAYING and skill_e_cd <= 0.0:
-			_fire_skillshot()
-			skill_e_cd = SKILL_E_MAX
-			get_viewport().set_input_as_handled()
+			if _fire_weapon_active():
+				skill_e_cd = _weapon_active_cooldown()
+				get_viewport().set_input_as_handled()
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_SPACE:
-		if state == State.PLAYING and skill_space_cd <= 0.0:
-			_fire_nova()
-			skill_space_cd = SKILL_SPACE_MAX
+		if state == State.PLAYING and player and player.try_dodge():
+			play_sfx("dash", -10.0, 0.08)
 			get_viewport().set_input_as_handled()
 	# F3: 성능 카운터 토글
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F3:
@@ -7067,7 +7296,7 @@ func _build_pause_info() -> String:
 # 메뉴 화면 전환 (페이드 + 슬라이드 입장 연출)
 func _goto_screen(target: Control) -> void:
 	play_sfx("select", -12.0)
-	for p in [title_panel, char_panel, stage_select_panel, diff_panel, modifier_panel]:
+	for p in [title_panel, char_panel, stage_select_panel]:
 		if p:
 			p.visible = (p == target)
 	target.modulate = Color(1, 1, 1, 0)
@@ -7092,10 +7321,28 @@ func _select_char(c: Dictionary) -> void:
 
 func _select_stage(stage: int) -> void:
 	sel_stage = clampi(stage, 1, FINAL_STAGE)
-	# 난이도 삭제(저주 게이지로 대체) → 보통 고정 baseline으로 바로 시작.
-	# 저주 단계(sel_curse)·축복(sel_modifier)은 캐릭터 화면에서 이미 선택됨.
-	sel_diff = GameConfig.difficulties()[1]
+	if sel_diff.is_empty():
+		sel_diff = _difficulty_by_key("normal")
 	_start_game(sel_diff)
+
+
+func _difficulty_by_key(key: String) -> Dictionary:
+	var difficulties := GameConfig.difficulties()
+	if difficulties.is_empty():
+		return {}
+	var fallback: Dictionary = difficulties[0]
+	for difficulty in difficulties:
+		if str(difficulty.get("key", "")) == "normal":
+			fallback = difficulty
+		if str(difficulty.get("key", "")) == key:
+			return difficulty
+	return fallback
+
+
+func _choose_stage_difficulty(key: String) -> void:
+	sel_diff = _difficulty_by_key(key)
+	_refresh_stage_selection()
+	play_sfx("select", -12.0)
 
 
 func _choose_stage_card(stage: int) -> void:
@@ -7118,6 +7365,20 @@ func _run_map_mouse_click_test() -> bool:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	var errors: Array[String] = []
+	if map_difficulty_buttons.size() != GameConfig.difficulties().size():
+		errors.append("difficulty buttons were not built")
+	else:
+		map_difficulty_buttons[-1].emit_signal("pressed")
+		await get_tree().process_frame
+		if str(sel_diff.get("key", "")) != "nightmare":
+			errors.append("difficulty button did not select nightmare")
+	if map_blessing_button == null:
+		errors.append("blessing button was not built")
+	else:
+		map_blessing_button.emit_signal("pressed")
+		await get_tree().process_frame
+		if str(sel_modifier.get("key", "none")) == "none":
+			errors.append("blessing button did not advance the blessing")
 	for requested_stage in range(2, FINAL_STAGE + 1):
 		var target := map_cards[requested_stage - 1]
 		var click_pos := target.get_global_rect().get_center()
@@ -7169,21 +7430,39 @@ func _run_map_mouse_click_test() -> bool:
 
 
 func _refresh_stage_selection() -> void:
+	if sel_diff.is_empty():
+		sel_diff = _difficulty_by_key("normal")
 	if map_cards.is_empty():
 		return
 	sel_stage = clampi(sel_stage if sel_stage > 0 else 1, 1, FINAL_STAGE)
 	var selected_data: Dictionary = GameConfig.stage_info(sel_stage)
+	var difficulty: Dictionary = sel_diff
 	# 던전별 몹 테마 안내 (stage_roster와 일치).
 	var mob_themes := ["언데드", "화염", "냉기", "공허", "마족"]
 	if map_detail_label:
 		var wk := str(selected_data.get("boss_weak", ""))
 		var weak_hint := "보스 약점: %s" % str(ELEMENT_NAME.get(wk, "")) if wk != "" else "보스 약점: 없음"
-		map_detail_label.text = "선택: %d번 · %s · %s 몹 · %s\n5분 생존 후 던전 보스 → 처치 시 클리어" % [
-			sel_stage, selected_data["name"], mob_themes[sel_stage - 1], weak_hint
+		var spawn_rate := 1.0 / maxf(0.01, float(difficulty.get("spawn", 1.0)))
+		map_detail_label.text = "%d. %s · %s 몹 · %s · 5분 후 보스\n[%s] 적 HP ×%.2f · 출현 ×%.2f  /  골드 ×%.2f · 장비 ×%.2f" % [
+			sel_stage, selected_data["name"], mob_themes[sel_stage - 1], weak_hint,
+			difficulty.get("label", "보통"), difficulty.get("enemy_hp", 1.0), spawn_rate,
+			difficulty.get("gold", 1.0), difficulty.get("gear", 1.0)
 		]
 	if map_confirm_button:
 		map_confirm_button.disabled = sel_stage > unlocked_stage_count
 		map_confirm_button.text = "%s 입장" % str(selected_data["name"])
+	var selected_difficulty_key := str(difficulty.get("key", "normal"))
+	for difficulty_index in map_difficulty_buttons.size():
+		var difficulty_button := map_difficulty_buttons[difficulty_index]
+		var difficulty_data: Dictionary = GameConfig.difficulties()[difficulty_index]
+		var is_difficulty_selected := str(difficulty_data.get("key", "")) == selected_difficulty_key
+		difficulty_button.text = "%s%s · %s" % [
+			"◆ " if is_difficulty_selected else "",
+			difficulty_data.get("label", ""),
+			difficulty_data.get("reward_tag", "")
+		]
+		difficulty_button.modulate = (difficulty_data.get("color", Color.WHITE)
+			if is_difficulty_selected else Color(0.56, 0.57, 0.64))
 	for card_index in map_cards.size():
 		var stage_no := card_index + 1
 		var card := map_cards[card_index]
@@ -7787,10 +8066,10 @@ func _build_ui(s: Vector2) -> void:
 	ult_bar_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	ult_bar_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud.add_child(ult_bar_label)
-	# E/Space 스킬 쿨다운 표시 (궁극 바 위)
+	# 현재 무기 E 이름 / Space 회피 상태 표시 (궁극 바 위)
 	skill_hud_label = Label.new()
-	skill_hud_label.position = Vector2(s.x / 2.0 - 150, s.y - 54)
-	skill_hud_label.size = Vector2(300, 18)
+	skill_hud_label.position = Vector2(s.x / 2.0 - 240, s.y - 54)
+	skill_hud_label.size = Vector2(480, 18)
 	skill_hud_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	skill_hud_label.add_theme_font_size_override("font_size", 12)
 	skill_hud_label.add_theme_constant_override("outline_size", 3)
@@ -8178,6 +8457,15 @@ func _build_ui(s: Vector2) -> void:
 	pause_map_rect.visible = false
 	pause_panel.add_child(pause_map_rect)
 
+	var pause_controls := Label.new()
+	pause_controls.text = "[ 조작 ]\nWASD / 방향키  이동\nSpace  회피 · E  무기 스킬\nQ  궁극기 · I  인벤토리"
+	pause_controls.position = Vector2(s.x / 2.0 + 40, 452)
+	pause_controls.size = Vector2(290, 104)
+	pause_controls.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	pause_controls.add_theme_font_size_override("font_size", 13)
+	pause_controls.add_theme_color_override("font_color", Color(0.82, 0.84, 0.92))
+	pause_panel.add_child(pause_controls)
+
 	var resume_btn := Button.new()
 	resume_btn.text = Loc.t("resume")
 	resume_btn.position = Vector2(pbx0, pby)
@@ -8203,7 +8491,7 @@ func _build_ui(s: Vector2) -> void:
 	pause_panel.add_child(quit_btn)
 
 	# ─────────────────────────────────────────
-	#  타이틀 플로우 (가로): 타이틀 → 캐릭터 선택 → 난이도 선택
+	#  타이틀 플로우: 타이틀 → 캐릭터 선택 → 던전·난이도·가호 선택
 	# ─────────────────────────────────────────
 	title_panel = Control.new()
 	overlay.add_child(title_panel)
@@ -8355,25 +8643,59 @@ func _build_ui(s: Vector2) -> void:
 	cttl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	char_panel.add_child(cttl)
 
-	# 하단: 저주 위험 게이지 (뱀서식 통합 — 캐릭터+저주를 한 화면에서 고르고 맵으로).
-	# 캐릭터 상세(스탯)는 좌측 [세부 스탯] 패널이 담당한다.
-	_build_curse_gauge(char_panel, 294.0, 474.0)
-	# 축복 토글 (기본 ↔ 축복받은 시작). 저주와 별개의 리스크/리워드 옵션.
-	char_blessing_btn = Button.new()
-	char_blessing_btn.position = Vector2(s.x / 2.0 - 230, s.y - 78)
-	char_blessing_btn.size = Vector2(460, 52)
-	char_blessing_btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	char_blessing_btn.add_theme_font_size_override("font_size", 13)
-	_style_button(char_blessing_btn, "res://assets/ui/button.png", 10.0, 2.0)
-	char_blessing_btn.pressed.connect(func() -> void:
-		var bi := MODIFIERS.find(sel_modifier)
-		if bi < 0:
-			bi = 0
-		sel_modifier = MODIFIERS[(bi + 1) % MODIFIERS.size()]
-		play_sfx("hit", -18.0, 0.1)
-		_refresh_blessing_btn())
-	char_panel.add_child(char_blessing_btn)
-	_refresh_blessing_btn()
+	# 저주 다이얼이 있던 자리는 선택 영웅의 정체성을 보여주는 RPG 상세 패널로 사용한다.
+	var char_detail_bg := Panel.new()
+	char_detail_bg.position = Vector2(292, 470)
+	char_detail_bg.size = Vector2(644, 148)
+	char_detail_bg.add_theme_stylebox_override("panel", _slot_style())
+	char_detail_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	char_panel.add_child(char_detail_bg)
+
+	char_det_spr = TextureRect.new()
+	char_det_spr.position = Vector2(310, 482)
+	char_det_spr.size = Vector2(92, 118)
+	char_det_spr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	char_det_spr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	char_det_spr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	char_det_spr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	char_panel.add_child(char_det_spr)
+
+	char_det_name = Label.new()
+	char_det_name.position = Vector2(420, 480)
+	char_det_name.size = Vector2(410, 34)
+	char_det_name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	char_det_name.add_theme_font_size_override("font_size", 22)
+	char_det_name.add_theme_constant_override("outline_size", 4)
+	char_det_name.add_theme_color_override("font_outline_color", Color(0.02, 0.02, 0.03))
+	char_panel.add_child(char_det_name)
+
+	char_det_desc = Label.new()
+	char_det_desc.position = Vector2(420, 518)
+	char_det_desc.size = Vector2(410, 82)
+	char_det_desc.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	char_det_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	char_det_desc.add_theme_font_size_override("font_size", 14)
+	char_det_desc.add_theme_color_override("font_color", Color(0.86, 0.88, 0.95))
+	char_det_desc.add_theme_constant_override("outline_size", 3)
+	char_det_desc.add_theme_color_override("font_outline_color", Color(0.02, 0.02, 0.03))
+	char_panel.add_child(char_det_desc)
+
+	char_det_wicon = TextureRect.new()
+	char_det_wicon.position = Vector2(850, 500)
+	char_det_wicon.size = Vector2(58, 58)
+	char_det_wicon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	char_det_wicon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	char_det_wicon.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	char_det_wicon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	char_panel.add_child(char_det_wicon)
+	var char_weapon_caption := Label.new()
+	char_weapon_caption.text = "시작 무기"
+	char_weapon_caption.position = Vector2(830, 564)
+	char_weapon_caption.size = Vector2(98, 24)
+	char_weapon_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	char_weapon_caption.add_theme_font_size_override("font_size", 13)
+	char_weapon_caption.add_theme_color_override("font_color", Color(1.0, 0.84, 0.45))
+	char_panel.add_child(char_weapon_caption)
 
 	# 뱀서식 타일 그리드: 4열, 타일 = 금테 프레임 + 이름 + 스프라이트 + 시작무기 아이콘.
 	# 타일을 누르면 좌측 스탯 패널과 하단 상세가 갱신됨 (확정은 [확인]).
@@ -8479,7 +8801,7 @@ func _build_ui(s: Vector2) -> void:
 	cback.pressed.connect(func() -> void: _goto_screen(title_panel))
 	char_panel.add_child(cback)
 
-	# 맵 선택으로 (뱀서: 타일=미리보기, 캐릭터+저주+축복 확정 후 맵 화면 → 바로 입장)
+	# 던전 준비 화면으로 이동한다. 난이도와 가호는 다음 화면에서 함께 확정한다.
 	var cok := Button.new()
 	cok.text = "맵 선택 ▶"
 	cok.position = Vector2(s.x - 210.0, s.y - 76)
@@ -8624,116 +8946,84 @@ func _build_ui(s: Vector2) -> void:
 		stage_button.pressed.connect(_choose_stage_card.bind(stage_index))
 		stage_select_panel.add_child(stage_button)
 		map_cards.append(stage_button)
+
+	# 던전과 같은 화면에서 난이도를 확정한다. spawn은 낮을수록 출현이 빠르다.
+	map_difficulty_buttons.clear()
+	var difficulty_options := GameConfig.difficulties()
+	var difficulty_gap := 6.0
+	var difficulty_row_width := 576.0
+	var difficulty_button_width := (
+		difficulty_row_width - difficulty_gap * float(difficulty_options.size() - 1)
+	) / float(difficulty_options.size())
+	for difficulty_index in difficulty_options.size():
+		var difficulty_data: Dictionary = difficulty_options[difficulty_index]
+		var difficulty_button := Button.new()
+		difficulty_button.position = frame_pos + Vector2(
+			55.0 + difficulty_index * (difficulty_button_width + difficulty_gap), 238.0
+		) * frame_scale
+		difficulty_button.size = Vector2(difficulty_button_width, 23.0) * frame_scale
+		difficulty_button.add_theme_font_size_override("font_size", maxi(10, int(12.0 * frame_scale)))
+		difficulty_button.tooltip_text = (
+			"%s\n플레이어 HP ×%.2f · 적 HP ×%.2f · 속도 ×%.2f · 출현 ×%.2f\n"
+			+ "골드 ×%.2f · 경험치 ×%.2f · 장비 ×%.2f"
+		) % [
+			difficulty_data.get("desc", ""),
+			difficulty_data.get("player_hp", 1.0),
+			difficulty_data.get("enemy_hp", 1.0),
+			difficulty_data.get("enemy_speed", 1.0),
+			1.0 / maxf(0.01, float(difficulty_data.get("spawn", 1.0))),
+			difficulty_data.get("gold", 1.0),
+			difficulty_data.get("xp", 1.0),
+			difficulty_data.get("gear", 1.0),
+		]
+		_style_button(difficulty_button, "res://assets/ui/button.png", 10.0, 2.0)
+		difficulty_button.pressed.connect(
+			_choose_stage_difficulty.bind(str(difficulty_data.get("key", "normal")))
+		)
+		stage_select_panel.add_child(difficulty_button)
+		map_difficulty_buttons.append(difficulty_button)
+
 	map_detail_label = Label.new()
-	map_detail_label.position = frame_pos + Vector2(154, 263) * frame_scale
-	map_detail_label.size = Vector2(380, 56) * frame_scale
+	map_detail_label.position = frame_pos + Vector2(55, 263) * frame_scale
+	map_detail_label.size = Vector2(576, 62) * frame_scale
 	map_detail_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	map_detail_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	map_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	map_detail_label.add_theme_font_size_override("font_size", maxi(12, int(14.0 * frame_scale)))
+	map_detail_label.add_theme_font_size_override("font_size", maxi(11, int(12.0 * frame_scale)))
 	map_detail_label.add_theme_color_override("font_color", Color(0.90, 0.93, 1.0))
 	map_detail_label.add_theme_constant_override("outline_size", 3)
 	map_detail_label.add_theme_color_override("font_outline_color", Color(0.04, 0.04, 0.06))
 	stage_select_panel.add_child(map_detail_label)
-	map_confirm_button = Button.new()
-	map_confirm_button.position = frame_pos + Vector2(346, 330) * frame_scale
-	map_confirm_button.size = Vector2(120, 27) * frame_scale
-	map_confirm_button.add_theme_font_size_override("font_size", maxi(12, int(14.0 * frame_scale)))
-	_style_button(map_confirm_button, "res://assets/ui/button.png", 12.0, 2.0)
-	map_confirm_button.pressed.connect(_confirm_stage_selection)
-	stage_select_panel.add_child(map_confirm_button)
-	_refresh_stage_selection()
+
 	var stback := Button.new()
 	stback.text = Loc.t("back")
-	stback.position = frame_pos + Vector2(232, 330) * frame_scale
-	stback.size = Vector2(100, 27) * frame_scale
+	stback.position = frame_pos + Vector2(55, 330) * frame_scale
+	stback.size = Vector2(90, 27) * frame_scale
 	stback.add_theme_font_size_override("font_size", maxi(12, int(14.0 * frame_scale)))
 	_style_button(stback, "res://assets/ui/button.png", 12.0, 2.0)
 	stback.pressed.connect(func() -> void: _goto_screen(char_panel))
 	stage_select_panel.add_child(stback)
 
-	# ── 난이도 선택 화면 ──
-	diff_panel = Control.new()
-	diff_panel.visible = false
-	overlay.add_child(diff_panel)
-	var ddim := ColorRect.new()
-	ddim.color = Color(0.04, 0.03, 0.07, 0.97)
-	ddim.size = s
-	diff_panel.add_child(ddim)
-	var dttl := Label.new()
-	dttl.text = Loc.t("diff_select")
-	dttl.position = Vector2(0, 50)
-	dttl.size = Vector2(s.x, 44)
-	dttl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	dttl.add_theme_font_size_override("font_size", 30)
-	dttl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
-	diff_panel.add_child(dttl)
+	map_blessing_button = Button.new()
+	map_blessing_button.position = frame_pos + Vector2(154, 330) * frame_scale
+	map_blessing_button.size = Vector2(338, 27) * frame_scale
+	map_blessing_button.add_theme_font_size_override("font_size", maxi(10, int(11.0 * frame_scale)))
+	map_blessing_button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_style_button(map_blessing_button, "res://assets/ui/button.png", 12.0, 2.0)
+	map_blessing_button.pressed.connect(_cycle_stage_blessing)
+	stage_select_panel.add_child(map_blessing_button)
 
-	var diffs := GameConfig.difficulties()
-	for i in diffs.size():
-		var d: Dictionary = diffs[i]
-		var b := Button.new()
-		b.text = "%s — %s" % [d["label"], d["desc"]]
-		b.position = Vector2(s.x / 2.0 - 280, 190 + i * 122)
-		b.size = Vector2(560, 98)
-		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		b.add_theme_font_size_override("font_size", 17)
-		b.modulate = d["color"]
-		_style_button(b, "res://assets/ui/button.png")
-		var dd := d
-		b.pressed.connect(func() -> void:
-			sel_diff = dd
-			_goto_screen(modifier_panel))
-		diff_panel.add_child(b)
-
-	var dback := Button.new()
-	dback.text = Loc.t("back")
-	dback.position = Vector2(30, s.y - 76)
-	dback.size = Vector2(140, 48)
-	_style_button(dback, "res://assets/ui/button.png")
-	dback.pressed.connect(func() -> void: _goto_screen(stage_select_panel))
-	diff_panel.add_child(dback)
-
-	# ── 모디파이어 선택 화면 ──
-	modifier_panel = Control.new()
-	modifier_panel.visible = false
-	overlay.add_child(modifier_panel)
-	var mdim := ColorRect.new()
-	mdim.color = Color(0.04, 0.03, 0.07, 0.97)
-	mdim.size = s
-	modifier_panel.add_child(mdim)
-	var mttl := Label.new()
-	mttl.text = "— 저주 · 축복 선택 —"
-	mttl.position = Vector2(0, 30)
-	mttl.size = Vector2(s.x, 44)
-	mttl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	mttl.add_theme_font_size_override("font_size", 30)
-	mttl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
-	modifier_panel.add_child(mttl)
-
-	# (저주 게이지는 캐릭터 화면으로 이동 — _build_curse_gauge. 이 화면은 더 이상 흐름에 없음.)
-	for i in MODIFIERS.size():
-		var mo: Dictionary = MODIFIERS[i]
-		var mb := Button.new()
-		mb.text = "%s — %s" % [mo["name"], mo["desc"]]
-		mb.position = Vector2(s.x / 2.0 - 320, 236 + i * 92)
-		mb.size = Vector2(640, 78)
-		mb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		mb.add_theme_font_size_override("font_size", 16)
-		mb.modulate = mo["color"]
-		_style_button(mb, "res://assets/ui/button.png")
-		var mm := mo
-		mb.pressed.connect(func() -> void:
-			sel_modifier = mm
-			_start_game(sel_diff))
-		modifier_panel.add_child(mb)
-	var mback := Button.new()
-	mback.text = Loc.t("back")
-	mback.position = Vector2(30, s.y - 76)
-	mback.size = Vector2(140, 48)
-	_style_button(mback, "res://assets/ui/button.png")
-	mback.pressed.connect(func() -> void: _goto_screen(diff_panel))
-	modifier_panel.add_child(mback)
+	map_confirm_button = Button.new()
+	map_confirm_button.position = frame_pos + Vector2(501, 330) * frame_scale
+	map_confirm_button.size = Vector2(130, 27) * frame_scale
+	map_confirm_button.add_theme_font_size_override("font_size", maxi(12, int(14.0 * frame_scale)))
+	_style_button(map_confirm_button, "res://assets/ui/button.png", 12.0, 2.0)
+	map_confirm_button.pressed.connect(_confirm_stage_selection)
+	stage_select_panel.add_child(map_confirm_button)
+	if sel_diff.is_empty():
+		sel_diff = _difficulty_by_key("normal")
+	_refresh_stage_blessing()
+	_refresh_stage_selection()
 
 	# 상점 패널
 	shop_panel = Control.new()

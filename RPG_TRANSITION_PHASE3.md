@@ -93,28 +93,30 @@ RPG 코어는 이미 완성되어 커밋됨:
 ## 4. Codex 작업 체크리스트 (대안 B 선택 시)
 
 ### 4-1. 아르카나 제거
-- [ ] `Main.gd` `ARCANA_MILE`(L223), `ARCANA_DEFS`(L224-237) 삭제
-- [ ] `_arcana_options()`, `_take_arcana()` 삭제
-- [ ] `_populate_levelup` 내 `is_arcana` 분기(L~5341, "◈ 아르카나 선택 ◈") 제거 → 일반 카드로
-- [ ] `arcana_count`/`arcana_taken`/`arcana_lifesteal` 변수 + 리셋(`_start_game`) + 사용처(피해 흡혈 L~3151) 정리
-- [ ] 도감(collection) 아르카나 카운트 표기 있으면 제거
-- [ ] (선택) 아르카나 효과 중 살리고 싶은 것(예: 흡혈)은 유물/장비 어픽스로 이전
-- [ ] 검증: 파싱 clean + 레벨업 카드 3장 정상(테스트 XP_TEST/evo-test 영향 확인)
+- [x] `Main.gd` `ARCANA_MILE`, `ARCANA_DEFS` 삭제
+- [x] `_arcana_options()`, `_take_arcana()` 삭제
+- [x] `_populate_levelup` 내 `is_arcana` 분기와 전용 타이틀 제거 → 일반 카드로 통일
+- [x] `arcana_count`/`arcana_taken` 런 상태 삭제, `arcana_lifesteal` 의존성 제거
+- [x] 도감(collection) 아르카나 카운트 표기 없음 확인
+- [x] 검은 성배·불멸의 심장 흡혈을 독립 `global_lifesteal`로 보존
+- [x] 검증: 파싱 clean + `CARD_POOL_OK` + `XP_TEST PASS` + `EVO_TEST PASS` + `DATA_TEST PASS`
 
 ### 4-2. 저주 → 던전 난이도 흡수
-- [ ] 던전 선택 화면(`_refresh_stage_selection`/stage_select UI)에 **난이도 셀렉터** 추가 (기존 `GameConfig.difficulties()` 재활용)
-- [ ] `sel_curse`/`curse_mult` 계산(L6434 등)을 선택 난이도 기반으로 매핑하거나 병합
-- [ ] 캐릭터 선택 화면의 저주 다이얼(`_build_curse_gauge`, `_refresh_curse_dial`) 제거 또는 난이도 표시로 교체
-- [ ] 저주 상수 `CURSE_*`(L366-370)는 난이도 배수로 흡수 후 정리
-- [ ] 검증: 각 난이도로 던전 입장 → 적 강화/보상 배수 정상
+- [x] 던전 선택 화면에 **쉬움/보통/어려움/악몽** 난이도 셀렉터 통합
+- [x] `sel_curse` 삭제, 선택 난이도가 적·플레이어·보상 배수를 직접 결정
+- [x] 캐릭터 화면의 저주 다이얼 제거, 빈 공간은 영웅 특성·시작 무기 상세로 교체
+- [x] `CURSE_*` 상수와 전용 UI 함수 삭제, 유물·패시브 위협은 `run_pressure_mult`로 분리
+- [x] 난이도별 골드·XP·장비 드롭·등급 운 보상 연결
+- [x] 검증: `DIFFICULTY_OK` + `BALANCE_TEST PASS` + 실제 UI 렌더 캡처
 
 ### 4-3. 축복 이동 (선택)
-- [ ] `MODIFIERS`(L347) 유지하되 진입 지점을 "던전 입장 전 가호 선택"으로 이동, 또는 대장간 소모품화
-- [ ] 완전 삭제를 택하면 `mod` 적용부(`_start_game`) 정리
+- [x] `MODIFIERS` 유지, 진입 지점을 던전 준비 화면의 "가호 1개 선택"으로 이동
+- [x] 사용되지 않던 별도 난이도·모디파이어 화면 제거
 
 ### 4-4. 마무리
-- [ ] 업적 "유니온 완성"(combo_master) 등은 유니온 유지하므로 그대로 OK
-- [ ] `tests/`에 자체 체크 1개 추가(예: 아르카나 제거 후 `_card_options`가 항상 ≥3장 반환)
+- [x] 업적 "유니온 완성"(combo_master) 등은 유니온 유지하므로 그대로 보존
+- [x] `tests/CardPoolTest.gd`: 일반/성장 소진 카드 선택 3장과 유물 흡혈 회귀 검사
+- [x] `tests/DifficultyTest.gd`: 4단계 위험·보상 순서와 런 프로필 적용 검사
 - [ ] 커밋 분리 권장: (1) 아르카나 제거 (2) 저주→난이도 (3) 축복 이동
 
 ---
@@ -125,9 +127,9 @@ RPG 코어는 이미 완성되어 커밋됨:
 EVO_RECIPE      Main.gd const L~115, 참조 ~15곳 (6113,6122,6153,6176,6184,6304,7915,9569,9626,9645,9656 + evo-test/DATA_TEST)
 UNION_DEFS      Main.gd L266
 COMBO_DEFS      Main.gd L240
-ARCANA_DEFS     Main.gd L224 / _arcana_options L5754 / gate L5341
-CURSE_*         Main.gd L366-370 / curse_mult L6434 / _build_curse_gauge, _refresh_curse_dial
-MODIFIERS       Main.gd L347 / _start_game 적용부(mod.get(...))
+ARCANA_DEFS     제거 완료(2026-07-28) / tests/CardPoolTest.gd에서 카드 풀 회귀 검사
+CURSE_*         제거 완료(2026-07-28) / 런 중 유물·패시브 위협은 run_pressure_mult로 분리
+MODIFIERS       던전 준비 화면 가호 버튼 / _start_game 적용부(mod.get(...))
 RELIC_DEFS      Main.gd L328 (유지)
 ```
 
