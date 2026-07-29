@@ -5535,7 +5535,15 @@ func _populate_levelup() -> void:
 	_fill_lvl_stats()
 	# M2: 주무기 숙련 분기가 대기 중이면 갈림길 2장 + 필러 1장을 강제로 보여준다.
 	var fork := _pending_mastery_fork()
-	var picks: Array = [fork[0], fork[1], _fork_filler_card()] if fork.size() == 2 else _pick3(_card_options())
+	var picks: Array
+	if fork.size() == 2:
+		picks = [fork[0], fork[1], _fork_filler_card()]
+	else:
+		picks = _pick3(_card_options())
+		# M2 숙련 최종 노드: 주무기 만렙이면 진화 카드를 확정 노출(1번 슬롯).
+		var evo := _pending_primary_evolution()
+		if not evo.is_empty():
+			picks[0] = evo
 	_cur_picks = picks
 	var top_rarity := ""   # 이번 판 카드 중 최고 등급 (등장 연출용)
 	for i in 3:
@@ -5863,7 +5871,11 @@ func _choose_card(c: Dictionary) -> void:
 #   t=0    → Lv2 (첫 강화는 바로)
 #   +99초당 +1  → Lv8은 약 t=594s(9.9분)에 해금 (EVO_START_TIME=600과 정렬)
 func _weapon_time_cap() -> int:
-	return clampi(2 + int(time_survived / 99.0), 2, MAX_WLEVEL)
+	# 던전(약 5분)에서는 주무기 숙련 Lv8을 던전 보스 시간(4분경)에 찍도록 빠르게 열고,
+	# 심연/일반 런에서는 뱀서 페이스(99초/레벨)를 유지한다.
+	# ponytail: 40초/레벨 → Lv8 ≈ t=240s. 던전 길이(DUNGEON_BOSS_TIME=300) 바뀌면 같이 조정.
+	var per: float = 40.0 if map_stage > 0 else 99.0
+	return clampi(2 + int(time_survived / per), 2, MAX_WLEVEL)
 
 
 # M2 무기 숙련 분기: 주무기가 숙련 4단계 직전(Lv3)이고 아직 분기를 안 골랐으면 갈림길 2장 반환.
@@ -5913,6 +5925,39 @@ func _take_mastery_branch(arch: String, bkey: String) -> void:
 	# 숙련 단계 진행: 주무기를 분기 레벨로 올린다(정상 진행 유지).
 	if int(weapons.get(primary_weapon, 0)) < MASTERY_FORK_LEVEL:
 		weapons[primary_weapon] = MASTERY_FORK_LEVEL
+
+
+# M2 숙련 최종 노드: 주무기가 만렙(Lv8)이고 아직 진화 안 했으면 진화 카드를 반환({}=없음).
+# 뱀서식 보스상자·10:00·재료 패시브 게이트를 우회 — 진화 = 숙련 완성의 확정 보상.
+func _pending_primary_evolution() -> Dictionary:
+	if primary_weapon == "" or not EVO_RECIPE.has(primary_weapon):
+		return {}
+	if int(weapons.get(primary_weapon, 0)) < MAX_WLEVEL or evolved.get(primary_weapon, false):
+		return {}
+	var pk: String = primary_weapon
+	var ev: Dictionary = EVO_RECIPE[primary_weapon]
+	return {"r": "legendary", "t": "evo", "new": true,
+		"title": "★ 진화 — %s" % str(ev["name"]),
+		"desc": "%s 숙련 완성 → 최종 무기로 진화" % WNAMES.get(primary_weapon, primary_weapon),
+		"icon": str(ev.get("icon", WICON.get(primary_weapon, ""))),
+		"act": func() -> void: _evolve_primary(pk)}
+
+
+# 주무기 진화 확정(카드 선택). 진화 상태 변경은 _evolve 재사용, 연출은 상자 진화와 동일.
+func _evolve_primary(kind: String) -> void:
+	if evolved.get(kind, false):
+		return
+	_evolve(kind)
+	if stage_label:
+		stage_label.text = "★진화★ %s!" % EVO_RECIPE[kind]["name"]
+		stage_label.visible = true
+	stage_banner_t = 2.6
+	play_sfx("levelup", -4.0)
+	shake_t = max(shake_t, 0.2)
+	if player:
+		spawn_fx("fx_divine", player.position, 300.0)
+	_grant_ach("legend_weapon")
+	_flash(Color(1.0, 1.0, 0.95, 0.62))   # 진화 화이트 플래시
 
 
 func _card_options() -> Array:

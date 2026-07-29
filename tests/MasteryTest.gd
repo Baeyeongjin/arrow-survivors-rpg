@@ -60,6 +60,31 @@ func _initialize() -> void:
 	game._take_mastery_branch("sword", "b")
 	_expect(game.mastery_branch == "sword:a", "이미 고른 분기가 재호출로 덮어써짐: %s" % game.mastery_branch)
 
+	# 6) 무기 시간캡: 던전(5분)에서 Lv8 도달 가능해야 함(진화 봉인 해제).
+	game.map_stage = 1
+	game.time_survived = 0.0
+	_expect(game._weapon_time_cap() == 2, "던전 초반 무기캡은 2여야 함: %d" % game._weapon_time_cap())
+	game.time_survived = 280.0
+	_expect(game._weapon_time_cap() == game.MAX_WLEVEL,
+		"던전 보스 시간(280s)에 무기캡이 Lv8이어야 진화 도달 가능: %d" % game._weapon_time_cap())
+	game.map_stage = 0   # 일반/심연은 느린 뱀서 페이스
+	_expect(game._weapon_time_cap() < game.MAX_WLEVEL,
+		"비던전 280s에서는 아직 만렙 캡이 아니어야 함: %d" % game._weapon_time_cap())
+
+	# 7) 숙련 최종 노드: 주무기 만렙 → 진화 카드, 그 외엔 없음.
+	game.map_stage = 1
+	game.primary_weapon = "cleave"
+	game.evolved = {}
+	game.weapons = {"cleave": game.MAX_WLEVEL}
+	var evo := game._pending_primary_evolution()
+	_expect(not evo.is_empty(), "주무기 만렙에 진화 카드가 떠야 함")
+	_expect(str(evo.get("title", "")).contains("진화"), "진화 카드 제목이 아님: %s" % str(evo.get("title", "")))
+	game.weapons = {"cleave": game.MAX_WLEVEL - 1}
+	_expect(game._pending_primary_evolution().is_empty(), "만렙 전에는 진화 카드가 없어야 함")
+	game.weapons = {"cleave": game.MAX_WLEVEL}
+	game.evolved = {"cleave": true}
+	_expect(game._pending_primary_evolution().is_empty(), "이미 진화했으면 진화 카드가 없어야 함")
+
 	game.free()
 	print("MASTERY_OK")
 	quit(0)
