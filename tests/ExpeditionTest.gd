@@ -56,6 +56,21 @@ func _initialize() -> void:
 	game.time_survived = 599.0
 	_expect(is_equal_approx(game._dungeon_elapsed(), 299.0),
 		"총 원정 시간과 현재 층 시간이 분리되지 않음")
+	game.kills = 18
+	game.run_damage_dealt = 420.0
+	game.run_damage_taken = 35.0
+	game.run_floor_start_kills = 7
+	game.run_floor_start_damage = 120.0
+	game.run_floor_start_taken = 10.0
+	game._record_current_floor(false)
+	_expect(game.run_floor_stats.size() == 1
+		and str(game.run_floor_stats[0]["outcome"]) == "death"
+		and int(game.run_floor_stats[0]["kills"]) == 11
+		and is_equal_approx(float(game.run_floor_stats[0]["damage_dealt"]), 300.0)
+		and is_equal_approx(float(game.run_floor_stats[0]["damage_taken"]), 25.0),
+		"사망 층의 증분 전투 기록 오류: %s" % str(game.run_floor_stats))
+	game._record_current_floor(true)
+	_expect(game.run_floor_stats.size() == 1, "같은 층 결과가 중복 기록됨")
 
 	# 3) 선택한 두 장비만 추출 표식이 붙고 나머지는 자동 분해된다.
 	game.inventory = [

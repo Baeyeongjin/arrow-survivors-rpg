@@ -9,6 +9,7 @@ enum State { TITLE, PLAYING, LEVELUP, GAMEOVER, VICTORY, PAUSED, ROUTE, EXTRACTI
 
 const HellFissureScript = preload("res://HellFissure.gd")
 const ExpeditionRulesScript = preload("res://ExpeditionRules.gd")
+const RunTelemetryScript = preload("res://RunTelemetry.gd")
 
 # 장판 무기는 독안개(poison_cloud) 하나만 남김 — 성수·용암지대 제거.
 # (공허구 void_orb는 VoidZone을 쓰지만 바닥 장판이 아니라 끌어당기는 블랙홀이라 유지)
@@ -569,6 +570,11 @@ var extraction_selected_ids: Dictionary = {}
 var extraction_limit := 0
 var extracted_gear_count := 0
 var auto_salvage_gold := 0
+var run_extracted_gear: Array = []
+var run_floor_stats: Array = []
+var run_floor_start_kills := 0
+var run_floor_start_damage := 0.0
+var run_floor_start_taken := 0.0
 var _pending_end_title := ""
 var _pending_end_win := false
 
@@ -584,6 +590,13 @@ var cheated := false
 var cheat_invincible := false
 var run_damage_dealt := 0.0
 var run_damage_taken := 0.0
+var run_damage_by_source: Dictionary = {}
+var run_damage_taken_by_source: Dictionary = {}
+var run_death_source := ""
+var _telemetry_damage_source := ""
+var run_telemetry_saved := false
+var last_run_telemetry: Dictionary = {}
+var run_history_summary: Dictionary = {}
 var greed_mult := 1.0   # 골드 획득 배수 (영구강화)
 var xp_mult := 1.0      # 경험치 획득 배수 (영구강화)
 var revives := 0        # 남은 부활 횟수 (영구강화)
@@ -826,6 +839,7 @@ var char_det_spr: TextureRect      # 캐릭터 선택 하단 상세: 스프라�
 var char_det_wicon: TextureRect    # 캐릭터 선택 하단 상세: 시작 무기 아이콘
 var end_panel: Control
 var end_label: Label
+var end_report_label: RichTextLabel
 var end_title: Label
 var end_build_box: VBoxContainer
 var title_panel: Control
@@ -935,7 +949,7 @@ func _seed_gear_ui_preview() -> void:
 
 
 # [개발 도구] --autoshot: 화면을 캡처해 user://autoshot.png로 저장 후 종료.
-#   --screen=title|char|diff|inventory|forge|route|extraction : 해당 화면을 캡처
+#   --screen=title|char|diff|inventory|forge|route|extraction|end : 해당 화면을 캡처
 #   --pause                  : 일시정지 화면 캡처
 func _autoshot() -> void:
 	await get_tree().create_timer(0.5, true, false, true).timeout
@@ -1107,6 +1121,62 @@ func _autoshot() -> void:
 		print("AUTOSHOT SAVED: ", ProjectSettings.globalize_path("user://autoshot.png"))
 		get_tree().quit()
 		return
+	if "--screen=end" in args:
+		# 저장 데이터를 건드리지 않는 종료 보고서 레이아웃 샘플.
+		cheated = true
+		expedition_active = true
+		expedition_loot_resolved = true
+		expedition_floor = 3
+		expedition_start_stage = 1
+		expedition_stage_history = [1, 2, 3]
+		expedition_route_history = ["camp", "merchant"]
+		time_survived = 925.0
+		kills = 812
+		level = 47
+		run_bosses = 3
+		run_damage_dealt = 186420.0
+		run_damage_taken = 684.0
+		run_damage_by_source = {
+			"arrow": 93210.0, "aura": 46605.0, "active:arrow": 27963.0,
+			"ultimate": 18642.0,
+		}
+		run_damage_taken_by_source = {
+			"enemy_melee": 342.0, "boss_contact": 205.0, "enemy_projectile": 137.0,
+		}
+		run_floor_stats = [
+			{"floor": 1, "stage": 1, "stage_name": "묘지", "outcome": "clear",
+				"duration_seconds": 304.0, "damage_dealt": 38240.0, "damage_taken": 118.0},
+			{"floor": 2, "stage": 2, "stage_name": "지옥", "outcome": "clear",
+				"duration_seconds": 307.0, "damage_dealt": 62180.0, "damage_taken": 244.0},
+			{"floor": 3, "stage": 3, "stage_name": "빙하", "outcome": "clear",
+				"duration_seconds": 314.0, "damage_dealt": 86000.0, "damage_taken": 322.0},
+		]
+		extracted_gear_count = 2
+		auto_salvage_gold = 96
+		run_extracted_gear = [
+			{"slot": "weapon", "name": "서리의 장궁", "rarity": "epic", "level": 1},
+			{"slot": "trinket", "name": "잿불 수호 부적", "rarity": "legendary", "level": 0},
+		]
+		weapons = {"arrow": 8, "aura": 6, "lightning": 5}
+		evolved = {"arrow": true}
+		passives = {"spinach": 5, "tome": 4, "heart": 3}
+		var end_preview_win := not "--end-defeat" in args
+		if not end_preview_win:
+			run_floor_stats[2]["outcome"] = "death"
+			run_death_source = "boss_contact"
+			extracted_gear_count = 1
+			run_extracted_gear.resize(1)
+		state = State.VICTORY if end_preview_win else State.GAMEOVER
+		get_tree().paused = true
+		_show_end("⚔ 원정 완료!" if end_preview_win else "☠ 원정 실패", end_preview_win)
+		run_history_summary = RunTelemetryScript.aggregate([last_run_telemetry])
+		end_report_label.text = _telemetry_report_bbcode()
+		await get_tree().create_timer(0.5, true, false, true).timeout
+		var end_image := get_viewport().get_texture().get_image()
+		end_image.save_png("user://autoshot.png")
+		print("AUTOSHOT SAVED: ", ProjectSettings.globalize_path("user://autoshot.png"))
+		get_tree().quit()
+		return
 
 	# --active-preview=<sword|axe|staff|dagger|spear>: E 스킬과 HUD를 실제 렌더로 검수한다.
 	if active_preview != "":
@@ -1263,6 +1333,10 @@ func _autoshot() -> void:
 	if "--telemetry-test" in args:
 		run_damage_dealt = 0.0
 		run_damage_taken = 0.0
+		run_damage_by_source = {}
+		run_damage_taken_by_source = {}
+		run_death_source = ""
+		var previous_test_source := telemetry_push_damage_source("test_weapon")
 		var enemy_probe := Enemy.new()
 		enemy_probe.hp = 100.0
 		add_child(enemy_probe)
@@ -1271,10 +1345,30 @@ func _autoshot() -> void:
 		boss_probe.hp = 200.0
 		add_child(boss_probe)
 		boss_probe.take_damage(50.0)
+		var arrow_probe := Arrow.new()
+		add_child(arrow_probe)
+		var strike_probe := SkyStrike.new()
+		add_child(strike_probe)
+		var zone_probe := VoidZone.new()
+		add_child(zone_probe)
+		telemetry_restore_damage_source(previous_test_source)
 		player.hp = 100.0
-		apply_player_damage(12.0)
-		var passed := is_equal_approx(run_damage_dealt, 80.0) and is_equal_approx(run_damage_taken, 12.0)
+		apply_player_damage(12.0, "enemy_melee")
+		player.hp = 5.0
+		apply_player_damage(9.0, "boss_contact")
+		var passed := (is_equal_approx(run_damage_dealt, 80.0)
+			and is_equal_approx(run_damage_taken, 17.0)
+			and is_equal_approx(float(run_damage_by_source.get("test_weapon", 0.0)), 80.0)
+			and is_equal_approx(float(run_damage_taken_by_source.get("enemy_melee", 0.0)), 12.0)
+			and is_equal_approx(float(run_damage_taken_by_source.get("boss_contact", 0.0)), 5.0)
+			and run_death_source == "boss_contact"
+			and arrow_probe.damage_source == "test_weapon"
+			and strike_probe.damage_source == "test_weapon"
+			and zone_probe.damage_source == "test_weapon")
 		print("TELEMETRY_TEST %s dealt=%.1f taken=%.1f" % ["PASS" if passed else "FAIL", run_damage_dealt, run_damage_taken])
+		for probe in [enemy_probe, boss_probe, arrow_probe, strike_probe, zone_probe]:
+			if is_instance_valid(probe):
+				probe.free()
 		if not passed:
 			push_error("Combat telemetry regression test failed")
 		get_tree().quit(0 if passed else 1)
@@ -1921,6 +2015,7 @@ func _physics_process(delta: float) -> void:
 
 	# 신성 오라 (지속 범위 피해)
 	if weapons.has("aura"):
+		var aura_previous_source := telemetry_push_damage_source("aura")
 		var ar := _aura_radius()
 		var dps := _aura_dps()
 		_aura_pulse_t -= delta
@@ -1945,9 +2040,11 @@ func _physics_process(delta: float) -> void:
 		for br in get_tree().get_nodes_in_group("breakables"):
 			if is_instance_valid(br) and player.position.distance_to(br.position) < ar + br.radius:
 				br.take_damage(dps * delta)
+		telemetry_restore_damage_source(aura_previous_source)
 
 	# 회전 검 (공전 접촉 피해)
 	if weapons.has("blade"):
+		var blade_previous_source := telemetry_push_damage_source("blade")
 		var cnt := _blade_count()
 		var dpsb := _blade_dps()
 		var orad := _blade_orbit()
@@ -1980,6 +2077,7 @@ func _physics_process(delta: float) -> void:
 						boss.take_damage(dpsb * 0.65)
 				_spawn_proc_fx("slash", player.position, sweep_rad, Color(1.0, 0.22, 0.12), 0.28,
 					sweep_dir, player.position + sweep_dir * sweep_rad)
+		telemetry_restore_damage_source(blade_previous_source)
 
 	# 적 접촉: 겹친 적은 몸박 넉백으로 밀어냄(뚫고 지나가지 않게) + 데미지(무적 프레임)
 	var _touched := false
@@ -1990,7 +2088,7 @@ func _physics_process(delta: float) -> void:
 			e.shove(player.position, 240.0)   # 몸박 넉백 (매 프레임 → 몸으로 막힘)
 		# 몸 자체는 서로 밀어내지만, 피해는 적이 예고한 타격의 활성 프레임에만 발생한다.
 		if not _touched and player.invuln <= 0.0 and e.can_damage_player(player.position, player.radius):
-			apply_player_damage(max(1.0, e.touch_damage - player.armor))
+			apply_player_damage(max(1.0, e.touch_damage - player.armor), "enemy_melee")
 			player.invuln = 0.6
 			player.play_hurt()
 			shake_t = 0.15
@@ -1999,7 +2097,7 @@ func _physics_process(delta: float) -> void:
 	if player.invuln <= 0.0 and boss and is_instance_valid(boss):
 		if not boss.uses_pattern_damage() and boss.position.distance_to(player.position) < boss.radius + player.radius:
 			var boss_touch := (22.0 + stage_num * 3.0) * sqrt(diff_enemy_hp)
-			apply_player_damage(max(1.0, boss_touch - player.armor))
+			apply_player_damage(max(1.0, boss_touch - player.armor), "boss_contact")
 			player.invuln = 0.75
 			player.play_hurt()
 
@@ -2012,7 +2110,7 @@ func _physics_process(delta: float) -> void:
 				if ea.fire:
 					apply_hell_boss_damage(ea.damage, ea.position)
 				else:
-					apply_player_damage(max(1.0, ea.damage - player.armor))
+					apply_player_damage(max(1.0, ea.damage - player.armor), "enemy_projectile")
 					player.invuln = 0.6
 					player.play_hurt()
 				if ea.chill:
@@ -2130,7 +2228,9 @@ func _fire_weapon(kind: String) -> void:
 	# 성장 시각 배율: 레벨당 +5%, 진화 시 ×1.3 (Lv8+진화 = 1.75배).
 	# 무기가 강해지면 이펙트·투사체도 눈에 띄게 커진다 (사장님 피드백).
 	wfx_boost = (1.0 + 0.05 * (int(weapons.get(kind, 1)) - 1)) * (1.3 if _evo_spawn else 1.0)
+	var previous_damage_source := telemetry_push_damage_source(kind)
 	_fire_weapon_dispatch(kind)
+	telemetry_restore_damage_source(previous_damage_source)
 	wfx_boost = 1.0
 	_evo_spawn = false
 	_evo_kind = ""
@@ -3430,6 +3530,8 @@ func _weapon_muzzle(kind: String) -> void:
 
 
 func _apply_arrow_hit(a, target) -> void:
+	var projectile_source := str(a.damage_source) if "damage_source" in a else ""
+	var previous_damage_source := telemetry_push_damage_source(projectile_source)
 	# 치명타 판정 (플레이어 패시브와 투사체 고유 보정 중 높은 값을 사용).
 	# Arrow의 crit 필드는 예전부터 있었지만 실제 판정에서 빠져 있어 단검 액티브가 활용하지 못했다.
 	var projectile_crit_chance := maxf(player.crit_chance, float(a.crit_chance))
@@ -3471,13 +3573,15 @@ func _apply_arrow_hit(a, target) -> void:
 	if a.slow_amount > 0.0 and is_instance_valid(target) and target.has_method("apply_slow"):
 		target.apply_slow(a.slow_amount, a.slow_time)
 	if a.explode_radius > 0.0:
-		_explode(a.position, a.explode_radius, a.explode_damage, target)
+		_explode(a.position, a.explode_radius, a.explode_damage, target, projectile_source)
 	# 무기별 명중 이펙트 (파이어볼 폭발, 독무 등)
 	if a.fx_hit != "":
 		spawn_fx(a.fx_hit, a.position, a.fx_hit_size)
+	telemetry_restore_damage_source(previous_damage_source)
 
 
-func _explode(pos: Vector2, rad: float, dmg: float, exclude) -> void:
+func _explode(pos: Vector2, rad: float, dmg: float, exclude, source: String = "") -> void:
+	var previous_damage_source := telemetry_push_damage_source(source)
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if is_instance_valid(e) and e != exclude and pos.distance_to(e.position) <= rad:
 			e.take_damage(dmg)
@@ -3489,6 +3593,7 @@ func _explode(pos: Vector2, rad: float, dmg: float, exclude) -> void:
 	for b in get_tree().get_nodes_in_group("breakables"):
 		if is_instance_valid(b) and pos.distance_to(b.position) <= rad:
 			b.take_damage(dmg)
+	telemetry_restore_damage_source(previous_damage_source)
 
 
 # 지정 범위의 파괴 오브젝트(촛대·항아리·상자)를 부숨 — 모든 근접/AOE 공격 공용
@@ -4068,7 +4173,7 @@ func apply_hell_hazard_damage(amount: float, source: Vector2, danger_radius: flo
 	if player == null or player.invuln > 0.0 or player.position.distance_to(source) > danger_radius:
 		return false
 	var damage := maxf(1.0, amount * _hell_incoming_damage_multiplier() - player.armor)
-	apply_player_damage(damage)
+	apply_player_damage(damage, "hell_hazard")
 	player.invuln = 0.62
 	player.play_hurt()
 	play_sfx("hurt", -8.0, 0.28)
@@ -4080,7 +4185,7 @@ func apply_hell_boss_damage(amount: float, source: Vector2) -> bool:
 	if player == null or player.invuln > 0.0:
 		return false
 	var damage := maxf(1.0, amount * _hell_incoming_damage_multiplier() - player.armor)
-	apply_player_damage(damage)
+	apply_player_damage(damage, "hell_boss")
 	player.invuln = 0.72
 	player.play_hurt()
 	play_sfx("hurt", -7.0, 0.25)
@@ -4364,17 +4469,48 @@ func collect_coin(value: int) -> void:
 	play_sfx("coin", -12.0, 0.08)
 
 
+# 비동기 투사체·장판도 생성 당시 무기 이름으로 실피해를 귀속할 수 있도록
+# 짧은 컨텍스트를 전달한다. 반환값을 복원하면 중첩 공격도 서로 덮어쓰지 않는다.
+func telemetry_push_damage_source(source: String) -> String:
+	var previous := _telemetry_damage_source
+	if source != "":
+		_telemetry_damage_source = source
+	return previous
+
+
+func telemetry_restore_damage_source(previous: String) -> void:
+	_telemetry_damage_source = previous
+
+
+func telemetry_current_damage_source() -> String:
+	return _telemetry_damage_source
+
+
 # 전투 통계는 표시용 피해량이 아니라 실제로 감소한 체력만 기록한다.
-func record_damage_dealt(amount: float) -> void:
-	run_damage_dealt += maxf(0.0, amount)
+func record_damage_dealt(amount: float, source: String = "") -> void:
+	var actual := maxf(0.0, amount)
+	if actual <= 0.0:
+		return
+	run_damage_dealt += actual
+	var resolved_source := source if source != "" else _telemetry_damage_source
+	if resolved_source == "":
+		resolved_source = "other"
+	run_damage_by_source[resolved_source] = (
+		float(run_damage_by_source.get(resolved_source, 0.0)) + actual)
 
 
-func apply_player_damage(amount: float) -> float:
+func apply_player_damage(amount: float, source: String = "unknown") -> float:
 	if player == null or amount <= 0.0:
 		return 0.0
 	var actual_damage := minf(maxf(0.0, player.hp), amount)
 	player.hp -= amount
 	run_damage_taken += actual_damage
+	if actual_damage > 0.0:
+		var resolved_source := source if source != "" else "unknown"
+		run_damage_taken_by_source[resolved_source] = (
+			float(run_damage_taken_by_source.get(resolved_source, 0.0)) + actual_damage)
+		if player.hp <= 0.0:
+			run_death_source = resolved_source
 	return actual_damage
 
 
@@ -4445,7 +4581,7 @@ func on_enemy_killed(e: Enemy) -> void:
 			add_child(fx0)
 			shake_t = max(shake_t, 0.12)
 			if player and player.invuln <= 0.0 and e.position.distance_to(player.position) < 95.0:
-				apply_player_damage(max(1.0, e.touch_damage * 2.2 - player.armor))
+				apply_player_damage(max(1.0, e.touch_damage * 2.2 - player.armor), "enemy_explosion")
 				player.invuln = 0.6
 				player.play_hurt()
 		"splitter":
@@ -4708,6 +4844,9 @@ func _transition_to_expedition_floor(target_stage: int) -> void:
 		push_error("Expedition floor failed to initialize: %d" % target_stage)
 	stage_num = map_stage
 	expedition_floor_started_at = time_survived
+	run_floor_start_kills = kills
+	run_floor_start_damage = run_damage_dealt
+	run_floor_start_taken = run_damage_taken
 	_wave_minute = -1
 	_current_wave = {}
 	featured_enemy = ""
@@ -4742,6 +4881,7 @@ func on_boss_killed() -> void:
 		boss = null
 		boss_spawned = false
 		run_bosses += 1
+		_record_current_floor(true)
 		var final_floor := not expedition_active or expedition_floor >= EXPEDITION_FLOORS
 		# 모든 층 보스는 에픽 장비를 확정한다. 최종 보스는 추출 후보를 하나 더 준다.
 		inventory.append(_roll_boss_reward(cleared_stage, true))
@@ -5724,6 +5864,20 @@ func _sorted_extraction_candidates() -> Array:
 	return candidates
 
 
+func _telemetry_gear_summary(item: Dictionary, slot_hint: String = "") -> Dictionary:
+	if item.is_empty():
+		return {}
+	return {
+		"slot": str(item.get("slot", slot_hint)),
+		"name": str(item.get("name", "이름 없는 장비")),
+		"rarity": str(item.get("rarity", "common")),
+		"level": int(item.get("lvl", 0)),
+		"gear_id": str(item.get("gear_id", "")),
+		"weapon_kind": str(item.get("weapon_kind", "")),
+		"element": str(item.get("element", "")),
+	}
+
+
 func _resolve_expedition_loot(selected_ids: Dictionary, won: bool) -> void:
 	if expedition_loot_resolved:
 		return
@@ -5743,6 +5897,7 @@ func _resolve_expedition_loot(selected_ids: Dictionary, won: bool) -> void:
 				keep_ids[gear_id] = true
 	extracted_gear_count = 0
 	auto_salvage_gold = 0
+	run_extracted_gear = []
 	for slot in EQUIP_SLOTS:
 		var equipped_item: Dictionary = equipped.get(slot, {})
 		if not bool(equipped_item.get("_found", false)):
@@ -5762,6 +5917,7 @@ func _resolve_expedition_loot(selected_ids: Dictionary, won: bool) -> void:
 	for item in candidates:
 		if keep_ids.has(str(item.get("gear_id", ""))):
 			extracted_gear_count += 1
+			run_extracted_gear.append(_telemetry_gear_summary(item))
 		else:
 			auto_salvage_gold += _forge_salvage_value(item)
 	run_gold += auto_salvage_gold
@@ -7375,6 +7531,32 @@ func _dungeon_elapsed() -> float:
 	return time_survived
 
 
+func _record_current_floor(cleared: bool) -> void:
+	var floor_no := expedition_floor if expedition_active else maxi(1, stage_num)
+	if not run_floor_stats.is_empty():
+		var previous_floor = run_floor_stats[-1]
+		if previous_floor is Dictionary and int(previous_floor.get("floor", -1)) == floor_no:
+			return
+	var stage_name := "캠페인"
+	if map_stage > 0:
+		stage_name = str(GameConfig.stage_info(map_stage).get("name", "던전"))
+	var hp_remaining := player.hp if player else 0.0
+	var max_hp := player.max_hp if player else 0.0
+	run_floor_stats.append({
+		"floor": floor_no,
+		"stage": map_stage,
+		"stage_name": stage_name,
+		"outcome": "clear" if cleared else "death",
+		"duration_seconds": _dungeon_elapsed(),
+		"total_time_seconds": time_survived,
+		"kills": maxi(0, kills - run_floor_start_kills),
+		"damage_dealt": maxf(0.0, run_damage_dealt - run_floor_start_damage),
+		"damage_taken": maxf(0.0, run_damage_taken - run_floor_start_taken),
+		"hp_remaining": maxf(0.0, hp_remaining),
+		"hp_ratio": hp_remaining / maxf(1.0, max_hp),
+	})
+
+
 func _expedition_floor_pressure() -> float:
 	return ExpeditionRulesScript.floor_pressure(expedition_floor) if expedition_active else 1.0
 
@@ -7415,6 +7597,11 @@ func _start_game(d: Dictionary) -> void:
 	extraction_limit = 0
 	extracted_gear_count = 0
 	auto_salvage_gold = 0
+	run_extracted_gear = []
+	run_floor_stats = []
+	run_floor_start_kills = 0
+	run_floor_start_damage = 0.0
+	run_floor_start_taken = 0.0
 	_pending_end_title = ""
 	_pending_end_win = false
 	# 던전 모드: 선택 던전 번호를 난이도 티어로 고정(빙하=3층 몹 등). 캠페인/심연은 1에서 시작.
@@ -7493,6 +7680,13 @@ func _start_game(d: Dictionary) -> void:
 	_refresh_skill_hud()
 	run_damage_dealt = 0.0
 	run_damage_taken = 0.0
+	run_damage_by_source = {}
+	run_damage_taken_by_source = {}
+	run_death_source = ""
+	_telemetry_damage_source = ""
+	run_telemetry_saved = false
+	last_run_telemetry = {}
+	run_history_summary = {}
 	run_bosses = 0
 	_wave_minute = -1
 	_current_wave = {}
@@ -7627,6 +7821,178 @@ func _game_over() -> void:
 	_show_end(Loc.t("gameover"), false)
 
 
+func _telemetry_source_name(source: String) -> String:
+	if source.begins_with("active:"):
+		var weapon_key := source.trim_prefix("active:")
+		return "E · %s" % str(WNAMES.get(weapon_key, weapon_key))
+	if WNAMES.has(source):
+		return str(WNAMES[source])
+	for union_data in UNION_DEFS:
+		if str(union_data["key"]) == source:
+			return str(union_data["name"])
+	return {
+		"ultimate": "Q · 궁극기",
+		"other": "기타 피해",
+		"test_weapon": "시험 무기",
+	}.get(source, source)
+
+
+func _telemetry_incoming_name(source: String) -> String:
+	return {
+		"enemy_melee": "일반 몬스터 공격",
+		"boss_contact": "보스 접촉",
+		"enemy_projectile": "적 투사체",
+		"hell_hazard": "용암 균열",
+		"hell_boss": "화염 군주",
+		"hazard": "바닥 장판",
+		"enemy_explosion": "폭발 몬스터",
+		"unknown": "알 수 없는 피해",
+	}.get(source, source)
+
+
+func _telemetry_route_name(route: String) -> String:
+	return {
+		"camp": "회복 캠프",
+		"merchant": "떠돌이 상인",
+		"event": "저주받은 제단",
+	}.get(route, route)
+
+
+func _telemetry_time_text(seconds: float) -> String:
+	var total := maxi(0, int(seconds))
+	return "%02d:%02d" % [total / 60, total % 60]
+
+
+func _finalize_run_telemetry(win: bool, earned_gold: int,
+		banked_gear: int, banked_fragments: int) -> void:
+	if run_telemetry_saved:
+		return
+	_record_current_floor(win)
+	var equipment: Array = []
+	for slot in EQUIP_SLOTS:
+		var item: Dictionary = equipped.get(slot, {})
+		if not item.is_empty():
+			equipment.append(_telemetry_gear_summary(item, slot))
+	var incoming_ranked := RunTelemetryScript.ranked_damage(
+		run_damage_taken_by_source, run_damage_taken, 1)
+	var death_source := ""
+	if not win:
+		death_source = run_death_source
+		if death_source == "":
+			death_source = (
+				str(incoming_ranked[0]["key"]) if not incoming_ranked.is_empty() else "unknown")
+	var record := {
+		"character_key": str(sel_char.get("key", "unknown")),
+		"character_name": str(sel_char.get("name", "알 수 없는 캐릭터")),
+		"difficulty_key": str(sel_diff.get("key", "normal")),
+		"difficulty_label": diff_label,
+		"modifier": {
+			"key": str(sel_modifier.get("key", "none")),
+			"name": str(sel_modifier.get("name", "기본")),
+		},
+		"start_stage": expedition_start_stage if expedition_active else map_stage,
+		"expedition": expedition_active,
+		"outcome": "victory" if win else "defeat",
+		"floor_reached": expedition_floor if expedition_active else maxi(1, stage_num),
+		"duration_seconds": time_survived,
+		"level": level,
+		"kills": kills,
+		"bosses": run_bosses,
+		"gold_earned": earned_gold,
+		"damage_dealt": run_damage_dealt,
+		"damage_taken": run_damage_taken,
+		"damage_by_source": run_damage_by_source.duplicate(true),
+		"damage_taken_by_source": run_damage_taken_by_source.duplicate(true),
+		"death_source": death_source,
+		"floor_results": run_floor_stats.duplicate(true),
+		"route_history": expedition_route_history.duplicate(),
+		"stage_history": expedition_stage_history.duplicate(),
+		"mastery_picks": mastery_picks.duplicate(true),
+		"weapons": weapons.duplicate(true),
+		"evolved": evolved.duplicate(true),
+		"passives": passives.duplicate(true),
+		"equipment": equipment,
+		"extracted_gear": run_extracted_gear.duplicate(true),
+		"extracted_gear_count": extracted_gear_count,
+		"auto_salvage_gold": auto_salvage_gold,
+		"banked_gear_count": banked_gear,
+		"boss_fragments_banked": banked_fragments,
+		"cheated": cheated,
+	}
+	last_run_telemetry = record
+	var launch_args := OS.get_cmdline_user_args()
+	if not cheated and not "--autoshot" in launch_args:
+		RunTelemetryScript.append_record(record)
+	var history := RunTelemetryScript.load_records()
+	if history.is_empty():
+		history = [record]
+	run_history_summary = RunTelemetryScript.aggregate(history)
+	run_telemetry_saved = true
+
+
+func _telemetry_report_bbcode() -> String:
+	if last_run_telemetry.is_empty():
+		return "[color=#f1d06b][font_size=18]원정 보고서[/font_size][/color]\n기록을 불러오지 못했습니다."
+	var lines: Array[String] = [
+		"[color=#f1d06b][font_size=18][b]원정 보고서[/b][/font_size][/color]"
+	]
+	var floors: Array = last_run_telemetry.get("floor_results", [])
+	for i in mini(3, floors.size()):
+		var floor: Dictionary = floors[i]
+		var result_mark := "✓" if str(floor.get("outcome", "")) == "clear" else "✕"
+		lines.append("[color=#8fd9ff]%s %d층 · %s[/color]  %s  피해 %d · 피격 %d" % [
+			result_mark, int(floor.get("floor", i + 1)),
+			str(floor.get("stage_name", "던전")),
+			_telemetry_time_text(float(floor.get("duration_seconds", 0.0))),
+			int(round(float(floor.get("damage_dealt", 0.0)))),
+			int(round(float(floor.get("damage_taken", 0.0)))),
+		])
+	lines.append("[color=#f1d06b][b]피해 비중[/b][/color]")
+	var defeated := str(last_run_telemetry.get("outcome", "")) == "defeat"
+	var damage_ranked := RunTelemetryScript.ranked_damage(
+		last_run_telemetry.get("damage_by_source", {}),
+		float(last_run_telemetry.get("damage_dealt", 0.0)), 2 if defeated else 3)
+	if damage_ranked.is_empty():
+		lines.append("기록된 피해가 없습니다.")
+	else:
+		for entry in damage_ranked:
+			lines.append("%s  [color=#8fe39b]%d%%[/color] · %d" % [
+				_telemetry_source_name(str(entry["key"])),
+				int(round(float(entry["share"]) * 100.0)),
+				int(round(float(entry["amount"]))),
+			])
+	var route_text := ""
+	for route_key in last_run_telemetry.get("route_history", []):
+		if route_text != "":
+			route_text += " → "
+		route_text += _telemetry_route_name(str(route_key))
+	if route_text != "":
+		lines.append("[color=#f1d06b][b]선택 경로[/b][/color]  %s" % route_text)
+	var extracted_text := ""
+	for gear in last_run_telemetry.get("extracted_gear", []):
+		if not (gear is Dictionary):
+			continue
+		if extracted_text != "":
+			extracted_text += " · "
+		var gear_name := str(gear.get("name", "장비"))
+		if gear_name.length() > 14:
+			gear_name = gear_name.substr(0, 13) + "…"
+		extracted_text += gear_name
+	if extracted_text != "":
+		lines.append("[color=#f1d06b][b]추출 장비[/b][/color]  %s" % extracted_text)
+	if defeated:
+		lines.append("[color=#ef7a7a][b]사망 원인[/b][/color]  %s" % _telemetry_incoming_name(
+			str(last_run_telemetry.get("death_source", "unknown"))))
+	var history_runs := int(run_history_summary.get("runs", 0))
+	if history_runs > 0:
+		lines.append("[color=#aaa5ba]최근 %d회 · 클리어율 %d%% · 평균 %s[/color]" % [
+			history_runs,
+			int(round(float(run_history_summary.get("win_rate", 0.0)) * 100.0)),
+			_telemetry_time_text(float(run_history_summary.get("average_time", 0.0))),
+		])
+	return "\n".join(lines)
+
+
 func _show_end(title: String, win: bool) -> void:
 	# 원정 종료는 즉시 모든 장비를 저장하지 않는다. 클리어는 2개를 직접 고르고,
 	# 사망은 최고 가치 1개를 자동 보험 처리한 뒤 나머지를 골드로 분해한다.
@@ -7683,6 +8049,7 @@ func _show_end(title: String, win: bool) -> void:
 		banked_fragments = _bank_run_boss_fragments()
 		Meta.save_data(meta)
 	var earned := run_gold if not cheated else 0
+	_finalize_run_telemetry(win, earned, banked_gear, banked_fragments)
 	run_gold = 0
 	abyss_btn.visible = win and not expedition_active
 	play_sfx("win" if win else "lose", -6.0)
@@ -7695,17 +8062,19 @@ func _show_end(title: String, win: bool) -> void:
 	var mode_name := ("5막 캠페인" if map_stage == 0 else
 		("%s 출발 3층 원정" % str(GameConfig.stage_info(record_stage)["name"])
 			if expedition_active else str(GameConfig.stage_info(map_stage)["name"])))
-	var unlock_text := "   ·   다음 맵 해금!" if newly_unlocked > 0 else ""
-	var forge_text := "   ·   대장간 보관 +%d" % banked_gear if banked_gear > 0 else ""
-	var extraction_text := "   ·   추출 %d   ·   자동분해 +%d G" % [
-		extracted_gear_count, auto_salvage_gold] if expedition_active else ""
-	var fragment_text := "   ·   보스 파편 +%d" % banked_fragments if banked_fragments > 0 else ""
-	end_label.text = "%s   ·   Lv %d   ·   처치 %d\n생존 %02d:%02d   ·   [%s]   ·   골드 +%d%s\n추출 보상%s%s%s\n총 피해 %d   ·   DPS %.1f   ·   받은 피해 %d\n최고 %02d:%02d   ·   최고 Lv%d   ·   클리어 %d회   ·   보유 %d G" % [
-		mode_name, level, kills, mm2, ss2, diff_label, earned, unlock_text,
-		extraction_text, fragment_text, forge_text,
+	var loot_text := (
+		"추출 %d개 · 자동분해 +%d G" % [extracted_gear_count, auto_salvage_gold]
+		if expedition_active else "런 장비 보관 %d개" % banked_gear)
+	var progress_text := "다음 맵 해금 · " if newly_unlocked > 0 else ""
+	progress_text += "장비 +%d · 보스 파편 +%d" % [banked_gear, banked_fragments]
+	end_label.text = "[ 원정 요약 ]\n%s · %s\nLv %d · 처치 %d · 보스 %d\n생존 %02d:%02d · 골드 +%d\n%s\n%s\n총 피해 %d · DPS %.1f · 받은 피해 %d\n최고 %02d:%02d · 최고 Lv%d · 클리어 %d회 · 보유 %d G" % [
+		mode_name, diff_label, level, kills, run_bosses, mm2, ss2, earned,
+		loot_text, progress_text,
 		int(round(run_damage_dealt)), run_dps, int(round(run_damage_taken)),
 		best_time / 60, best_time % 60, int(record.get("best_level", 0)),
 		int(record.get("clears", 0)), int(meta["gold"])]
+	if end_report_label:
+		end_report_label.text = _telemetry_report_bbcode()
 	_populate_end_build()
 	end_panel.visible = true
 
@@ -7869,7 +8238,9 @@ func _fire_weapon_active() -> bool:
 		return false
 	var dir := _skill_aim_direction()
 	player._face_direction(dir)
-	match _weapon_active_archetype(_primary_weapon_kind()):
+	var active_weapon_kind := _primary_weapon_kind()
+	var previous_damage_source := telemetry_push_damage_source("active:%s" % active_weapon_kind)
+	match _weapon_active_archetype(active_weapon_kind):
 		"sword":
 			_fire_sword_active(dir)
 		"axe":
@@ -7880,6 +8251,7 @@ func _fire_weapon_active() -> bool:
 			_fire_spear_active(dir)
 		_:
 			_fire_staff_active()
+	telemetry_restore_damage_source(previous_damage_source)
 	return true
 
 
@@ -8076,12 +8448,14 @@ func _fire_ultimate() -> void:
 	var base: float = 80.0 * player.damage_mult * (1.0 + time_survived / 240.0)
 	var elem := _char_skill_element()
 	var col: Color = ELEMENT_COL.get(elem, Color(0.82, 0.45, 1.0))
+	var previous_damage_source := telemetry_push_damage_source("ultimate")
 	match _char_ult():
 		"meteor": _ult_meteor(base, elem, col)
 		"blizzard": _ult_blizzard(base, elem, col)
 		"judgment": _ult_judgment(base, elem, col)
 		"reap": _ult_reap(base, elem, col)
 		_: _ult_blast(base, elem, col)
+	telemetry_restore_damage_source(previous_damage_source)
 	play_sfx("ult", -4.0)
 	_refresh_ult_bar()
 
@@ -9561,28 +9935,59 @@ func _build_ui(s: Vector2) -> void:
 
 	# 큰 타이틀 (승리/사망)
 	end_title = Label.new()
-	end_title.position = Vector2(0, 118)
+	end_title.position = Vector2(0, 52)
 	end_title.size = Vector2(s.x, 76)
 	end_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	end_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	end_title.add_theme_font_size_override("font_size", 46)
+	end_title.add_theme_font_size_override("font_size", 42)
 	end_title.add_theme_constant_override("outline_size", 6)
 	end_title.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.95))
 	end_panel.add_child(end_title)
 
+	var end_card_margin := 54.0
+	var end_card_gap := 22.0
+	var end_card_width := (s.x - end_card_margin * 2.0 - end_card_gap) * 0.5
+	var end_card_y := 142.0
+	var end_card_height := 292.0
+	var end_left_card := Panel.new()
+	end_left_card.position = Vector2(end_card_margin, end_card_y)
+	end_left_card.size = Vector2(end_card_width, end_card_height)
+	end_left_card.add_theme_stylebox_override("panel", _section_style(Color(0.55, 0.43, 0.20, 0.95)))
+	end_panel.add_child(end_left_card)
+	var end_right_card := Panel.new()
+	end_right_card.position = Vector2(end_card_margin + end_card_width + end_card_gap, end_card_y)
+	end_right_card.size = Vector2(end_card_width, end_card_height)
+	end_right_card.add_theme_stylebox_override("panel", _section_style(Color(0.28, 0.55, 0.68, 0.95)))
+	end_panel.add_child(end_right_card)
+
 	end_label = Label.new()
-	end_label.position = Vector2(0, 210)
-	end_label.size = Vector2(s.x, 170)
-	end_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	end_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	end_label.add_theme_font_size_override("font_size", 18)
-	end_label.add_theme_constant_override("outline_size", 3)
+	end_label.position = Vector2(end_card_margin + 20.0, end_card_y + 16.0)
+	end_label.size = Vector2(end_card_width - 40.0, end_card_height - 32.0)
+	end_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	end_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	end_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	end_label.add_theme_font_size_override("font_size", 16)
+	end_label.add_theme_constant_override("line_spacing", 3)
+	end_label.add_theme_constant_override("outline_size", 2)
 	end_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	end_panel.add_child(end_label)
 
+	end_report_label = RichTextLabel.new()
+	end_report_label.position = Vector2(
+		end_card_margin + end_card_width + end_card_gap + 20.0, end_card_y + 16.0)
+	end_report_label.size = Vector2(end_card_width - 40.0, end_card_height - 32.0)
+	end_report_label.bbcode_enabled = true
+	end_report_label.fit_content = false
+	end_report_label.scroll_active = false
+	end_report_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	end_report_label.add_theme_font_size_override("normal_font_size", 14)
+	end_report_label.add_theme_font_size_override("bold_font_size", 14)
+	end_report_label.add_theme_constant_override("line_separation", 1)
+	end_panel.add_child(end_report_label)
+
 	# 최종 빌드 (무기·패시브 아이콘 행)
 	end_build_box = VBoxContainer.new()
-	end_build_box.position = Vector2(0, 380)
+	end_build_box.position = Vector2(0, 448)
 	end_build_box.size = Vector2(s.x, 90)
 	end_build_box.alignment = BoxContainer.ALIGNMENT_CENTER
 	end_build_box.add_theme_constant_override("separation", 6)
@@ -9590,7 +9995,7 @@ func _build_ui(s: Vector2) -> void:
 
 	var restart_btn := Button.new()
 	restart_btn.text = Loc.t("restart")
-	restart_btn.position = Vector2(s.x / 2.0 - 90, 480)
+	restart_btn.position = Vector2(s.x / 2.0 - 90, 552)
 	restart_btn.size = Vector2(180, 56)
 	restart_btn.pressed.connect(_restart)
 	_style_button(restart_btn, "res://assets/ui/button.png")
@@ -9599,7 +10004,7 @@ func _build_ui(s: Vector2) -> void:
 	# 심연 모드 (승리 시에만 표시 — 무한 스케일링 엔들리스)
 	abyss_btn = Button.new()
 	abyss_btn.text = Loc.t("abyss")
-	abyss_btn.position = Vector2(s.x / 2.0 - 90, 548)
+	abyss_btn.position = Vector2(s.x / 2.0 - 90, 616)
 	abyss_btn.size = Vector2(180, 50)
 	abyss_btn.visible = false
 	abyss_btn.pressed.connect(_continue_abyss)

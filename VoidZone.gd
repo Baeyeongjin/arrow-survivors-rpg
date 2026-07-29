@@ -16,11 +16,15 @@ var stack_rate := 0.0
 var stack_max := 0.0
 var _stacks := {}                 # 적 instance_id → 누적 중첩량
 var _t := 0.0
+var damage_source := ""
 
 func _ready() -> void:
 	add_to_group("voidzones")
 	max_life = life
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	var main := get_parent()
+	if main and main.has_method("telemetry_current_damage_source"):
+		damage_source = str(main.telemetry_current_damage_source())
 
 func _process(delta: float) -> void:
 	_t += delta
@@ -28,6 +32,11 @@ func _process(delta: float) -> void:
 	if life <= 0.0:
 		queue_free()
 		return
+	var main := get_parent()
+	var previous_damage_source := ""
+	var tracks_source := main and main.has_method("telemetry_push_damage_source")
+	if tracks_source:
+		previous_damage_source = str(main.telemetry_push_damage_source(damage_source))
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if is_instance_valid(e):
 			var to: Vector2 = position - e.position
@@ -50,6 +59,8 @@ func _process(delta: float) -> void:
 	for br in get_tree().get_nodes_in_group("breakables"):
 		if is_instance_valid(br) and position.distance_to(br.position) < radius + br.radius:
 			br.take_damage(dps * delta)
+	if tracks_source:
+		main.telemetry_restore_damage_source(previous_damage_source)
 	queue_redraw()
 
 func _draw() -> void:

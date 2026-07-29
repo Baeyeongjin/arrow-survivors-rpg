@@ -6,6 +6,7 @@ var damage := 10.0
 var pierce := 0
 var radius := 6.0
 var hit := {}
+var damage_source := ""
 
 # 수식어 (Main이 발사 시 설정)
 var crit_chance := 0.0
@@ -50,6 +51,8 @@ func _ready() -> void:
 	add_to_group("arrows")
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	var p := get_parent()
+	if damage_source == "" and p and p.has_method("telemetry_current_damage_source"):
+		damage_source = str(p.telemetry_current_damage_source())
 	# 무기 성장 시각 배율 캡처 (발사 중 동기 생성이라 유효). 레벨·진화에 따라 투사체가 커진다.
 	if p and "wfx_boost" in p:
 		_vis = clampf(float(p.wfx_boost), 1.0, 1.8)

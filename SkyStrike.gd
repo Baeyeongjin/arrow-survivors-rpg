@@ -28,6 +28,7 @@ var _start := Vector2.ZERO
 var _done := false
 
 var _vis := 1.0   # 무기 성장 시각 배율 (착탄이 비동기라 생성 시점에 캡처)
+var damage_source := ""
 
 func _ready() -> void:
 	add_to_group("floor_runtime")
@@ -35,6 +36,8 @@ func _ready() -> void:
 	position = _start
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	var p := get_parent()
+	if damage_source == "" and p and p.has_method("telemetry_current_damage_source"):
+		damage_source = str(p.telemetry_current_damage_source())
 	if p and "wfx_boost" in p:
 		_vis = clampf(float(p.wfx_boost), 1.0, 1.8)
 
@@ -48,7 +51,7 @@ func _process(delta: float) -> void:
 		_done = true
 		var main = get_parent()
 		if main and main.has_method("_explode"):
-			main._explode(target, radius, dmg, null)
+			main._explode(target, radius, dmg, null, damage_source)
 			if main.has_method("spawn_fx"):
 				main.spawn_fx(fx_name, target, radius * 2.2 * _vis)
 			if impact_kind != "":

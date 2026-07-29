@@ -21,7 +21,7 @@ func _process(delta: float) -> void:
 	if pl and pl.position.distance_to(position) < radius + pl.radius * 0.5:
 		var main := get_parent()
 		if main and main.has_method("apply_player_damage"):
-			main.apply_player_damage(dps * delta)
+			main.apply_player_damage(dps * delta, "hazard")
 		else:
 			pl.hp -= dps * delta
 	queue_redraw()
