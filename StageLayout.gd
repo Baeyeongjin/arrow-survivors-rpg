@@ -22,72 +22,90 @@ static func make(stage: int, stage_tint: Color) -> StageLayout:
 	layout.tint = stage_tint
 	match layout.stage_id:
 		1:
-			# 묘지 — 완전 개활. 사방이 트여 원을 그리며 도망칠 수 있는 입문 전장.
-			# 장애물은 작게 흩뿌려 시야만 끊고 동선은 막지 않는다.
-			layout.shapes = [_rect(0, 0, 2800, 2800)]
-			layout.blocked_rects = [
-				Rect2(520, 620, 240, 200), Rect2(1960, 520, 260, 220),
-				Rect2(880, 1980, 240, 200), Rect2(2120, 1880, 260, 220),
-				Rect2(1500, 1160, 220, 190), Rect2(300, 1500, 300, 260),
+			# 묘지 — 중앙 광장 + 사방 납골당(십자 구조). 입문 던전이라 방이 크고
+			# 복도가 넓어 길을 잃지 않는다. 광장에서 원을 그리며 호드를 흘릴 수 있고,
+			# 봉인비는 각 납골당 안에 있어 "안전한 광장을 떠나는" 결정을 만든다.
+			layout.shapes = [
+				_rect(900, 900, 1000, 1000),                       # 중앙 광장
+				_rect(1100, 180, 600, 540), _rect(1100, 2080, 600, 540),   # 북·남 납골당
+				_rect(180, 1100, 540, 600), _rect(2080, 1100, 540, 600),   # 서·동 납골당
+				_rect(1280, 680, 240, 260), _rect(1280, 1860, 240, 260),   # 북·남 복도
+				_rect(680, 1280, 260, 240), _rect(1860, 1280, 260, 240),   # 서·동 복도
 			]
-			layout.item_positions = [Vector2(1400, 400), Vector2(2400, 1400), Vector2(1400, 2400), Vector2(400, 1000)]
-			# M5-A 영혼 봉인비: 개활지 세 모서리로 흩어 점령 동선을 만든다(장애물과 겹치지 않게).
-			layout.objective_positions = [Vector2(950, 950), Vector2(2050, 950), Vector2(1400, 2050)]
-			layout.relic_position = Vector2(300, 2400)
+			layout.blocked_rects = [
+				Rect2(1040, 1040, 170, 140), Rect2(1590, 1040, 170, 140),
+				Rect2(1040, 1620, 170, 140), Rect2(1590, 1620, 170, 140),
+			]
+			layout.item_positions = [Vector2(1550, 2350), Vector2(1000, 1400), Vector2(1800, 1400), Vector2(1400, 1000)]
+			# M5-A 영혼 봉인비: 북·서·동 납골당 안. 광장을 벗어나야 점령할 수 있다.
+			layout.objective_positions = [Vector2(1400, 450), Vector2(450, 1400), Vector2(2350, 1400)]
+			layout.relic_position = Vector2(1250, 2350)
 			layout.landmark_position = Vector2(1400, 1400)
 		2:
-			# 지옥 — 가로 회랑. 위아래가 용암으로 막혀 좌우로만 도망칠 수 있다.
-			# 균열 슬래브가 회랑을 좁혀 병목을 만들고, 위아래 벽감이 숨돌릴 틈을 준다.
+			# 지옥 — 용암 다리 회랑 + 세 챔버. 가로 정체성은 유지하되 양끝이 아니라
+			# 챔버로 이어져 목표 전투가 방 안에서 벌어진다. 회랑의 지그재그 병목이
+			# 추격을 끊어 "다리 위에서 버틸지, 방으로 들어갈지"를 고르게 한다.
 			layout.shapes = [
-				_rect(0, 760, 2800, 1280),
-				_rect(700, 300, 420, 520), _rect(1680, 1980, 420, 520),
+				_rect(120, 1150, 2560, 500),                        # 중앙 다리 회랑
+				_rect(240, 600, 620, 590), _rect(1940, 600, 620, 590),      # 서·동 챔버
+				_rect(1090, 1610, 620, 590),                        # 남 챔버
 			]
 			layout.blocked_rects = [
-				Rect2(600, 900, 140, 420), Rect2(1180, 1400, 140, 500),
-				Rect2(1780, 880, 140, 440), Rect2(2320, 1420, 140, 460),
+				Rect2(760, 1150, 110, 320), Rect2(1500, 1330, 110, 320),
+				Rect2(2180, 1150, 110, 320),
 			]
-			layout.item_positions = [Vector2(200, 1400), Vector2(900, 500), Vector2(1890, 2300), Vector2(2650, 1400)]
-			# M3 용암 균열: 중앙 회랑 → 위 벽감 → 아래 벽감 순으로 탐험 동선을 꺾는다.
-			layout.objective_positions = [Vector2(420, 1400), Vector2(900, 580), Vector2(1900, 2240)]
-			layout.relic_position = Vector2(2650, 900)
-			layout.landmark_position = Vector2(1450, 1000)
+			layout.item_positions = [Vector2(200, 1400), Vector2(2600, 1400), Vector2(550, 700), Vector2(2250, 700)]
+			# M3 용암 균열: 서 챔버 → 동 챔버 → 남 챔버 순으로 회랑을 왕복하게 한다.
+			layout.objective_positions = [Vector2(550, 870), Vector2(2250, 870), Vector2(1400, 1900)]
+			layout.relic_position = Vector2(1400, 2100)
+			layout.landmark_position = Vector2(1400, 1400)
 		3:
-			# 빙하 — 3x3 미로. 얼음 폐허 벽이 방을 나누고 통로는 300px 병목뿐이다.
-			# 개활지처럼 원을 그리며 도망칠 수 없어 통로 관리가 곧 생존이다.
-			layout.shapes = [_rect(0, 0, 2800, 2800)]
-			layout.blocked_rects = [
-				Rect2(0, 880, 700, 90), Rect2(1000, 880, 800, 90), Rect2(2100, 880, 700, 90),
-				Rect2(0, 1830, 700, 90), Rect2(1000, 1830, 800, 90), Rect2(2100, 1830, 700, 90),
-				Rect2(880, 0, 90, 700), Rect2(880, 1000, 90, 760), Rect2(880, 1920, 90, 880),
-				Rect2(1830, 0, 90, 700), Rect2(1830, 1000, 90, 760), Rect2(1830, 1920, 90, 880),
+			# 빙하 — 외곽 순환 회랑 + 중앙 결정실(스포크 4개). 순환로가 있어 계속
+			# 돌 수 있지만 폭이 좁아 방심하면 갇힌다. 중앙 결정실은 넓은 대신
+			# 출구가 넷뿐이라 화로(온기)를 두면 "들어갈지 돌지"가 갈린다.
+			layout.shapes = [
+				_rect(240, 240, 2320, 230), _rect(240, 2330, 2320, 230),   # 북·남 회랑
+				_rect(240, 240, 230, 2320), _rect(2330, 240, 230, 2320),   # 서·동 회랑
+				_rect(1040, 1040, 720, 720),                        # 중앙 결정실
+				_rect(1300, 430, 200, 650), _rect(1300, 1720, 200, 650),   # 북·남 스포크
+				_rect(430, 1300, 650, 200), _rect(1720, 1300, 650, 200),   # 서·동 스포크
 			]
-			layout.item_positions = [Vector2(440, 440), Vector2(2360, 440), Vector2(440, 2360), Vector2(2360, 2360)]
-			layout.relic_position = Vector2(1400, 440)
+			layout.blocked_rects = [
+				Rect2(1130, 1130, 150, 150), Rect2(1520, 1130, 150, 150),
+				Rect2(1130, 1520, 150, 150), Rect2(1520, 1520, 150, 150),
+			]
+			layout.item_positions = [Vector2(350, 350), Vector2(2450, 350), Vector2(350, 2450), Vector2(2450, 2450)]
+			layout.relic_position = Vector2(1400, 350)
 			layout.landmark_position = Vector2(1400, 1400)
 		4:
-			# 공허 — 세로 탑. 폭 1160의 좁고 긴 회랑이라 옆으로 빠질 곳이 없다.
-			# 좌우 성소 두 곳만이 유일한 대피처다.
+			# 공허 — 부유 섬 다섯 + 다리. 섬 밖은 허공이라 물러설 곳이 없고,
+			# 다리는 폭 180이라 한 번 물리면 빠져나오기 어렵다. 위치 선정이 곧 생존.
 			layout.shapes = [
-				_rect(820, 0, 1160, 2800),
-				_rect(300, 1100, 580, 600), _rect(1920, 1100, 580, 600),
+				_circle(1400, 1400, 520),                           # 중앙 대섬
+				_circle(1400, 470, 330), _circle(1400, 2330, 330),          # 북·남 섬
+				_circle(470, 1400, 330), _circle(2330, 1400, 330),          # 서·동 섬
+				_rect(1310, 470, 180, 930), _rect(1310, 1400, 180, 930),    # 북·남 다리
+				_rect(470, 1310, 930, 180), _rect(1400, 1310, 930, 180),    # 서·동 다리
 			]
-			layout.blocked_circles = [_circle(1400, 700, 170), _circle(1400, 2100, 170)]
-			layout.item_positions = [Vector2(1400, 300), Vector2(560, 1400), Vector2(2240, 1400), Vector2(1400, 2500)]
-			layout.relic_position = Vector2(1400, 1050)
+			layout.blocked_circles = [_circle(1150, 1150, 110), _circle(1650, 1650, 110)]
+			layout.item_positions = [Vector2(1400, 470), Vector2(470, 1400), Vector2(2330, 1400), Vector2(1400, 2330)]
+			layout.relic_position = Vector2(1400, 1180)
 			layout.landmark_position = Vector2(1400, 1400)
 		5:
-			# 마왕성 — 열주 대홀. 좌우 대칭 기둥 8개가 세로 회랑을 만드는 성채.
-			# 기둥 사이를 꿰며 싸우게 되고, 좌우 벽실은 몰리면 빠져나오기 어려운 구석이다.
-			layout.shapes = [_rect(0, 0, 2800, 2800)]
-			layout.blocked_rects = [
-				Rect2(760, 560, 160, 160), Rect2(760, 1080, 160, 160),
-				Rect2(760, 1600, 160, 160), Rect2(760, 2120, 160, 160),
-				Rect2(1880, 560, 160, 160), Rect2(1880, 1080, 160, 160),
-				Rect2(1880, 1600, 160, 160), Rect2(1880, 2120, 160, 160),
-				Rect2(180, 1200, 360, 400), Rect2(2260, 1200, 360, 400),
+			# 마왕성 — 전실 → 열주 대홀 → 왕좌실의 3단 관문. 성문을 통과할수록
+			# 안쪽으로 좁아져 최종 빌드 검증장이 된다. 열주는 시야를 끊되 동선은 남긴다.
+			layout.shapes = [
+				_rect(560, 760, 1680, 1290),                        # 열주 대홀
+				_rect(1140, 240, 520, 560),                         # 왕좌실 (대홀과 직접 접함)
+				_rect(1000, 2120, 800, 520),                        # 전실
+				_rect(1300, 2010, 200, 250),                        # 성문 복도
 			]
-			layout.item_positions = [Vector2(1400, 380), Vector2(2400, 700), Vector2(1400, 2420), Vector2(400, 700)]
-			layout.relic_position = Vector2(1400, 200)
+			layout.blocked_rects = [
+				Rect2(760, 900, 150, 150), Rect2(760, 1300, 150, 150), Rect2(760, 1700, 150, 150),
+				Rect2(1940, 900, 150, 150), Rect2(1940, 1300, 150, 150), Rect2(1940, 1700, 150, 150),
+			]
+			layout.item_positions = [Vector2(1400, 2380), Vector2(700, 1000), Vector2(2150, 1000), Vector2(1200, 420)]
+			layout.relic_position = Vector2(1600, 420)
 			layout.landmark_position = Vector2(1400, 1400)
 	return layout
 
