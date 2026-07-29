@@ -4041,6 +4041,7 @@ func on_enemy_killed(e: Enemy) -> void:
 	_spawn_gem(e.position, e.xp_value)
 	# 골드 드랍. 뱀서식: 보물상자는 보스 전용 → 엘리트는 골드·젬만 확정, 상자 없음.
 	if e.elite:
+		_award_stat_points(STAT_PT_ELITE)   # M2: 정예 처치 = 능력치 포인트(레벨당 지급 대체)
 		_spawn_coin(e.position, 5 + stage_num * 2)
 	elif randf() < 0.3:
 		_spawn_coin(e.position, 1 + int(e.xp_value / 4.0))
@@ -4181,6 +4182,8 @@ func on_boss_killed() -> void:
 		inventory.append(_roll_gear())
 		inventory.append(_roll_gear())
 		run_gold += 40 * map_stage
+		# M4 훅: 다중층 원정에서 '중간 층 클리어'는 여기서 _award_stat_points(층 보상)를 준다.
+		#   지금은 단일층=목표 보스 처치가 곧 런 종료라 지급해도 리셋되므로 생략.
 		# 다음 던전 해금
 		if not cheated and map_stage >= int(meta.get("stage_unlocked", 1)) and map_stage < FINAL_STAGE:
 			meta["stage_unlocked"] = map_stage + 1
@@ -4361,7 +4364,7 @@ func _gain_xp(amount: int) -> void:
 		level += 1
 		xp_to_next = _xp_requirement(level)
 		pending_levelups += 1
-		stat_points += 1   # RPG 능력치 포인트: 레벨업마다 1점 (인벤토리 I에서 분배)
+		# 능력치 포인트는 더 이상 레벨당 지급하지 않는다(M2). 정예 처치 마일스톤 보상으로 이동 → _award_stat_points.
 	if player:
 		player.set_stage(GameConfig.hero_stage_for_level(level))
 	_refresh_equip_hud()   # HUD의 스탯 포인트 표시 갱신
@@ -4619,6 +4622,10 @@ func _refresh_equip_hud() -> void:
 
 # ── 능력치 분배 (Phase 2: RPG 스탯 포인트) ────────────────────────────
 # 포인트당 효과는 전부 player의 가산형 필드로 → 장비 어픽스와 같은 통에 합산.
+# M2: 능력치 포인트는 레벨당 지급이 아니라 마일스톤 보상(정예 처치)에서 나온다.
+# ponytail: 정예 자연 확률 1~10%/스폰이라 런당 정예 수 편차가 큼 — 스탯 풀이 비면 상향,
+#   너무 풍족하면 하향. 제단·다중층(층 클리어) 보상은 M4에서 on_boss_killed 훅으로 합류.
+const STAT_PT_ELITE := 1
 const STAT_DEFS := [
 	{"key": "str", "name": "힘",   "desc": "공격력 +3%"},
 	{"key": "agi", "name": "민첩", "desc": "공격속도·이동속도 ↑"},
@@ -4850,6 +4857,14 @@ func _spend_stat_point(key: String) -> void:
 	_refresh_stat_box()
 	_refresh_equip_hud()
 	_update_ui()
+
+
+# M2: 마일스톤 보상으로 능력치 포인트 지급(정예 처치 등). HUD의 ◆스탯 카운트를 갱신한다.
+func _award_stat_points(n: int) -> void:
+	if n <= 0:
+		return
+	stat_points += n
+	_refresh_equip_hud()
 
 
 func _refresh_stat_box() -> void:
