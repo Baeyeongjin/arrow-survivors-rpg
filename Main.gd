@@ -127,12 +127,39 @@ const WMUZZLE := {
 	"chain_bolt": [Color(0.7, 0.85, 1.0), "burst"],
 	"frost_ring": [Color(0.7, 0.9, 1.0), "spin"],
 }
-const MAX_WEAPONS := 6
-const MAX_PASSIVES := 6
+const MAX_WEAPONS := 3   # M2 무기 숙련: 주무기 1 + 보조 2 (뱀서식 6수집 → 집중형으로 축소)
+const MAX_PASSIVES := 4   # M2: 패시브 슬롯 상한 (빌드 수렴)
 const MAX_WLEVEL := 8   # 뱀서식: 무기 만렙 Lv8
 const MAX_PLEVEL := 5
 const EVO_START_TIME := 600.0 # 일반 런 진화 상자는 10:00 이후부터 활성화
-const FREE_WEAPON_SLOTS := 6   # 뱀서식: 6칸까지 자유롭게 신규무기 획득 (억제 사실상 제거)
+const FREE_WEAPON_SLOTS := 1   # M2 무기 숙련: 주무기 외 신규무기는 25% 확률로만 제시 (주무기 집중)
+# M2 무기 숙련 분기: 주무기가 숙련 4단계에 도달하면 전투 스타일 갈림길 1회.
+# 한쪽을 고르면 다른 쪽은 잠긴다(빌드 정체성). 아키타입(sword/axe/staff/dagger/spear)별 flavored.
+# ponytail: 지금은 효과가 player 가산 스탯(집중형=단일 위력·치명 / 확산형=범위·다발) 수준의
+#   숙련 MVP. 무기별 실제 발사 패턴이 바뀌는 깊은 분기는 M3 지옥 던전 세로 슬라이스에서 추가.
+const MASTERY_FORK_LEVEL := 4
+const MASTERY_FORK := {
+	"sword": {
+		"a": {"name": "관통 숙련", "desc": "위력 +25% · 치명 +8%", "eff": {"dmg": 0.25, "crit": 0.08}},
+		"b": {"name": "광풍 숙련", "desc": "효과 범위 +30% · 추가 발사 +1", "eff": {"area": 0.30, "amount": 1}},
+	},
+	"axe": {
+		"a": {"name": "분쇄 숙련", "desc": "위력 +30% · 쿨감 +6%", "eff": {"dmg": 0.30, "haste": 0.06}},
+		"b": {"name": "지진 숙련", "desc": "효과 범위 +35% · 추가 발사 +1", "eff": {"area": 0.35, "amount": 1}},
+	},
+	"staff": {
+		"a": {"name": "정밀 숙련", "desc": "위력 +25% · 치명 +10%", "eff": {"dmg": 0.25, "crit": 0.10}},
+		"b": {"name": "폭풍 숙련", "desc": "추가 발사 +1 · 범위 +15%", "eff": {"amount": 1, "area": 0.15}},
+	},
+	"dagger": {
+		"a": {"name": "암살 숙련", "desc": "치명 +14% · 위력 +15%", "eff": {"crit": 0.14, "dmg": 0.15}},
+		"b": {"name": "난무 숙련", "desc": "추가 발사 +1 · 쿨감 +6%", "eff": {"amount": 1, "haste": 0.06}},
+	},
+	"spear": {
+		"a": {"name": "관통 숙련", "desc": "위력 +28% · 치명 +6%", "eff": {"dmg": 0.28, "crit": 0.06}},
+		"b": {"name": "질풍 숙련", "desc": "쿨감 +9% · 범위 +12%", "eff": {"haste": 0.09, "area": 0.12}},
+	},
+}
 const BOSS_TIME := 180.0        # 첫 보스 3분 (1분→3분: 초반에 빌드 쌓을 여유)
 const FINAL_STAGE := 5
 const RUN_TIME := 1800.0     # 30분에 피날레 사신 강림 (레거시 캠페인 모드)
@@ -671,6 +698,8 @@ var weapons := {}     # kind -> level
 var wtimer := {}      # 쿨다운 무기 -> 남은 시간
 var passives := {}    # kind -> level
 var evolved := {}     # 진화한 무기 kind -> true
+var primary_weapon := ""   # M2: 이번 런 주무기(숙련 트리 대상). _start_game에서 sw로 확정.
+var mastery_branch := ""    # M2: 주무기 숙련 분기 선택("arch:a"/"arch:b"), 미선택은 "".
 var combos := {}      # (구) 조합 — 유니온으로 대체, 미사용
 var unions := {}      # 획득한 유니온 key -> true (합체 신규 무기)
 
@@ -5504,7 +5533,9 @@ func _build_inventory_ui(s: Vector2, overlay: CanvasLayer) -> void:
 func _populate_levelup() -> void:
 	_fill_lvl_inv()
 	_fill_lvl_stats()
-	var picks: Array = _pick3(_card_options())
+	# M2: 주무기 숙련 분기가 대기 중이면 갈림길 2장 + 필러 1장을 강제로 보여준다.
+	var fork := _pending_mastery_fork()
+	var picks: Array = [fork[0], fork[1], _fork_filler_card()] if fork.size() == 2 else _pick3(_card_options())
 	_cur_picks = picks
 	var top_rarity := ""   # 이번 판 카드 중 최고 등급 (등장 연출용)
 	for i in 3:
@@ -5833,6 +5864,55 @@ func _choose_card(c: Dictionary) -> void:
 #   +99초당 +1  → Lv8은 약 t=594s(9.9분)에 해금 (EVO_START_TIME=600과 정렬)
 func _weapon_time_cap() -> int:
 	return clampi(2 + int(time_survived / 99.0), 2, MAX_WLEVEL)
+
+
+# M2 무기 숙련 분기: 주무기가 숙련 4단계 직전(Lv3)이고 아직 분기를 안 골랐으면 갈림길 2장 반환.
+func _pending_mastery_fork() -> Array:
+	if mastery_branch != "" or primary_weapon == "":
+		return []
+	if int(weapons.get(primary_weapon, 0)) != MASTERY_FORK_LEVEL - 1:
+		return []
+	var arch := _weapon_active_archetype(primary_weapon)
+	var fork: Dictionary = MASTERY_FORK.get(arch, {})
+	if fork.is_empty():
+		return []
+	var out: Array = []
+	for bkey in ["a", "b"]:
+		var b: Dictionary = fork[bkey]
+		var ar := arch
+		var bk: String = bkey
+		out.append({"r": "epic", "t": "fork", "new": true,
+			"title": "[숙련] %s" % str(b["name"]),
+			"desc": "%s — %s 숙련 분기 (1회 선택, 반대편 잠김)" % [str(b["desc"]), WNAMES.get(primary_weapon, primary_weapon)],
+			"icon": WICON.get(primary_weapon, ""),
+			"act": func() -> void: _take_mastery_branch(ar, bk)})
+	return out
+
+
+# 숙련 갈림길 화면의 3번째 필러: 주무기 강화가 아닌 일반 옵션 하나(없으면 리밋 브레이크).
+func _fork_filler_card() -> Dictionary:
+	for o in _pick3(_card_options()):
+		if str(o.get("key", "")) != primary_weapon:
+			return o
+	return _limit_break_card({})
+
+
+# 숙련 분기 확정: 효과(가산 스탯) 적용 + 분기 잠금 + 주무기를 숙련 단계로 진행.
+func _take_mastery_branch(arch: String, bkey: String) -> void:
+	if mastery_branch != "":
+		return   # 중복 적용 방지(카드 등급 보너스 재호출 등)
+	mastery_branch = "%s:%s" % [arch, bkey]
+	var eff: Dictionary = (MASTERY_FORK.get(arch, {}).get(bkey, {}) as Dictionary).get("eff", {})
+	if player:
+		player.damage_mult += float(eff.get("dmg", 0.0))
+		player.area_mult += float(eff.get("area", 0.0))
+		player.crit_chance += float(eff.get("crit", 0.0))
+		player.amount += int(eff.get("amount", 0))
+		if eff.has("haste"):
+			player.cooldown_mult = maxf(0.35, player.cooldown_mult - float(eff["haste"]))
+	# 숙련 단계 진행: 주무기를 분기 레벨로 올린다(정상 진행 유지).
+	if int(weapons.get(primary_weapon, 0)) < MASTERY_FORK_LEVEL:
+		weapons[primary_weapon] = MASTERY_FORK_LEVEL
 
 
 func _card_options() -> Array:
@@ -6537,12 +6617,14 @@ func _start_game(d: Dictionary) -> void:
 	evolved = {}
 	combos = {}
 	unions = {}
+	mastery_branch = ""   # M2: 이번 런 숙련 분기 미선택 상태로 초기화
 	reaper_warned = false
 	_boss_is_objective = false
 	# B블렌드: 장착한 무기 장비가 캐릭터 주무기(weapon1)를 대체. 없으면 캐릭터 기본 무기.
 	# (캐릭터 고유 2번째 무기 weapon2는 유지 → 캐릭터 정체성 일부 보존)
 	var gear_wpn := str(equipped.get("weapon", {}).get("weapon_kind", ""))
 	var sw := gear_wpn if gear_wpn != "" and WNAMES.has(gear_wpn) else str(sel_char.get("weapon", "arrow"))
+	primary_weapon = sw   # M2: 주무기 = 숙련 트리 대상
 	_add_weapon(sw)
 	# 캐릭터 고유 2번째 시작 무기 (예: 나이트 = 검기 + 회전검 '방패')
 	var sw2 := str(sel_char.get("weapon2", ""))
