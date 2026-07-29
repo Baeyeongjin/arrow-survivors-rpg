@@ -12227,13 +12227,17 @@ func _draw_stage_obstacle_art() -> void:
 	if dir_name == "" or names.is_empty():
 		return
 	var i := 0
-	# 사각 장애물: 영역을 꽉 채우도록 타일링 (한 장을 늘이면 뭉개짐)
+	# 사각 장애물: 영역을 꽉 채우도록 타일링 (한 장을 늘이면 뭉개짐).
+	# 조형물 아트는 64px 고전 도트로 그려 2배 확대해 얹는다. 아트를 128px로 그리면
+	# 같은 화면 크기에 점이 두 배 촘촘히 박혀 바닥 타일보다 고화질로 보인다.
 	for r: Rect2 in stage_layout.blocked_rects:
 		var tex := Assets.tex("res://assets/maps/%s/%s.png" % [dir_name, names[i % names.size()]])
 		i += 1
 		if tex == null:
 			continue
 		var cell := 128.0
+		# 텍스처가 몇 px이든 cell을 채우도록 확대율을 맞춘다(64px → 2배).
+		var zoom: float = cell / maxf(1.0, float(tex.get_width()))
 		var cols := int(ceil(r.size.x / cell))
 		var rows := int(ceil(r.size.y / cell))
 		for cx in cols:
@@ -12242,7 +12246,7 @@ func _draw_stage_obstacle_art() -> void:
 				var w: float = min(cell, r.position.x + r.size.x - p.x)
 				var h: float = min(cell, r.position.y + r.size.y - p.y)
 				draw_texture_rect_region(tex, Rect2(p, Vector2(w, h)),
-					Rect2(Vector2.ZERO, Vector2(w, h)))
+					Rect2(Vector2.ZERO, Vector2(w, h) / zoom))
 	# 원형 장애물: 중앙에 한 장 (지름에 맞춤)
 	for c in stage_layout.blocked_circles:
 		var tex2 := Assets.tex("res://assets/maps/%s/%s.png" % [dir_name, names[i % names.size()]])

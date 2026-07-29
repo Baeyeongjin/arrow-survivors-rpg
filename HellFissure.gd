@@ -148,7 +148,11 @@ func _draw() -> void:
 		draw_arc(Vector2.ZERO, closing, 0.0, TAU, 36,
 			Color(1.0, 0.72, 0.18, 0.45 + progress * 0.45), 3.0 + progress * 2.0)
 
+	# 아트는 정수배로만 확대한다. 소수배로 줄이면 도트가 뭉개져 바닥 타일보다
+	# 고화질처럼 보인다(64px 아트 → 2배 = 128 월드px).
 	var art_size := radius * 2.15
+	if _texture:
+		art_size = float(_texture.get_width()) * maxf(1.0, round(art_size / float(_texture.get_width())))
 	var tint := Color(2.1, 2.1, 2.2) if _hit_t > 0.0 else Color(1.0, 0.90 + pulse * 0.10, 0.84)
 	if _texture:
 		draw_texture_rect(_texture,
