@@ -3795,13 +3795,13 @@ func _fire_whip() -> void:
 				and abs(objective_delta.angle_to(dir)) < halfarc:
 			objective.take_damage(dmg)
 	_break_near(player.position + dir * reach * 0.5, reach * 0.6, dmg)   # 채찍 범위 내 파괴물도 부숨
-	# 채찍 모션: 검기와 같은 tbbk 크레센트를 응용 — 아트를 가로로 구워두고(90°)
-	# stretch로 세로를 강하게 눌러 '길고 얇은 가닥'으로 만든다. 같은 소스지만
-	# 검기(둥근 호)와 채찍(납작한 가닥)이 확실히 구분됨.
-	# 뱀서 채찍은 플레이어를 감싸는 원호가 아니라 옆으로 뻗는 가로 형태 → 앞쪽에 배치.
-	spawn_fx("fx_whip_evo" if evo else "fx_whip",
-		player.position + dir * reach * 0.5, reach * 1.0, dir.angle(),
-		24.0, Vector2(1.0, 0.34))
+	# 채찍 모션은 Effect.gd의 절차 "whip"으로 그린다.
+	# 예전에는 검기 크레센트 스프라이트를 세로로 눌러(stretch 0.34) 채찍인 척했는데,
+	# 눌린 부채꼴이라 '후려친다'는 느낌이 안 났다. Effect.gd에 뿌리는 굵고 끝은 얇은
+	# 곡선 + 잔상 3겹으로 이미 구현돼 있었는데 호출부만 스프라이트에 머물러 있었다.
+	_spawn_proc_fx("whip", player.position, reach,
+		Color(1.0, 0.52, 0.22) if evo else Color(1.0, 0.86, 0.48),
+		0.26, dir, player.position + dir * reach)
 	play_sfx("dash", -16.0, 0.1)
 
 
