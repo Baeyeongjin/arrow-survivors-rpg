@@ -48,6 +48,49 @@
 
 ---
 
+## 🎬 진행 중 — 공격 모션 (4/33) + 진화무기 범위 재설계 (미착수)
+
+### 공격 모션: 코드는 준비됨, 아트만 채우면 된다
+`Player._mframes("attack")`(0.45초)과 `Enemy._frames_attack`(12fps)이 **이미**
+`assets/anim/<key>_attack/0.png..N.png`를 자동 재생한다. **코드 수정 불필요.**
+
+완료(각 7프레임): `corvius_1_attack` `gustavo_1_attack` `serafina_1_attack` `valentino_1_attack`
+
+남은 대상:
+- 캐릭터 7: pixie, django, bolt, morgana, isolde, grimble, mordek → `<key>_1_attack`
+- 몬스터 22: slime goblin bat spider zombie ghoul skeleton mushroom fire_imp orc
+  lava_toad hellhound gargoyle demon frost_spider ice_wisp frost_golem eye_mass
+  void_wraith wraith_knight cultist dark_knight → `<key>_attack`
+- 정예·중간보스 6종은 **생성하지 말고 프레임 복사**(같은 스프라이트 재사용):
+  ember_stalker←hellhound, hell_enforcer←demon, grave_warden←wraith_knight,
+  tomb_knight←dark_knight, frost_sentry←ice_wisp, icewall_golem←frost_golem
+
+작업 레시피(검증됨):
+1. `tools/`가 아닌 스크래치에 있던 색축소 스크립트를 쓴다. PixelLab `animate_image`의
+   인라인 base64는 ~1800자에서 잘린다(도구가 경고). 32x32 스프라이트를 8~24색으로
+   quantize + optimize 하면 1100~1440자로 줄어 통과한다. 알파는 이진 마스크로 보존.
+2. **한 번에 하나씩** 파일에서 base64를 읽어 그대로 `animate_image`에 넘긴다.
+   여러 개를 한꺼번에 옮기면 전사 오류가 난다(이번에 2회 발생).
+   인자: `frame_count=6`, `no_background=true` → 결과 7프레임(0=원본).
+3. 결과를 `assets/anim/<key>_attack/<i>.png`로 다운로드 → `--import`.
+4. 비용 1 generation/개. 잔량은 `get_balance`로 확인(작업 시점 103).
+
+더 나은 길: `PIXELLAB_API_TOKEN` 환경변수가 설정돼 있다. MCP 래퍼의 REST 계약을
+확인할 수 있으면 스크립트로 파일에서 직접 올려 base64 전사 문제를 없앨 수 있다.
+
+### 진화무기: 범위 대신 특수 효과로 (사장님 요청, 미착수)
+로그라이크(뱀서)를 벗어난 지금 넓은 범위는 재미가 없다는 피드백. 문제는
+`player.area_mult`가 **8곳에서 곱으로 누적**된다는 것:
+숙련 분기 4종(0.12~0.35) · 패시브 촛대/봉인의서(각 +12%) · 스탯 집중(+3%/pt) ·
+장비 어픽스 · 진화 배수(1.35~1.5x). 게다가 진화 효과 상당수가 `explode_radius`·
+`radius` 확대뿐이라 "특별함"이 없다.
+
+방향: `EVO_FX`가 이미 `pierce`/`slow`/`explode`/`chain` 슬롯을 갖고 있으니 범위 배수를
+그쪽으로 옮긴다. 후보 축 — 관통·다중타격 / 상태이상(빙결·중독·표식) /
+처형·흡혈(저체력 즉살) / 연쇄·유도. 22종 재설계라 사장님 플레이 피드백 후 착수.
+
+---
+
 ## 📌 다음 작업 인수인계 (2026-07-29 갱신) — 여기부터 시작
 
 ### 이번 세션에서 완료된 것 (전부 master 푸시됨)
