@@ -1110,6 +1110,9 @@ func _autoshot() -> void:
 			var requested_glacier := arg.trim_prefix("--glacier-preview=")
 			if requested_glacier in ["brazier", "midboss", "boss"]:
 				glacier_preview = requested_glacier
+		elif arg.begins_with("--stress-stage="):
+			# --stress-test를 어느 던전에서 잴지. 지형마다 도형 수가 달라 경로찾기 비용이 다르다.
+			sel_stage = clampi(int(arg.trim_prefix("--stress-stage=")), 1, FINAL_STAGE)
 	if active_preview != "":
 		var preview_weapon_kind := str({
 			"sword": "cleave", "axe": "axe", "staff": "soul_bolt",
@@ -1486,6 +1489,35 @@ func _autoshot() -> void:
 		glacier_image.save_png("user://autoshot.png")
 		print("GLACIER_PREVIEW %s" % glacier_preview)
 		print("AUTOSHOT SAVED: ", ProjectSettings.globalize_path("user://autoshot.png"))
+		get_tree().quit()
+		return
+
+	# --stress-test : 최대 밀도(MAX_ENEMIES)에서 실제 렌더 루프의 프레임 시간을 잰다.
+	# 최적화 전후를 같은 조건으로 비교하기 위한 것. headless는 렌더를 안 하므로
+	# 창을 띄운 상태(--rendering-method gl_compatibility)로 실행해야 의미가 있다.
+	if "--stress-test" in args:
+		# vsync가 켜져 있으면 프레임 시간이 16.7ms에 고정돼 실제 여유를 못 잰다.
+		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+		Engine.max_fps = 0
+		player.invuln = 999999.0
+		time_survived = 240.0
+		_wave_minute = int(time_survived / 60.0)
+		_current_wave = GameConfig.wave_for_minute(_wave_minute, map_stage)
+		featured_enemy = str(_current_wave.get("primary", "slime"))
+		for i in MAX_ENEMIES:
+			_make_enemy(stage_layout.random_walkable(18.0))
+		await get_tree().process_frame
+		var stress_samples: Array[float] = []
+		for f in 240:
+			var frame_start := Time.get_ticks_usec()
+			await get_tree().process_frame
+			stress_samples.append(float(Time.get_ticks_usec() - frame_start) / 1000.0)
+		stress_samples.sort()
+		var live_enemies := get_tree().get_nodes_in_group("enemies").size()
+		var median: float = stress_samples[stress_samples.size() / 2]
+		var p95: float = stress_samples[int(stress_samples.size() * 0.95)]
+		print("STRESS_TEST stage=%d enemies=%d p50=%.2fms p95=%.2fms worst=%.2fms (60fps=16.7ms)" % [
+			map_stage, live_enemies, median, p95, stress_samples[-1]])
 		get_tree().quit()
 		return
 

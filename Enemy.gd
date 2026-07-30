@@ -48,6 +48,12 @@ var _melee_state := 0    # 근접 상태: 0 접근 / 1 예고 / 2 타격 / 3 회
 var _melee_t := 0.0
 var _strike_dir := Vector2.DOWN
 var is_split := false    # 분열로 생성된 새끼 (재분열 방지)
+# setup()에서 한 번만 해석하는 스프라이트 캐시 (_draw의 매 프레임 문자열 생성 제거).
+var _frames_attack: Array = []
+var _frames_walk: Array = []
+var _frames_walk_n: Array = []
+var _frames_walk_e: Array = []
+var _sprite_tex: Texture2D = null
 # 죽음 연출 (스쿼시→팝→페이드). 죽는 순간 잠깐 살아있는 상태로 애니 재생 후 소멸.
 var _dying := false
 var _die_t := 0.0
@@ -135,6 +141,16 @@ func setup(t: Dictionary, time: float) -> void:
 	weak = t.get("weak", "")
 	resist = t.get("resist", "")
 	_shoot_cd = randf_range(0.8, 1.8)
+	# 스프라이트 경로는 tier가 정해지면 바뀌지 않는다. _draw에서 매 프레임 문자열을
+	# 만들면 300마리 × 60fps = 초당 수만 번의 할당이 되므로 여기서 한 번만 해석한다.
+	var key := str(t.get("key", ""))
+	_frames_attack = Assets.frames("res://assets/anim/%s_attack" % key)
+	_frames_walk = Assets.frames("res://assets/anim/%s_walk" % key)
+	_frames_walk_n = Assets.frames("res://assets/anim/%s_walk_n" % key)
+	_frames_walk_e = Assets.frames("res://assets/anim/%s_walk_e" % key)
+	_sprite_tex = Assets.tex(str(t.get("sprite", "")))
+	if _sprite_tex == null:
+		_sprite_tex = Assets.tex("res://assets/enemies/%s.png" % key)
 
 func _process(delta: float) -> void:
 	_anim_t += delta
@@ -431,10 +447,7 @@ func _draw_attack_warning() -> void:
 func _draw() -> void:
 	# 죽음 연출: 잠깐 흰빛으로 팽창 → 쪼그라들며 위로 떠올라 사라짐 (뱀서식 펑)
 	if _dying:
-		var key0: String = tier.get("key", "")
-		var dtex := Assets.tex(tier.get("sprite", ""))
-		if dtex == null:
-			dtex = Assets.tex("res://assets/enemies/%s.png" % key0)
+		var dtex := _sprite_tex
 		if dtex:
 			var p: float = clamp(1.0 - _die_t / DIE_DUR, 0.0, 1.0)
 			# 초반 살짝 팽창(팝) 후 급격히 수축
@@ -457,27 +470,21 @@ func _draw() -> void:
 		draw_rect(Rect2(-ebw / 2.0 - 1.0, eby - 1.0, ebw + 2.0, 7.0), Color(0.05, 0.04, 0.06, 0.92))
 		draw_rect(Rect2(-ebw / 2.0, eby, ebw * eratio, 5.0), Color(1.0, 0.78, 0.28))
 	var tex: Texture2D = null
-	var key: String = tier.get("key", "")
-	if _attacking:
-		var fa: Array = Assets.frames("res://assets/anim/%s_attack" % key)
-		if fa.size() > 0:
-			tex = fa[int(_atk_t * 12.0) % fa.size()]
+	if _attacking and _frames_attack.size() > 0:
+		tex = _frames_attack[int(_atk_t * 12.0) % _frames_attack.size()]
 	if tex == null:
 		# 걷기 4방향 (없으면 south 폴백, 서=동 반전)
-		var wsuf := ""
-		if _dir == "n":
-			wsuf = "_n"
-		elif _dir == "e" or _dir == "w":
-			wsuf = "_e"
-		var fw: Array = Assets.frames("res://assets/anim/%s_walk%s" % [key, wsuf]) if wsuf != "" else []
-		if fw.is_empty():
-			fw = Assets.frames("res://assets/anim/%s_walk" % key)
+		var fw: Array = _frames_walk
+		if _dir == "n" and _frames_walk_n.size() > 0:
+			fw = _frames_walk_n
+		elif (_dir == "e" or _dir == "w") and _frames_walk_e.size() > 0:
+			fw = _frames_walk_e
 		if fw.size() > 0:
 			# 속도 연동 재생: 느린 몹은 어슬렁, 빠른 몹은 종종걸음 (7프레임으로도 자연스러운 보행)
 			var wfps: float = 9.0 * clamp(speed / 55.0, 0.7, 1.55)
 			tex = fw[int(_anim_t * wfps) % fw.size()]
 	if tex == null:
-		tex = Assets.tex(tier.get("sprite", ""))
+		tex = _sprite_tex
 	if tex:
 		var w := radius * SPRITE_SCALE
 		# 엘리트: 링 대신 황금빛 색조로 구분 (크기도 1.5배)
