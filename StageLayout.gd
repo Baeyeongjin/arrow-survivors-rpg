@@ -3,10 +3,11 @@ extends RefCounted
 
 # 독립 맵의 이동 가능 영역/고정 아이템/유물 슬롯 데이터.
 # 장판 아트가 준비되기 전에도 플레이 동선과 충돌을 먼저 검증할 수 있게 한다.
-const WORLD := Vector2(2800, 2800)
+const WORLD := Vector2(3840, 3840)
 
 var stage_id := 1
 var tint := Color(0.70, 0.70, 0.78)
+var rooms: Array[Rect2] = []          # 생성된 방(장식·스폰이 방 기준으로 배치되도록 공개)
 var shapes: Array[Dictionary] = []
 var blocked_circles: Array[Dictionary] = []
 var blocked_rects: Array[Rect2] = []
@@ -32,101 +33,297 @@ var _block_center := PackedVector2Array()
 var _block_radius := PackedFloat32Array()
 
 
-static func make(stage: int, stage_tint: Color) -> StageLayout:
+# ── 상위 그리드 WFC 던전 생성 ────────────────────────────────────────────
+# 방 슬롯 격자(WFC_GRID x WFC_GRID)에 WFC를 돌려 배치를 만든다. 타일은
+# 빈칸 / 방 / 가로복도 / 세로복도 / 교차로 다섯 가지고, 인접 제약은 하나다:
+#   "복도의 열린 끝이 암반(빈칸)으로 이어지면 안 된다."
+# 이 제약은 실제로 가지치기를 한다. tools/wfc 검증에서 코너 Wang 16장이 백색소음을
+# 낸 이유는 제약이 0이었기 때문이고(어떤 타일 옆에도 항상 4장이 맞았다), 여기서는
+# 복도가 방·교차로로만 이어질 수 있어 방과 통로가 있는 배치가 나온다.
+#
+# WFC는 연결성을 보장하지 못한다(실측: 최대 연결요소 12.9~85.1%). 그래서 풀이 뒤에
+# 중앙에서 BFS로 도달 검사를 하고, 못 닿는 칸은 빈칸으로 지운다. 그러고도 방이
+# 모자라면 다른 시드로 다시 뽑고, 전부 실패하면 결정적 폴백으로 내려간다.
+# 자세한 실측은 tools/wfc/README.md.
+const WFCModelScript = preload("res://tools/wfc/WFCModel.gd")
+
+enum { SLOT_EMPTY, SLOT_ROOM, SLOT_HALL_H, SLOT_HALL_V, SLOT_CROSS }
+const SLOT_COUNT := 5
+const SOCKET_WALL := 0
+const SOCKET_OPEN := 1
+const SOCKET_FLEX := 2   # 방의 벽 — 이웃이 열려 있으면 그쪽에 문이 난다
+# 방향 순서는 WFCModel과 같다: 0=좌, 1=하, 2=우, 3=상
+const SLOT_SOCKETS := [
+	[SOCKET_WALL, SOCKET_WALL, SOCKET_WALL, SOCKET_WALL],
+	[SOCKET_FLEX, SOCKET_FLEX, SOCKET_FLEX, SOCKET_FLEX],
+	[SOCKET_OPEN, SOCKET_WALL, SOCKET_OPEN, SOCKET_WALL],
+	[SOCKET_WALL, SOCKET_OPEN, SOCKET_WALL, SOCKET_OPEN],
+	[SOCKET_OPEN, SOCKET_OPEN, SOCKET_OPEN, SOCKET_OPEN],
+]
+const WFC_GRID := 5
+const WFC_TRIES := 24
+const MIN_ROOMS := 5     # 목표 3 + 유물 1 + 여유 1 (슬라이스 계약)
+
+# 던전 성격 프로필. 배치는 매 판 달라지되 던전마다 손맛은 유지하는 손잡이.
+#   room_min/max: 방 한 변(격자 칸 안으로 클램프), corridor: 복도 폭,
+#   room_w: 방 가중치(높으면 방이 많은 던전), cross_w: 교차로 가중치(높으면 순환로가 많다),
+#   round: 방을 원형으로 낼지(공허의 부유 섬), pillars: 방 안 기둥 수
+const DUNGEON_PROFILES := {
+	1: {"room_min": 360, "room_max": 520, "corridor": 260, "room_w": 2.6, "cross_w": 0.8, "round": false, "pillars": 1},
+	2: {"room_min": 330, "room_max": 480, "corridor": 220, "room_w": 2.0, "cross_w": 0.5, "round": false, "pillars": 1},
+	3: {"room_min": 320, "room_max": 470, "corridor": 200, "room_w": 2.4, "cross_w": 1.1, "round": false, "pillars": 1},
+	4: {"room_min": 330, "room_max": 480, "corridor": 190, "room_w": 2.2, "cross_w": 0.6, "round": true, "pillars": 0},
+	5: {"room_min": 360, "room_max": 540, "corridor": 240, "room_w": 2.5, "cross_w": 0.9, "round": false, "pillars": 2},
+}
+
+
+# layout_seed 0 = 스테이지별 고정 시드(테스트·개발 캡처 재현용).
+# 실제 런은 Main이 층마다 난수를 넘겨 매번 다른 던전이 나온다.
+static func make(stage: int, stage_tint: Color, layout_seed: int = 0) -> StageLayout:
 	var layout := StageLayout.new()
 	layout.stage_id = clampi(stage, 1, 5)
 	layout.tint = stage_tint
-	match layout.stage_id:
-		1:
-			# 묘지 — 중앙 광장 + 사방 납골당(십자 구조). 입문 던전이라 방이 크고
-			# 복도가 넓어 길을 잃지 않는다. 광장에서 원을 그리며 호드를 흘릴 수 있고,
-			# 봉인비는 각 납골당 안에 있어 "안전한 광장을 떠나는" 결정을 만든다.
-			layout.shapes = [
-				_rect(900, 900, 1000, 1000),                       # 중앙 광장
-				_rect(1100, 180, 600, 540), _rect(1100, 2080, 600, 540),   # 북·남 납골당
-				_rect(180, 1100, 540, 600), _rect(2080, 1100, 540, 600),   # 서·동 납골당
-				_rect(1280, 680, 240, 260), _rect(1280, 1860, 240, 260),   # 북·남 복도
-				_rect(680, 1280, 260, 240), _rect(1860, 1280, 260, 240),   # 서·동 복도
-			]
-			layout.blocked_rects = [
-				Rect2(1040, 1040, 170, 140), Rect2(1590, 1040, 170, 140),
-				Rect2(1040, 1620, 170, 140), Rect2(1590, 1620, 170, 140),
-			]
-			layout.item_positions = [Vector2(1550, 2350), Vector2(1000, 1400), Vector2(1800, 1400), Vector2(1400, 1000)]
-			# M5-A 영혼 봉인비: 북·서·동 납골당 안. 광장을 벗어나야 점령할 수 있다.
-			layout.objective_positions = [Vector2(1400, 450), Vector2(450, 1400), Vector2(2350, 1400)]
-			layout.relic_position = Vector2(1250, 2350)
-			layout.landmark_position = Vector2(1400, 1400)
-		2:
-			# 지옥 — 용암 다리 회랑 + 세 챔버. 가로 정체성은 유지하되 양끝이 아니라
-			# 챔버로 이어져 목표 전투가 방 안에서 벌어진다. 회랑의 지그재그 병목이
-			# 추격을 끊어 "다리 위에서 버틸지, 방으로 들어갈지"를 고르게 한다.
-			layout.shapes = [
-				_rect(120, 1150, 2560, 500),                        # 중앙 다리 회랑
-				_rect(240, 600, 620, 590), _rect(1940, 600, 620, 590),      # 서·동 챔버
-				_rect(1090, 1610, 620, 590),                        # 남 챔버
-			]
-			layout.blocked_rects = [
-				Rect2(760, 1150, 110, 320), Rect2(1500, 1330, 110, 320),
-				Rect2(2180, 1150, 110, 320),
-			]
-			layout.item_positions = [Vector2(200, 1400), Vector2(2600, 1400), Vector2(550, 700), Vector2(2250, 700)]
-			# M3 용암 균열: 서 챔버 → 동 챔버 → 남 챔버 순으로 회랑을 왕복하게 한다.
-			layout.objective_positions = [Vector2(550, 870), Vector2(2250, 870), Vector2(1400, 1900)]
-			layout.relic_position = Vector2(1400, 2100)
-			layout.landmark_position = Vector2(1400, 1400)
-		3:
-			# 빙하 — 외곽 순환 회랑 + 중앙 결정실(스포크 4개). 순환로가 있어 계속
-			# 돌 수 있지만 폭이 좁아 방심하면 갇힌다. 중앙 결정실은 넓은 대신
-			# 출구가 넷뿐이라 화로(온기)를 두면 "들어갈지 돌지"가 갈린다.
-			layout.shapes = [
-				_rect(240, 240, 2320, 230), _rect(240, 2330, 2320, 230),   # 북·남 회랑
-				_rect(240, 240, 230, 2320), _rect(2330, 240, 230, 2320),   # 서·동 회랑
-				_rect(1040, 1040, 720, 720),                        # 중앙 결정실
-				_rect(1300, 430, 200, 650), _rect(1300, 1720, 200, 650),   # 북·남 스포크
-				_rect(430, 1300, 650, 200), _rect(1720, 1300, 650, 200),   # 서·동 스포크
-			]
-			layout.blocked_rects = [
-				Rect2(1130, 1130, 150, 150), Rect2(1520, 1130, 150, 150),
-				Rect2(1130, 1520, 150, 150), Rect2(1520, 1520, 150, 150),
-			]
-			layout.item_positions = [Vector2(350, 350), Vector2(2450, 350), Vector2(350, 2450), Vector2(2450, 2450)]
-			# M5-B 얼어붙은 화로: 북쪽 스포크 → 동쪽 회랑 → 남서 회랑.
-			# 중앙에서 출발해 순환로를 한 바퀴 탐색하면 온기 거점이 자연스럽게 늘어난다.
-			layout.objective_positions = [Vector2(1400, 800), Vector2(2445, 1400), Vector2(740, 2445)]
-			layout.relic_position = Vector2(1400, 350)
-			layout.landmark_position = Vector2(1400, 1400)
-		4:
-			# 공허 — 부유 섬 다섯 + 다리. 섬 밖은 허공이라 물러설 곳이 없고,
-			# 다리는 폭 180이라 한 번 물리면 빠져나오기 어렵다. 위치 선정이 곧 생존.
-			layout.shapes = [
-				_circle(1400, 1400, 520),                           # 중앙 대섬
-				_circle(1400, 470, 330), _circle(1400, 2330, 330),          # 북·남 섬
-				_circle(470, 1400, 330), _circle(2330, 1400, 330),          # 서·동 섬
-				_rect(1310, 470, 180, 930), _rect(1310, 1400, 180, 930),    # 북·남 다리
-				_rect(470, 1310, 930, 180), _rect(1400, 1310, 930, 180),    # 서·동 다리
-			]
-			layout.blocked_circles = [_circle(1150, 1150, 110), _circle(1650, 1650, 110)]
-			layout.item_positions = [Vector2(1400, 470), Vector2(470, 1400), Vector2(2330, 1400), Vector2(1400, 2330)]
-			layout.relic_position = Vector2(1400, 1180)
-			layout.landmark_position = Vector2(1400, 1400)
-		5:
-			# 마왕성 — 전실 → 열주 대홀 → 왕좌실의 3단 관문. 성문을 통과할수록
-			# 안쪽으로 좁아져 최종 빌드 검증장이 된다. 열주는 시야를 끊되 동선은 남긴다.
-			layout.shapes = [
-				_rect(560, 760, 1680, 1290),                        # 열주 대홀
-				_rect(1140, 240, 520, 560),                         # 왕좌실 (대홀과 직접 접함)
-				_rect(1000, 2120, 800, 520),                        # 전실
-				_rect(1300, 2010, 200, 250),                        # 성문 복도
-			]
-			layout.blocked_rects = [
-				Rect2(760, 900, 150, 150), Rect2(760, 1300, 150, 150), Rect2(760, 1700, 150, 150),
-				Rect2(1940, 900, 150, 150), Rect2(1940, 1300, 150, 150), Rect2(1940, 1700, 150, 150),
-			]
-			layout.item_positions = [Vector2(1400, 2380), Vector2(700, 1000), Vector2(2150, 1000), Vector2(1200, 420)]
-			layout.relic_position = Vector2(1600, 420)
-			layout.landmark_position = Vector2(1400, 1400)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("arrow-stage-%d" % layout.stage_id) if layout_seed == 0 else layout_seed
+	layout._generate(rng, DUNGEON_PROFILES[layout.stage_id])
+	layout._bake()
 	return layout
+
+
+func _generate(rng: RandomNumberGenerator, profile: Dictionary) -> void:
+	var slots := _solve_slots(rng, profile)
+	if slots.is_empty():
+		slots = _fallback_slots()
+	_build_geometry(rng, profile, slots)
+	_assign_points()
+
+
+# WFC를 돌려 슬롯 격자를 얻는다. 실패하면 빈 배열.
+func _solve_slots(rng: RandomNumberGenerator, profile: Dictionary) -> PackedInt32Array:
+	var model = WFCModelScript.new()
+	model.MX = WFC_GRID
+	model.MY = WFC_GRID
+	model.T = SLOT_COUNT
+	model.N = 1
+	model.heuristic = WFCModelScript.HEURISTIC_ENTROPY
+	model.weights = PackedFloat64Array([
+		1.0, float(profile["room_w"]), 1.5, 1.5, float(profile["cross_w"])])
+	model.propagator = _build_propagator()
+	for _attempt in WFC_TRIES:
+		if not model.run(rng.randi(), -1):
+			continue   # 모순 — 다른 시드로
+		var slots := PackedInt32Array(model.observed)
+		# 중앙은 항상 방. 런 시작·층 전환이 그 자리라 반드시 걸을 수 있어야 한다.
+		# 방 소켓은 FLEX라 어떤 이웃과도 맞으므로 이 덮어쓰기가 제약을 깨지 않는다.
+		slots[_center_slot()] = SLOT_ROOM
+		_prune_unreachable(slots)
+		if _count_rooms(slots) >= MIN_ROOMS:
+			return slots
+	return PackedInt32Array()
+
+
+static func _build_propagator() -> Array:
+	var propagator: Array = []
+	for d in 4:
+		var per_tile: Array = []
+		for t in SLOT_COUNT:
+			var allowed := PackedInt32Array()
+			for t2 in SLOT_COUNT:
+				var a: int = SLOT_SOCKETS[t][d]
+				var b: int = SLOT_SOCKETS[t2][WFCModelScript.OPPOSITE[d]]
+				# 열린 끝이 벽을 만나는 조합만 금지한다.
+				var clash := (a == SOCKET_OPEN and b == SOCKET_WALL) or (a == SOCKET_WALL and b == SOCKET_OPEN)
+				if not clash:
+					allowed.append(t2)
+			per_tile.append(allowed)
+		propagator.append(per_tile)
+	return propagator
+
+
+static func _center_slot() -> int:
+	return (WFC_GRID / 2) + (WFC_GRID / 2) * WFC_GRID
+
+
+# 두 이웃 칸이 실제로 통하는가 (양쪽 소켓이 모두 벽이 아니면 통한다).
+static func _slots_linked(slots: PackedInt32Array, index: int, d: int) -> bool:
+	var x := index % WFC_GRID
+	var y := index / WFC_GRID
+	var nx: int = x + WFCModelScript.DX[d]
+	var ny: int = y + WFCModelScript.DY[d]
+	if nx < 0 or ny < 0 or nx >= WFC_GRID or ny >= WFC_GRID:
+		return false
+	var here: int = slots[index]
+	var there: int = slots[nx + ny * WFC_GRID]
+	if here == SLOT_EMPTY or there == SLOT_EMPTY:
+		return false
+	var a: int = SLOT_SOCKETS[here][d]
+	var b: int = SLOT_SOCKETS[there][WFCModelScript.OPPOSITE[d]]
+	return a != SOCKET_WALL and b != SOCKET_WALL
+
+
+# 중앙에서 못 닿는 칸을 빈칸으로 지운다. WFC가 보장하지 못하는 연결성을 여기서 확정한다.
+func _prune_unreachable(slots: PackedInt32Array) -> void:
+	var seen := {}
+	var queue: Array[int] = [_center_slot()]
+	seen[_center_slot()] = true
+	while not queue.is_empty():
+		var index: int = queue.pop_back()
+		for d in 4:
+			if not _slots_linked(slots, index, d):
+				continue
+			var nx: int = index % WFC_GRID + WFCModelScript.DX[d]
+			var ny: int = index / WFC_GRID + WFCModelScript.DY[d]
+			var next_index: int = nx + ny * WFC_GRID
+			if not seen.has(next_index):
+				seen[next_index] = true
+				queue.append(next_index)
+	for i in slots.size():
+		if not seen.has(i):
+			slots[i] = SLOT_EMPTY
+
+
+static func _count_rooms(slots: PackedInt32Array) -> int:
+	var total := 0
+	for i in slots.size():
+		if slots[i] == SLOT_ROOM:
+			total += 1
+	return total
+
+
+# WFC가 24번 다 실패했을 때의 결정적 배치. make()가 절대 실패하지 않게 하는 안전망.
+static func _fallback_slots() -> PackedInt32Array:
+	var slots := PackedInt32Array()
+	slots.resize(WFC_GRID * WFC_GRID)
+	slots.fill(SLOT_EMPTY)
+	var mid := WFC_GRID / 2
+	slots[mid + mid * WFC_GRID] = SLOT_CROSS
+	for step in range(1, mid + 1):
+		var kind: int = SLOT_ROOM if step == mid else SLOT_HALL_H
+		slots[(mid - step) + mid * WFC_GRID] = kind
+		slots[(mid + step) + mid * WFC_GRID] = kind
+		kind = SLOT_ROOM if step == mid else SLOT_HALL_V
+		slots[mid + (mid - step) * WFC_GRID] = kind
+		slots[mid + (mid + step) * WFC_GRID] = kind
+	slots[_center_slot()] = SLOT_ROOM
+	return slots
+
+
+# 슬롯 격자를 실제 지형으로 펼친다. 방은 칸 안 지터 사각(칸 중심을 반드시 포함),
+# 복도는 통하는 이웃 칸 중심끼리 이은 직선. 그래서 그래프 연결성이 곧 기하 연결성이다.
+func _build_geometry(rng: RandomNumberGenerator, profile: Dictionary, slots: PackedInt32Array) -> void:
+	var corridor := float(profile["corridor"])
+	var margin := corridor * 0.5 + 70.0
+	var cell := (WORLD - Vector2(margin, margin) * 2.0) / float(WFC_GRID)
+	var room_cap := Vector2(cell.x - corridor * 0.6, cell.y - corridor * 0.6)
+	var is_round: bool = bool(profile["round"])
+
+	var room_of_slot := {}
+	for i in slots.size():
+		if slots[i] != SLOT_ROOM:
+			continue
+		var slot_center := _slot_center(i, margin, cell)
+		var size := Vector2(
+			clampf(rng.randf_range(float(profile["room_min"]), float(profile["room_max"])), 120.0, room_cap.x),
+			clampf(rng.randf_range(float(profile["room_min"]), float(profile["room_max"])), 120.0, room_cap.y))
+		# 지터를 주되 칸 중심을 항상 품게 한다 — 복도가 칸 중심으로 들어오기 때문.
+		var jitter := Vector2(
+			rng.randf_range(-1.0, 1.0) * maxf(0.0, size.x * 0.5 - corridor * 0.5),
+			rng.randf_range(-1.0, 1.0) * maxf(0.0, size.y * 0.5 - corridor * 0.5))
+		var room := Rect2(slot_center + jitter - size * 0.5, size)
+		rooms.append(room)
+		room_of_slot[i] = rooms.size() - 1
+		if is_round and i != _center_slot():
+			var c := room.get_center()
+			shapes.append(_circle(c.x, c.y, minf(size.x, size.y) * 0.5))
+		else:
+			shapes.append(_rect(room.position.x, room.position.y, size.x, size.y))
+
+	# 통하는 이웃끼리 복도를 뚫는다. d를 우/하만 돌려 같은 복도를 두 번 파지 않는다.
+	for i in slots.size():
+		if slots[i] == SLOT_EMPTY:
+			continue
+		for d in [1, 2]:
+			if not _slots_linked(slots, i, d):
+				continue
+			var nx: int = i % WFC_GRID + WFCModelScript.DX[d]
+			var ny: int = i / WFC_GRID + WFCModelScript.DY[d]
+			_carve(_slot_center(i, margin, cell),
+				_slot_center(nx + ny * WFC_GRID, margin, cell), corridor * 0.5)
+
+	# 방 안 기둥. 시야를 끊되 방 중앙(목표·아이템 자리)은 비워 둔다.
+	for index in room_of_slot.keys():
+		if index == _center_slot():
+			continue   # 시작 방은 비워 둔다
+		var room: Rect2 = rooms[room_of_slot[index]]
+		for _p in int(profile["pillars"]):
+			var pillar := Vector2(rng.randf_range(90.0, 150.0), rng.randf_range(90.0, 150.0))
+			if room.size.x < pillar.x + 300.0 or room.size.y < pillar.y + 300.0:
+				continue
+			var slot := Rect2(Vector2(
+				rng.randf_range(room.position.x + 40.0, room.end.x - 40.0 - pillar.x),
+				rng.randf_range(room.position.y + 40.0, room.end.y - 40.0 - pillar.y)), pillar)
+			if slot.grow(130.0).has_point(room.get_center()):
+				continue
+			blocked_rects.append(slot)
+
+
+static func _slot_center(index: int, margin: float, cell: Vector2) -> Vector2:
+	return Vector2(margin, margin) + (Vector2(index % WFC_GRID, index / WFC_GRID) + Vector2(0.5, 0.5)) * cell
+
+
+func _carve(a: Vector2, b: Vector2, half: float) -> void:
+	var origin := Vector2(minf(a.x, b.x) - half, minf(a.y, b.y) - half)
+	var size := Vector2(absf(b.x - a.x) + half * 2.0, absf(b.y - a.y) + half * 2.0)
+	shapes.append(_rect(origin.x, origin.y, size.x, size.y))
+
+
+# 시작 방에서 먼 방부터 목표·유물을 배치해 탐험 동선을 만든다.
+# 목표 3개 / 아이템 4개는 던전 슬라이스와 테스트의 계약이라 개수를 반드시 지킨다.
+func _assign_points() -> void:
+	var start: Vector2 = rooms[0].get_center() if not rooms.is_empty() else WORLD * 0.5
+	# 시작 방은 중앙 슬롯 방이다. rooms 순서는 슬롯 인덱스순이라 중앙을 직접 찾는다.
+	for room in rooms:
+		if room.has_point(WORLD * 0.5):
+			start = room.get_center()
+			break
+	landmark_position = start
+	var order: Array[int] = []
+	for i in rooms.size():
+		if rooms[i].get_center() != start:
+			order.append(i)
+	var room_list := rooms
+	order.sort_custom(func(a: int, b: int) -> bool:
+		return (room_list[a].get_center().distance_squared_to(start)
+			> room_list[b].get_center().distance_squared_to(start)))
+
+	var used := {}
+	for i in mini(3, order.size()):
+		objective_positions.append(rooms[order[i]].get_center())
+		used[order[i]] = true
+	relic_position = start
+	for i in order.size():
+		if not used.has(order[i]):
+			relic_position = rooms[order[i]].get_center()
+			used[order[i]] = true
+			break
+	# 고정 아이템은 가까운 방부터 — 초반 탐험이 곧 빌드 확장이 되게.
+	for i in range(order.size() - 1, -1, -1):
+		if item_positions.size() >= 4:
+			break
+		if used.has(order[i]):
+			continue
+		item_positions.append(rooms[order[i]].get_center())
+		used[order[i]] = true
+	# 방이 모자라면 시작 방 안쪽으로 채워 4개 계약을 지킨다.
+	var fill := 0
+	while item_positions.size() < 4:
+		var reach := 120.0
+		if not rooms.is_empty():
+			reach = minf(rooms[0].size.x, rooms[0].size.y) * 0.26
+		item_positions.append(start + Vector2.from_angle(TAU * float(fill) / 4.0) * reach)
+		fill += 1
+	while objective_positions.size() < 3:
+		objective_positions.append(start)
 
 
 func is_walkable(point: Vector2, radius := 0.0) -> bool:

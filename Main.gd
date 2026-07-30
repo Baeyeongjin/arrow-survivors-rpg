@@ -374,7 +374,10 @@ const UNION_DEFS := [
 	{"key": "blade_dance",  "a": "blade",   "b": "aura",      "name": "검무",
 		"desc": "검+오라 융합 광역 지속", "icon": "res://assets/items/sword.png", "cd": 1.4},
 ]
-const WORLD := Vector2(2800, 2800)   # 월드 크기 (뱀서식 넓은 맵. 몹은 플레이어 주변 스폰이라 밀도 유지)
+# 월드 크기. StageLayout.WORLD와 반드시 같아야 한다(StageLayoutTest가 검사).
+# 2800 → 3840: 탐사 체감을 위해 면적 1.88배. 몹은 플레이어 주변에 스폰되므로
+# 넓혀도 화면 밀도는 유지되고, 대신 방·복도 사이 이동이 실제 탐험이 된다.
+const WORLD := Vector2(3840, 3840)
 const StageLayoutData = preload("res://StageLayout.gd")
 const StageTiles = preload("res://StageTileRenderer.gd")
 const STAGE_MAP_DIRS := ["graveyard", "hell_bridge", "glacier", "void_altar", "demon_castle"]
@@ -545,6 +548,7 @@ var xp := 0
 var xp_to_next := 10
 var pending_levelups := 0
 
+var layout_seed_override := 0   # 0=스테이지 고정 배치(캡처·테스트), 그 외=이번 층 랜덤 시드
 var spawn_timer := 1.0
 var pickup_timer := 10.0
 var breakable_timer := 6.0   # 파괴 오브젝트 주기 스폰
@@ -3971,17 +3975,18 @@ func _nearest_unhit_enemy(a):
 #  스폰 / 젬
 # ---------------------------------------------------------------------
 func _spawn_wave() -> void:
-	# 동시 상한: 초반부터 빽빽하게 (뱀서식 밀도 = 쓸어담는 재미의 핵심)
+	# RPG 탐험 밀도 (사장님 요청 "맵이 넓어지면 나오는 게 줄어야 한다").
+	# 몹은 플레이어 주변 링에 스폰되므로 월드를 넓혀도 화면 밀도는 자동으로 안 준다.
+	# 그래서 상한·웨이브 규모를 직접 낮춘다: 방을 하나씩 헤치고 나가는 압박이 되도록.
+	#   동시 상한 90+0.75t → 56+0.42t, 웨이브 10+t/8 → 6+t/14, 상한 84 → 40
 	var density := float(_current_wave.get("density", 1.0))
-	# 밀도 상향 2차 (사장님 피드백): 초반 54→72→90, 시간 계수 0.52→0.62→0.75
-	var cap: int = min(MAX_ENEMIES, int((90 + time_survived * 0.75) * density))
+	var cap: int = min(MAX_ENEMIES, int((56 + time_survived * 0.42) * density))
 	if boss_spawned and diff_label == "쉬움":
 		cap = int(cap * 0.6)
 	var cur := get_tree().get_nodes_in_group("enemies").size()
 	if cur >= cap:
 		return
-	# 웨이브 규모: 초반 10 → 시간당 증가. 런 중 위협 효과로 밀도 증가.
-	var cnt: int = min(84, int((10 + int(time_survived / 8.0)) * run_pressure_mult * density))
+	var cnt: int = min(40, int((6 + int(time_survived / 14.0)) * run_pressure_mult * density))
 	cnt = min(cnt, cap - cur)
 	for i in cnt:
 		_spawn_one()
@@ -4141,31 +4146,34 @@ func _gen_decorations() -> void:
 
 # 스테이지 지형에 맞춘 조형물 정렬 패턴. 열주 소품 인덱스는 다운로드 순서 기준.
 const STAGE_PILLAR_IDX := {1: 0, 2: 1, 3: 0, 4: 3, 5: 5}
+# 배치가 매 판 바뀌므로 좌표를 박아둘 수 없다. 생성된 방을 기준으로 얹는다:
+# 시작 방은 둘레 원형(성역처럼), 나머지 방은 벽을 따라 열주 2줄.
 func _add_decor_patterns(stage: int, scatter: Array, tint: Color) -> void:
+	if stage_layout == null or stage_layout.rooms.is_empty():
+		return
 	var pillar_i: int = clampi(int(STAGE_PILLAR_IDX.get(stage, 0)), 0, scatter.size() - 1)
 	var pillar: String = scatter[pillar_i]
-	match stage:
-		1:
-			# 묘지(개활): 랜드마크 둘레 원형 + 짧은 열주 참배로.
-			_decor_ring(stage_layout.landmark_position, 360.0, 12, scatter[3], 1.0, tint)
-			_decor_line(Vector2(1400, 700), Vector2(1400, 1080), 130.0, pillar, 1.05, tint)
-		2:
-			# 지옥(가로 회랑): 회랑 위·아래 가장자리를 따라 열주 2줄.
-			_decor_line(Vector2(280, 850), Vector2(2520, 850), 150.0, pillar, 1.2, tint)
-			_decor_line(Vector2(280, 1950), Vector2(2520, 1950), 150.0, pillar, 1.2, tint)
-		3:
-			# 빙하(미로): 중앙 교차로 둘레 원형 + 세로 통로 열주.
-			_decor_ring(stage_layout.landmark_position, 300.0, 12, scatter[3], 1.05, tint)
-			_decor_line(Vector2(1400, 260), Vector2(1400, 840), 130.0, pillar, 1.1, tint)
-		4:
-			# 공허(세로 탑): 좌우 벽을 따라 대칭 열주 2줄.
-			_decor_line(Vector2(900, 160), Vector2(900, 2640), 150.0, pillar, 1.2, tint)
-			_decor_line(Vector2(1900, 160), Vector2(1900, 2640), 150.0, pillar, 1.2, tint)
-		5:
-			# 마성(열주 대홀): 중앙 통로에 석상 행렬 + 좌우 보조 열.
-			_decor_line(Vector2(1400, 360), Vector2(1400, 2440), 190.0, scatter[3], 1.2, tint)
-			_decor_line(Vector2(1120, 460), Vector2(1120, 2340), 210.0, pillar, 1.1, tint)
-			_decor_line(Vector2(1680, 460), Vector2(1680, 2340), 210.0, pillar, 1.1, tint)
+	var statue: String = scatter[mini(3, scatter.size() - 1)]
+	# 시작 방(랜드마크) 둘레 원형 — 어느 배치에서도 "여기가 시작"이 읽힌다.
+	var start_room: Rect2 = stage_layout.rooms[0]
+	for room in stage_layout.rooms:
+		if room.has_point(stage_layout.landmark_position):
+			start_room = room
+			break
+	_decor_ring(stage_layout.landmark_position,
+		minf(start_room.size.x, start_room.size.y) * 0.42, 12, statue, 1.0, tint)
+	# 나머지 방은 위·아래 벽을 따라 열주. 방이 클수록 간격을 벌려 과밀을 피한다.
+	for i in stage_layout.rooms.size():
+		var room: Rect2 = stage_layout.rooms[i]
+		if room == start_room:
+			continue
+		var inset := 54.0
+		var spacing: float = clampf(room.size.x * 0.28, 130.0, 210.0)
+		var tex: String = pillar if i % 2 == 0 else statue
+		_decor_line(Vector2(room.position.x + inset, room.position.y + inset),
+			Vector2(room.end.x - inset, room.position.y + inset), spacing, tex, 1.1, tint)
+		_decor_line(Vector2(room.position.x + inset, room.end.y - inset),
+			Vector2(room.end.x - inset, room.end.y - inset), spacing, tex, 1.1, tint)
 
 
 func _decor_line(from: Vector2, to: Vector2, spacing: float, tex: String, scale: float, tint: Color) -> void:
@@ -5538,6 +5546,9 @@ func _transition_to_expedition_floor(target_stage: int) -> void:
 	_reset_hell_floor_state()
 	_reset_grave_floor_state()
 	_reset_glacier_floor_state()
+	# 다음 층은 새 배치로 (같은 던전을 다시 밟아도 지형이 달라진다).
+	if layout_seed_override != 0:
+		layout_seed_override = randi()
 	if not _prepare_stage(target_stage):
 		push_error("Expedition floor failed to initialize: %d" % target_stage)
 	stage_num = map_stage
@@ -5603,10 +5614,9 @@ func on_boss_killed() -> void:
 			_show_end("원정 완료! — 3층 최종 보스 격파", true)
 		return
 	run_gold += 15 * stage_num   # 보스 보상
-	# 보스 = 장비 전리품 확정 2개
+	# 보스 = 장비 전리품 확정 1개 (2개 → 1개: 필드 드롭 하향과 같은 이유)
 	if boss and is_instance_valid(boss):
-		_spawn_gear_pickup(boss.position + Vector2(-18, 0), _roll_gear())
-		_spawn_gear_pickup(boss.position + Vector2(18, 0), _roll_gear())
+		_spawn_gear_pickup(boss.position, _roll_gear())
 	boss = null
 	run_bosses += 1
 	boss_spawned = false
@@ -6083,7 +6093,11 @@ func _has_gear_special(key: String) -> bool:
 
 # 처치 지점에서 확률적으로 장비 드롭 (엘리트/보스는 높게)
 func _maybe_drop_gear(pos: Vector2, elite: bool) -> void:
-	var drop_chance := (0.35 if elite else 0.02) * diff_gear_drop
+	# 필드 드롭은 낮게 유지한다(사장님 요청). 이 게임의 장비 획득은 "런이 끝나고 좋은 걸
+	# 골라 가져가는" 구조라, 필드에서 흔하게 주우면 추출 선택과 대장간이 무의미해진다.
+	# 확정 보상(층 보스 에픽, 중간보스 던전 전용, 상인·제단 노드)이 주 획득 경로다.
+	#   엘리트 0.35 → 0.10, 일반 0.02 → 0.004
+	var drop_chance := (0.10 if elite else 0.004) * diff_gear_drop
 	if randf() < minf(0.90, drop_chance):
 		_spawn_gear_pickup(pos, _roll_gear())
 
@@ -8334,7 +8348,10 @@ func _apply_relic_set_effects() -> void:
 
 func _prepare_stage(stage_id: int) -> bool:
 	map_stage = clampi(stage_id, 1, FINAL_STAGE)
-	stage_layout = StageLayoutData.make(map_stage, Color(GameConfig.stage_info(map_stage)["tint"]))
+	# 층마다 다른 시드 → 같은 던전이라도 배치가 매번 다르다(탐험 느낌).
+	# 0을 넘기면 스테이지 고정 배치라 개발 캡처·회귀 검사에서 재현이 된다.
+	stage_layout = StageLayoutData.make(map_stage,
+		Color(GameConfig.stage_info(map_stage)["tint"]), layout_seed_override)
 	# 톤 보정은 렌더러 안에서 경계 타일에만 굽는다. 채움 팩은 이미 어두워 보정하면 뭉개진다.
 	stage_map_texture = StageTiles.build(stage_layout, map_stage, WORLD,
 		STAGE_TILE_MODULATES[clampi(map_stage - 1, 0, STAGE_TILE_MODULATES.size() - 1)])
@@ -8417,6 +8434,8 @@ func _apply_difficulty_profile(d: Dictionary) -> void:
 
 
 func _start_game(d: Dictionary) -> void:
+	# 던전 배치는 매 런 새로 뽑는다. 개발 캡처(--autoshot)만 재현되도록 고정 배치를 쓴다.
+	layout_seed_override = 0 if "--autoshot" in OS.get_cmdline_user_args() else randi()
 	if not _prepare_selected_stage():
 		push_error("Selected stage failed to initialize: %d" % sel_stage)
 	decorations.clear()
@@ -12747,42 +12766,61 @@ func _draw_stage_obstacle_art() -> void:
 		draw_texture_rect(tex2, Rect2(ctr - Vector2(d, d) * 0.5, Vector2(d, d)), false)
 
 
-# Low-contrast map marks make a location readable before bespoke tiles are ready.
-# They stay beneath actors, gems and projectiles.
+# 스테이지 고유 바닥 마크. 배치가 매 판 바뀌므로 좌표를 박지 않고 방 사각을 기준으로 그린다.
+# 액터·젬·투사체 아래에 깔려 위치를 읽게만 한다.
 func _draw_stage_identity_marks(edge: Color) -> void:
+	if stage_layout == null or stage_layout.rooms.is_empty():
+		return
+	var start_room: Rect2 = stage_layout.rooms[0]
+	for room in stage_layout.rooms:
+		if room.has_point(stage_layout.landmark_position):
+			start_room = room
+			break
 	match map_stage:
 		1:
+			# 묘지: 시작 방을 지나는 십자 참배로 + 방마다 묘비 줄.
 			var path_col := Color(edge.r, edge.g, edge.b, 0.22)
-			draw_line(Vector2(1400, 330), Vector2(1400, 2470), path_col, 22.0)
-			draw_line(Vector2(330, 1400), Vector2(2470, 1400), path_col, 22.0)
-			for x in range(1060, 1800, 148):
-				for y in [1080, 1720]:
-					draw_rect(Rect2(x, y, 18, 30), Color(0.05, 0.06, 0.08, 0.42))
+			var c := start_room.get_center()
+			draw_line(Vector2(c.x, start_room.position.y), Vector2(c.x, start_room.end.y), path_col, 22.0)
+			draw_line(Vector2(start_room.position.x, c.y), Vector2(start_room.end.x, c.y), path_col, 22.0)
+			for room: Rect2 in stage_layout.rooms:
+				var y: float = room.get_center().y
+				for x in range(int(room.position.x) + 70, int(room.end.x) - 60, 148):
+					draw_rect(Rect2(x, y - 15.0, 18, 30), Color(0.05, 0.06, 0.08, 0.42))
 		2:
+			# 지옥: 방을 가로지르는 용암 균열 줄.
 			var ember := Color(0.72, 0.22, 0.12, 0.25)
-			for y in [1275, 1525]:
-				draw_line(Vector2(190, y), Vector2(2610, y), ember, 9.0)
-			for x in range(300, 2580, 260):
-				draw_line(Vector2(x, 1330), Vector2(x + 90, 1470), ember, 5.0)
+			for room: Rect2 in stage_layout.rooms:
+				var mid: float = room.get_center().y
+				draw_line(Vector2(room.position.x, mid), Vector2(room.end.x, mid), ember, 9.0)
+				for x in range(int(room.position.x) + 40, int(room.end.x) - 90, 260):
+					draw_line(Vector2(x, mid - 45.0), Vector2(x + 90, mid + 45.0), ember, 5.0)
 		3:
-			for lake in stage_layout.blocked_circles:
-				var c: Vector2 = lake["center"]
-				var r := float(lake["radius"])
-				draw_arc(c, r * 0.76, 0.0, TAU, 40, Color(0.38, 0.72, 0.95, 0.18), 12.0)
-				draw_line(c + Vector2(-r * 0.42, 0), c + Vector2(r * 0.42, 0), Color(0.65, 0.88, 1.0, 0.12), 4.0)
+			# 빙하: 방 안쪽에 얼어붙은 못.
+			for room: Rect2 in stage_layout.rooms:
+				var c2: Vector2 = room.get_center()
+				var r: float = minf(room.size.x, room.size.y) * 0.30
+				draw_arc(c2, r, 0.0, TAU, 40, Color(0.38, 0.72, 0.95, 0.18), 12.0)
+				draw_line(c2 + Vector2(-r * 0.55, 0), c2 + Vector2(r * 0.55, 0), Color(0.65, 0.88, 1.0, 0.12), 4.0)
 		4:
-			var core := Vector2(1400, 1400)
+			# 공허: 시작 방 중앙의 룬 고리.
+			var core := start_room.get_center()
+			var span := minf(start_room.size.x, start_room.size.y) * 0.5
 			var rune := Color(0.64, 0.38, 0.92, 0.28)
-			draw_arc(core, 210, 0.0, TAU, 48, rune, 5.0)
-			draw_arc(core, 125, 0.0, TAU, 32, rune, 3.0)
+			draw_arc(core, span * 0.86, 0.0, TAU, 48, rune, 5.0)
+			draw_arc(core, span * 0.52, 0.0, TAU, 32, rune, 3.0)
 			for i in 8:
 				var a := TAU * float(i) / 8.0
-				draw_line(core + Vector2.from_angle(a) * 138, core + Vector2.from_angle(a) * 196, rune, 5.0)
+				draw_line(core + Vector2.from_angle(a) * span * 0.57,
+					core + Vector2.from_angle(a) * span * 0.80, rune, 5.0)
 		5:
+			# 마왕성: 방마다 대리석 격자 바닥.
 			var tile := Color(0.70, 0.56, 0.38, 0.16)
-			for p in range(1104, 1700, 80):
-				draw_line(Vector2(p, 1080), Vector2(p, 1720), tile, 2.0)
-				draw_line(Vector2(1080, p), Vector2(1720, p), tile, 2.0)
+			for room in stage_layout.rooms:
+				for x in range(int(room.position.x) + 40, int(room.end.x) - 20, 80):
+					draw_line(Vector2(x, room.position.y + 30.0), Vector2(x, room.end.y - 30.0), tile, 2.0)
+				for y in range(int(room.position.y) + 40, int(room.end.y) - 20, 80):
+					draw_line(Vector2(room.position.x + 30.0, y), Vector2(room.end.x - 30.0, y), tile, 2.0)
 
 
 func _draw() -> void:

@@ -2,7 +2,8 @@ extends SceneTree
 
 const StageLayoutScript = preload("res://StageLayout.gd")
 const StageTileRendererScript = preload("res://StageTileRenderer.gd")
-const WORLD := Vector2(2800, 2800)
+# 실제 게임과 같은 월드 크기로 구워야 텍스처 크기·베이크 비용이 의미가 있다.
+const WORLD := StageLayout.WORLD
 const STAGE_DIRS := ["graveyard", "hell_bridge", "glacier", "void_altar", "demon_castle"]
 
 
@@ -14,7 +15,10 @@ func _initialize() -> void:
 		if texture == null:
 			failures.append("stage %d: texture build failed" % stage_id)
 			continue
-		var expected := Vector2i(2816, 2816)
+		# 32px 격자로 올림한 크기. WORLD가 바뀌어도 따라간다.
+		var cell := float(StageTileRendererScript.CELL)
+		var expected := Vector2i(
+			int(ceil(WORLD.x / cell) * cell), int(ceil(WORLD.y / cell) * cell))
 		if texture.get_size() != Vector2(expected):
 			failures.append(
 				"stage %d: expected %s, got %s" % [stage_id, expected, texture.get_size()]

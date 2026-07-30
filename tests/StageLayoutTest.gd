@@ -8,7 +8,10 @@ extends SceneTree
 
 const StageLayoutScript = preload("res://StageLayout.gd")
 const GameConfigScript = preload("res://GameConfig.gd")
+const MainScript = preload("res://Main.gd")
 
+# 검사할 시드. 0은 스테이지 고정 배치(개발 캡처가 쓰는 것), 나머지는 실제 런처럼 임의 배치.
+const SEEDS := [0, 1, 7, 23, 101, 4242, 90001]
 const STEP := 40.0        # BFS 격자 간격
 const AGENT := 20.0       # 통로 통과 판정 반경 (일반 몹 기준)
 const REACH := 90.0       # 주요 좌표가 이 거리 안의 격자에 닿으면 도달로 본다
@@ -55,10 +58,24 @@ func _is_reached(seen: Dictionary, point: Vector2) -> bool:
 
 
 func _initialize() -> void:
+	# Main.WORLD와 StageLayout.WORLD가 어긋나면 스폰·카메라가 맵 밖을 가리킨다.
+	_expect(MainScript.WORLD == StageLayoutScript.WORLD,
+		"Main.WORLD(%s)와 StageLayout.WORLD(%s)가 다름" % [MainScript.WORLD, StageLayoutScript.WORLD])
+	# 배치가 매 판 WFC로 생성되므로 한 시드만 봐선 의미가 없다. 여러 시드를 훑는다.
 	for stage in range(1, 6):
+		for seed_index in SEEDS:
+			_check_layout(stage, seed_index)
+	if failed:
+		quit(1)
+		return
+	print("STAGE_LAYOUT_OK stages=5 seeds=%d" % SEEDS.size())
+	quit(0)
+
+
+func _check_layout(stage: int, layout_seed: int) -> void:
 		var info := GameConfigScript.stage_info(stage)
-		var name := str(info.get("name", stage))
-		var layout = StageLayoutScript.make(stage, Color(info["tint"]))
+		var name := "%s/seed%d" % [str(info.get("name", stage)), layout_seed]
+		var layout = StageLayoutScript.make(stage, Color(info["tint"]), layout_seed)
 
 		# 런 시작·층 전환은 맵 중앙에서 시작한다. 중앙이 막히면 nearest_walkable이
 		# 엉뚱한 구석으로 보내므로 중앙 자체가 걸을 수 있어야 한다.
@@ -85,11 +102,9 @@ func _initialize() -> void:
 			_expect(_is_reached(seen, point),
 				"[%s] %s 좌표가 시작점에서 도달 불가(방이 고립됨): %s" % [name, check["label"], point])
 
-		# 방이 나뉜 구조라면 4개 아이템이 서로 다른 구역에 흩어져 있어야 탐험이 된다.
+		# 슬라이스·필드 픽업의 계약: 목표 3개 / 고정 아이템 4개는 배치가 어떻게 나와도 지켜야 한다.
 		_expect(layout.item_positions.size() == 4, "[%s] 고정 아이템 좌표가 4개가 아님" % name)
-
-	if failed:
-		quit(1)
-		return
-	print("STAGE_LAYOUT_OK")
-	quit(0)
+		_expect(layout.objective_positions.size() == 3, "[%s] 목표 좌표가 3개가 아님" % name)
+		# WFC가 방을 너무 적게 내면 목표가 겹쳐 탐험이 안 된다.
+		_expect(layout.rooms.size() >= StageLayoutScript.MIN_ROOMS,
+			"[%s] 방이 %d개뿐 (최소 %d)" % [name, layout.rooms.size(), StageLayoutScript.MIN_ROOMS])
