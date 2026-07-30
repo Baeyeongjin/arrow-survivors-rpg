@@ -14,6 +14,8 @@ var hp := 150.0
 var damage_mult := 1.0      # 모든 무기 피해 배수
 var cooldown_mult := 1.0    # 무기 쿨다운 배수 (낮을수록 빠름)
 var pickup_radius := 90.0   # 뱀서식 젬 흡수 범위 (55→90)
+var attack_range := 0.0        # 자동공격 사거리 (Main이 매 프레임 갱신, 0이면 안 그림)
+var attack_range_idle := false # 사거리 안에 표적이 없어 무기가 대기 중
 var regen := 0.0
 var armor := 0.0
 var area_mult := 1.0        # 범위 무기 크기 배수
@@ -304,3 +306,9 @@ func _draw() -> void:
 	# 자석 버프 표시 (흡수 범위 링)
 	if magnet_t > 0.0:
 		draw_arc(Vector2.ZERO, current_pickup_radius(), 0.0, TAU, 48, Color(0.7, 0.5, 1.0, 0.35), 2.0)
+	# 자동공격 사거리. 표적이 없어 무기가 멈춰 있을 때만 또렷하게 그려서
+	# "왜 안 쏘는지"를 알려 주고, 전투 중에는 거의 안 보이게 죽인다.
+	if attack_range > 0.0:
+		var range_alpha := 0.20 if attack_range_idle else 0.05
+		draw_arc(Vector2.ZERO, attack_range, 0.0, TAU, 72,
+			Color(0.92, 0.86, 0.62, range_alpha), 1.0)

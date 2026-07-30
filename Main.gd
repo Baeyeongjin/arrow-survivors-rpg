@@ -2156,9 +2156,18 @@ func _process(delta: float) -> void:
 		player.hp = min(player.max_hp, player.hp + player.regen * delta)
 
 	# 쿨다운 무기 발동 (뱀서식: 기본공격 없음 — 시작무기가 캐릭터 정체성)
+	# 자동공격이 사거리 무제한이라 화면 밖 적까지 알아서 처리해 게임이 쉬웠다(사장님 피드백).
+	# 사거리 안에 표적이 들어와야만 발사하고, 발사가 곧 공격 모션이므로 모션 게이트도 같이 걸린다.
+	var target_in_range := _target_in_attack_range()
+	player.attack_range = _attack_range()
+	player.attack_range_idle = not target_in_range
 	for kind in wtimer.keys():
 		wtimer[kind] -= delta
 		if wtimer[kind] <= 0.0:
+			if not target_in_range:
+				# 쿨다운은 다 찼지만 사거리 안에 쏠 것이 없다. 쿨다운을 새로 돌리지 않고
+				# 대기시켜, 표적이 들어오는 순간 바로 첫 발이 나가게 한다.
+				continue
 			_fire_weapon(kind)
 			_weapon_muzzle(kind)   # 발사 순간 무기별 섬광
 			wtimer[kind] = _weapon_cooldown(kind)
@@ -2638,6 +2647,51 @@ func _weapon_level_scale(lv: int) -> float:
 	return lerp(0.40, 1.35, clamp((lv - 1) / 7.0, 0.0, 1.0))   # Lv1 초반 공격력 상향(0.33→0.40, +20%)
 
 
+# 자동공격 사거리. 예전에는 무제한이라 화면 밖 적까지 알아서 정리돼 게임이 쉬웠다.
+# 720p 화면 절반 높이(360)를 기준으로 잡아 "보이는 적은 쏘고 안 보이는 적은 못 쏜다"가 되게 한다.
+# 범위 투자(area_mult)는 사거리에도 반영하되 _area_scale()의 소프트캡을 그대로 쓴다.
+# ponytail: 무기별 사거리 차등(활 vs 도끼)은 실플레이 표본을 본 뒤에. 지금은 전 무기 공통 한 줄.
+# 상한이 없으면 범위를 몰아준 빌드에서 사거리가 1200px을 넘어(테스트로 확인) 화면 밖 적
+# 자동 처리가 그대로 되살아난다. 범위 투자는 장판·검기 크기로 계속 보상하고, 사거리만 묶는다.
+const ATTACK_RANGE_BASE := 360.0
+const ATTACK_RANGE_MAX := 560.0
+
+
+func _attack_range() -> float:
+	return minf(ATTACK_RANGE_MAX, ATTACK_RANGE_BASE * _area_scale())
+
+
+# 사거리 안에 쏠 것이 하나라도 있는가. 파괴물도 포함해야 초반 관·상자 파밍이 막히지 않는다.
+func _target_in_attack_range() -> bool:
+	if player == null:
+		return false
+	var limit := _attack_range()
+	var limit_sq := limit * limit
+	for t in _enemies_and_boss():
+		if is_instance_valid(t) \
+				and player.position.distance_squared_to((t as Node2D).position) <= limit_sq:
+			return true
+	for b in get_tree().get_nodes_in_group("breakables"):
+		if is_instance_valid(b) \
+				and player.position.distance_squared_to((b as Node2D).position) <= limit_sq:
+			return true
+	return false
+
+
+# 사거리 안의 표적만 가까운 순으로. 다중 조준 무기가 화면 밖 적을 집어가지 않게 한다.
+func _targets_by_distance() -> Array:
+	var limit := _attack_range()
+	var limit_sq := limit * limit
+	var arr: Array = []
+	for t in _enemies_and_boss():
+		if is_instance_valid(t) \
+				and player.position.distance_squared_to((t as Node2D).position) <= limit_sq:
+			arr.append(t)
+	arr.sort_custom(func(a, b): return player.position.distance_squared_to((a as Node2D).position) \
+		< player.position.distance_squared_to((b as Node2D).position))
+	return arr
+
+
 # 조준 우선순위 거리: 파괴 오브젝트(관·상자)는 +90 보정으로 후순위 (적 우선, 근처 물체는 쏨)
 func _target_dist(n: Node) -> float:
 	var d := player.position.distance_to((n as Node2D).position)
@@ -2651,7 +2705,7 @@ func _target_dist(n: Node) -> float:
 # (예전엔 항상 포함했더니 조형물이 빼곡한 맵에서 무기가 애먼 방향으로 날아가는 것처럼 보였음)
 # 화면에 적이 전혀 없을 때만 파괴물을 조준해 초반 파밍 편의는 유지.
 func _nearest_list() -> Array:
-	var t := _enemies_and_boss()
+	var t := _targets_by_distance()
 	if t.is_empty():
 		for b in get_tree().get_nodes_in_group("breakables"):
 			if is_instance_valid(b):
@@ -3191,8 +3245,7 @@ func _fire_poison_cloud() -> void:
 	# Lv1은 작고 약하게 시작 → 레벨업 체감이 크도록
 	var dmg := (4.0 + lv * 3.4) * player.damage_mult * char_ranged * _weapon_level_scale(lv)
 	var zones: int = 1 + player.amount + int(lv / 4.0)
-	var targets := _enemies_and_boss()
-	targets.sort_custom(func(a, b): return player.position.distance_to((a as Node2D).position) < player.position.distance_to((b as Node2D).position))
+	var targets := _targets_by_distance()
 	for i in zones:
 		var pos: Vector2
 		if i < targets.size() and is_instance_valid(targets[i]):
@@ -3265,8 +3318,7 @@ func _fire_spread_shot() -> void:
 func _fire_soul_bolt() -> void:
 	var lv: int = weapons["soul_bolt"]
 	var dmg := (13.0 + lv * 4.5) * player.damage_mult * char_ranged
-	var targets := _enemies_and_boss()
-	targets.sort_custom(func(a, b): return player.position.distance_to((a as Node2D).position) < player.position.distance_to((b as Node2D).position))
+	var targets := _targets_by_distance()
 	var n: int = min(1 + int((lv - 1) / 2.0) + player.amount, targets.size())   # 1발 시작 → 2레벨마다 +1
 	player.play_attack()
 	for i in n:
@@ -3459,8 +3511,7 @@ func _fire_thorn_burst() -> void:
 func _fire_chain_bolt() -> void:
 	var lv: int = weapons["chain_bolt"]
 	var dmg := (17.0 + lv * 5.5) * player.damage_mult * char_ranged
-	var targets := _enemies_and_boss()
-	targets.sort_custom(func(a, b): return player.position.distance_to((a as Node2D).position) < player.position.distance_to((b as Node2D).position))
+	var targets := _targets_by_distance()
 	var n: int = min(3 + lv + player.amount, targets.size())
 	for i in n:
 		var e = targets[i]
@@ -3783,8 +3834,7 @@ func _fire_arrow() -> void:
 		n += 2
 	var basedir: Vector2 = player._last_dir if player else Vector2(0, -1)
 	# 뱀서 매직완드식: 부채꼴 분사 대신 가까운 적들을 하나씩 조준하는 '유도 단발'
-	var targets := _enemies_and_boss()
-	targets.sort_custom(func(a, b): return player.position.distance_to((a as Node2D).position) < player.position.distance_to((b as Node2D).position))
+	var targets := _targets_by_distance()
 	player.play_attack()
 	for i in n:
 		var a := Arrow.new()
@@ -3835,8 +3885,7 @@ func _fire_lightning() -> void:
 	if evo:
 		dmg *= 1.5
 	# 뱀서 매직완드식: 랜덤이 아니라 가장 가까운 적부터 조준 (안정적). 기본 1타겟 + 복제 패시브.
-	var targets := _enemies_and_boss()
-	targets.sort_custom(func(a, b): return player.position.distance_to((a as Node2D).position) < player.position.distance_to((b as Node2D).position))
+	var targets := _targets_by_distance()
 	var want := 1 + int((lv - 1) / 2.0) + player.amount   # 뱀서식: 레벨업마다 타겟 증가
 	if evo:
 		want += 2   # 진화: 추가 연쇄 타겟
@@ -5808,11 +5857,13 @@ func on_enemy_killed(e: Enemy) -> void:
 					add_child(child)
 	_spawn_gem(e.position, e.xp_value)
 	# 골드 드랍. 뱀서식: 보물상자는 보스 전용 → 엘리트는 골드·젬만 확정, 상자 없음.
+	# 필드 재화 하향(사장님 "떨어지는 재화를 좀 줄여줘"): 정예 5+2N -> 3+N,
+	# 일반 확률 0.30 -> 0.16, 값 xp/4 -> xp/6. 골드는 확정 보상(보스·상인·제단)이 주 경로다.
 	if e.elite:
 		_award_stat_points(STAT_PT_ELITE)   # M2: 정예 처치 = 능력치 포인트(레벨당 지급 대체)
-		_spawn_coin(e.position, 5 + stage_num * 2)
-	elif randf() < 0.3:
-		_spawn_coin(e.position, 1 + int(e.xp_value / 4.0))
+		_spawn_coin(e.position, 3 + stage_num)
+	elif randf() < 0.16:
+		_spawn_coin(e.position, 1 + int(e.xp_value / 6.0))
 	# 처치 파티클
 	var fx := Effect.new()
 	fx.kind = "burst"
@@ -6287,8 +6338,9 @@ func _gain_xp(amount: int) -> void:
 # Lv25에서 943까지 뛰던 2차식 대신 뱀서식 선형 성장 + Lv20 이후 완만한 보정을 사용한다.
 func _xp_requirement(current_level: int) -> int:
 	var late_level: int = maxi(0, current_level - 20)
-	# 레벨업 속도 하향(사장님 요청, 재상향): 요구 XP 2.5배. 위협 효과의 XP 이중 적용도 제거.
-	return int((8 + current_level * 5 + int(pow(float(late_level), 1.35) * 0.65)) * 2.5)
+	# 레벨업 속도 하향(사장님 요청, 3차): 요구 XP 2.5배 -> 3.6배. 위협 효과의 XP 이중 적용도 제거.
+	# 곱만 키우면 후반이 더 늘어지므로 후반 보정(late_level) 지수는 그대로 둔다.
+	return int((8 + current_level * 5 + int(pow(float(late_level), 1.35) * 0.65)) * 3.6)
 
 
 func _start_levelup() -> void:

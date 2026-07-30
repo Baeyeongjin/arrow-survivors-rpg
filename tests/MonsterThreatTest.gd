@@ -127,7 +127,9 @@ func _check_main_integration_contract() -> void:
 	]:
 		_expect(not game.has_method(old_method), "삭제한 대형 이벤트 함수가 남음: %s" % old_method)
 
-	var source := FileAccess.get_file_as_string("res://Main.gd")
+	# 저장소가 CRLF로 정규화되면 "\n\n" 검색이 통째로 실패해 이 검사가 조용히 무력화된다.
+	# 줄바꿈을 LF로 통일한 뒤 찾는다.
+	var source := FileAccess.get_file_as_string("res://Main.gd").replace("\r\n", "\n")
 	var start := source.find("func _start_monster_threat")
 	var finish := source.find("\n\nfunc _apply_active_monster_threat", start)
 	_expect(start >= 0 and finish > start, "지역 위협 시작 함수 범위를 찾지 못함")
