@@ -194,6 +194,8 @@ const ELITE_SPECIAL_BY_KEY := {
 	"grave_warden": "ground_slam", "tomb_knight": "ground_slam",
 	"frost_sentry": "hex_orb", "icewall_golem": "ground_slam",
 	"rift_stalker": "hex_orb", "abyss_oracle": "hex_orb",
+	"gate_commander": "ground_slam", "black_marshal": "ground_slam",
+	"throne_guard": "flame_lash",
 }
 
 
@@ -267,7 +269,7 @@ static func stages() -> Array:
 			"props": ["res://assets/props/s4_a.png", "res://assets/props/s4_b.png"]},
 		{"name": "마왕성", "boss": "boss_5", "boss_name": "마왕 아바돈", "tint": Color(0.75, 0.65, 0.55),
 			"element": "dark", "boss_weak": "holy",
-			"rule": "5분 동안 성장한 뒤 목표 보스를 처치",
+			"rule": "성문 관문 2곳 봉쇄전 돌파 · 2:35 흑기사 사령관 · 마왕 왕좌 보호막",
 			"field_passives": ["vitality", "iron_will", "berserker", "swiftness"],
 			"props": ["res://assets/props/s5_a.png", "res://assets/props/s5_b.png"]},
 	]
@@ -356,6 +358,38 @@ static func void_midboss_tier() -> Dictionary:
 		"color": Color(0.72, 0.42, 0.92), "hp_mult": 5.6, "speed_mult": 0.88,
 		"xp": 21, "radius": 27.0, "behavior": "ranged", "damage_source": "void_boss",
 		"sprite": "res://assets/enemies/eye_mass.png", "weak": "holy", "resist": "dark",
+	}
+
+
+# M5-D 마왕성 성문 봉쇄전을 지키는 정예. 진입 시 여럿이 동시에 소환되므로 개체는
+# 다른 던전 정예보다 가볍게 잡고 수로 압박한다. wraith_knight 아트·애니메이션 재사용.
+static func castle_elite_tier() -> Dictionary:
+	return {
+		"name": "성문 지휘관", "key": "gate_commander", "shape": "orc",
+		"color": Color(0.72, 0.60, 0.52), "hp_mult": 2.6, "speed_mult": 1.10,
+		"xp": 11, "radius": 19.0, "behavior": "charge",
+		"sprite": "res://assets/enemies/wraith_knight.png", "weak": "holy", "resist": "dark",
+	}
+
+
+# M5-D 마왕성 중간보스. 일반 웨이브에 섞지 않아 2:35 흑기사 전투를 보장한다.
+static func castle_midboss_tier() -> Dictionary:
+	return {
+		"name": "흑기사 사령관", "key": "black_marshal", "shape": "orc",
+		"color": Color(0.52, 0.44, 0.56), "hp_mult": 5.4, "speed_mult": 0.90,
+		"xp": 20, "radius": 28.0, "behavior": "charge",
+		"sprite": "res://assets/enemies/dark_knight.png", "weak": "holy", "resist": "dark",
+	}
+
+
+# 마왕 왕좌 페이즈에서 소환되는 지휘관. 이들이 살아 있는 동안 마왕 보호막에 피해가 없다.
+# 보호막 자체가 체력 게이트이므로 지휘관은 단단하기보다 빠르게 압박한다.
+static func castle_guard_tier() -> Dictionary:
+	return {
+		"name": "왕좌 지휘관", "key": "throne_guard", "shape": "demon",
+		"color": Color(0.88, 0.42, 0.36), "hp_mult": 3.4, "speed_mult": 1.16,
+		"xp": 13, "radius": 20.0, "behavior": "charge",
+		"sprite": "res://assets/enemies/demon.png", "weak": "holy", "resist": "dark",
 	}
 
 

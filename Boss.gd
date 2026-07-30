@@ -119,6 +119,33 @@ var _void_well_pos := Vector2.ZERO
 var _void_laser_angle := 0.0
 var _void_laser_sweep_dir := 1.0
 
+# M5-D 마왕 아바돈: 처형선·부채꼴 강타·소환 지휘의 3개 전조 패턴과 45% 왕좌 국면.
+# 왕좌는 2단 게이트다 — 지휘관이 살아 있는 동안 보호막에 피해가 들어가지 않고,
+# 지휘관을 전멸시킨 뒤 보호막을 깨야 본체 체력이 다시 열린다. 체력만 밀어 건너뛸 수 없다.
+# 열어 둔 성문 수가 소환되는 지휘관 수를 줄인다(관문 수행량 → 보스 난도).
+const CASTLE_THRONE_THRESHOLD := 0.45
+const CASTLE_VULNERABLE_TIME := 5.0
+const CASTLE_EXECUTE_LENGTH := 470.0
+const CASTLE_EXECUTE_WIDTH := 26.0
+const CASTLE_FAN_RADIUS := 296.0
+const CASTLE_FAN_HALF_ANGLE := 0.62
+enum CastleState { CHASE, EXECUTE_WINDUP, FAN_WINDUP, SUMMON_WINDUP, RECOVERY, STUNNED }
+
+var castle_final := false
+var castle_phase := 1
+var opened_gates := 0
+var castle_throne_active := false
+var castle_throne_started := false
+var castle_guard_max := 1
+var castle_guards_alive := 0
+var castle_shield_hp := 0.0
+var castle_shield_hp_max := 0.0
+
+var _castle_state: int = CastleState.CHASE
+var _castle_t := 1.25
+var _castle_attack_index := 0
+var _castle_lock_dir := Vector2.DOWN
+
 func _ready() -> void:
 	add_to_group("boss")
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -140,7 +167,7 @@ func configure_hell_final(unsealed: int) -> void:
 
 
 func uses_pattern_damage() -> bool:
-	return hell_final or grave_final or glacier_final or void_final
+	return hell_final or grave_final or glacier_final or void_final or castle_final
 
 
 func hell_armor_element_multiplier(element: String) -> float:
@@ -200,6 +227,25 @@ func configure_void_final(stabilized: int) -> void:
 	_void_laser_angle = 0.0
 
 
+func configure_castle_final(gates_opened: int) -> void:
+	castle_final = true
+	opened_gates = clampi(gates_opened, 0, 2)
+	weak = "holy"
+	resist = "dark"
+	castle_phase = 1
+	castle_throne_active = false
+	castle_throne_started = false
+	# 성문을 둘 다 열면 지휘관 1명, 하나도 못 열면 3명. 관문 수행량이 곧 보스 난도다.
+	castle_guard_max = maxi(1, 3 - opened_gates)
+	castle_guards_alive = 0
+	castle_shield_hp = 0.0
+	castle_shield_hp_max = 0.0
+	vulnerable_t = 0.0
+	_castle_state = CastleState.CHASE
+	_castle_t = 2.45
+	_castle_attack_index = 0
+
+
 func _process(delta: float) -> void:
 	_anim_t += delta
 	var pl := get_tree().get_first_node_in_group("player") as Player
@@ -212,6 +258,8 @@ func _process(delta: float) -> void:
 			_process_glacier(delta, pl)
 		elif void_final:
 			_process_void(delta, pl)
+		elif castle_final:
+			_process_castle(delta, pl)
 		else:
 			var to: Vector2 = pl.position - position
 			# 일반 보스는 기존 추격형 동작을 보존한다. 지옥 보스만 패턴 전투를 사용한다.
@@ -490,6 +538,183 @@ func _start_next_void_attack(pl: Player) -> void:
 			_void_t = maxf(0.68, 0.96 - (void_phase - 1) * 0.05)
 
 
+func _process_castle(delta: float, pl: Player) -> void:
+	var main := get_parent()
+	if _castle_state == CastleState.STUNNED:
+		vulnerable_t = maxf(0.0, vulnerable_t - delta)
+		if vulnerable_t <= 0.0:
+			_castle_state = CastleState.CHASE
+			_castle_t = maxf(0.68, 1.24 - castle_phase * 0.12)
+		return
+
+	_castle_t -= delta
+	match _castle_state:
+		CastleState.CHASE:
+			# 왕좌 국면에는 왕좌를 지키며 움직이지 않는다 — 지휘관을 처리할 공간을 준다.
+			if not castle_throne_active:
+				var to := pl.position - position
+				if to.length() > radius + 98.0:
+					if main and main.has_method("stage_enemy_step"):
+						position = main.stage_enemy_step(position, pl.position,
+							move_speed * (0.92 + (castle_phase - 1) * 0.09) * delta, radius)
+					else:
+						position += to.normalized() * move_speed * delta
+					_atk_play = maxf(_atk_play, 0.32)
+			if _castle_t <= 0.0:
+				_start_next_castle_attack(pl)
+		CastleState.EXECUTE_WINDUP:
+			_atk_play = maxf(_atk_play, 0.24)
+			if _castle_t <= 0.0:
+				if main and main.has_method("castle_boss_execute"):
+					main.castle_boss_execute(position, _castle_lock_dir,
+						CASTLE_EXECUTE_LENGTH, CASTLE_EXECUTE_WIDTH, attack_damage * 1.18)
+				_castle_state = CastleState.RECOVERY
+				_castle_t = 0.66
+				_atk_play = 0.5
+				_atk_t = 0.0
+		CastleState.FAN_WINDUP:
+			_atk_play = maxf(_atk_play, 0.24)
+			if _castle_t <= 0.0:
+				if main and main.has_method("castle_boss_fan"):
+					main.castle_boss_fan(position, _castle_lock_dir,
+						CASTLE_FAN_RADIUS, CASTLE_FAN_HALF_ANGLE, attack_damage * 0.96)
+				_castle_state = CastleState.RECOVERY
+				_castle_t = 0.60
+				_atk_play = 0.5
+				_atk_t = 0.0
+		CastleState.SUMMON_WINDUP:
+			_atk_play = maxf(_atk_play, 0.24)
+			if _castle_t <= 0.0:
+				if main and main.has_method("castle_boss_summon"):
+					main.castle_boss_summon(position, 1 + (castle_phase - 1))
+				_castle_state = CastleState.RECOVERY
+				_castle_t = 0.78
+				_atk_play = 0.5
+				_atk_t = 0.0
+		CastleState.RECOVERY:
+			if _castle_t <= 0.0:
+				_castle_state = CastleState.CHASE
+				_castle_t = maxf(0.70, 1.30 - castle_phase * 0.12)
+
+
+func _start_next_castle_attack(pl: Player) -> void:
+	var pattern := _castle_attack_index % 3
+	_castle_attack_index += 1
+	_castle_lock_dir = (pl.position - position).normalized()
+	if _castle_lock_dir == Vector2.ZERO:
+		_castle_lock_dir = Vector2.DOWN
+	match pattern:
+		0:
+			_castle_state = CastleState.EXECUTE_WINDUP
+			_castle_t = maxf(0.66, 0.98 - (castle_phase - 1) * 0.06)
+		1:
+			_castle_state = CastleState.FAN_WINDUP
+			_castle_t = maxf(0.62, 0.90 - (castle_phase - 1) * 0.05)
+		_:
+			_castle_state = CastleState.SUMMON_WINDUP
+			_castle_t = maxf(0.70, 1.00 - (castle_phase - 1) * 0.05)
+
+
+func _start_castle_throne() -> void:
+	castle_throne_started = true
+	castle_throne_active = true
+	castle_phase = 2
+	castle_guards_alive = castle_guard_max
+	castle_shield_hp_max = maxf(1.0, max_hp * 0.16)
+	castle_shield_hp = castle_shield_hp_max
+	vulnerable_t = 0.0
+	_castle_state = CastleState.CHASE
+	_castle_t = 2.30
+	var main := get_parent()
+	if main and main.has_method("on_castle_throne_started"):
+		main.on_castle_throne_started(castle_guards_alive)
+
+
+# Main이 왕좌 지휘관 처치를 통보한다. 전멸하면 보호막에 피해가 들어가기 시작한다.
+func on_castle_guard_killed() -> void:
+	if not castle_throne_active:
+		return
+	castle_guards_alive = maxi(0, castle_guards_alive - 1)
+	var main := get_parent()
+	if main and main.has_method("on_castle_guards_remaining"):
+		main.on_castle_guards_remaining(castle_guards_alive)
+	queue_redraw()
+
+
+func _break_castle_shield() -> void:
+	castle_throne_active = false
+	castle_shield_hp = 0.0
+	castle_phase = 3
+	vulnerable_t = CASTLE_VULNERABLE_TIME
+	_castle_state = CastleState.STUNNED
+	_castle_t = vulnerable_t
+	var main := get_parent()
+	if main and main.has_method("on_castle_shield_broken"):
+		main.on_castle_shield_broken(vulnerable_t)
+
+
+# 마왕 피해 규칙. 45%에서 체력을 정확히 고정하고 왕좌 국면으로 넘긴다.
+# 왕좌 중에는 (1) 지휘관이 남아 있으면 아무 피해도 통하지 않고, (2) 전멸 뒤에는
+# 보호막만 깎인다. 보호막을 부수면 5초 취약(x1.8). 체력 게이트를 건너뛸 수 없다.
+func _take_damage_castle(d: float, crit: bool, elem: String, m) -> void:
+	if castle_throne_active:
+		if castle_guards_alive > 0:
+			# 무적 상태를 숫자 없이 알려 준다 — 지휘관을 먼저 치라는 신호.
+			if m and m.has_method("on_castle_shield_blocked"):
+				m.on_castle_shield_blocked(castle_guards_alive)
+			queue_redraw()
+			return
+		var shield_damage := maxf(0.0, d)
+		if m and m.has_method("_castle_shield_damage_multiplier"):
+			shield_damage *= float(m._castle_shield_damage_multiplier())
+		var actual_shield := minf(castle_shield_hp, shield_damage)
+		castle_shield_hp -= shield_damage
+		if m and m.has_method("record_damage_dealt"):
+			m.record_damage_dealt(actual_shield)
+		if m and m.has_method("_spawn_dmg_num") and shield_damage >= 1.0:
+			m._spawn_dmg_num(position + Vector2(0, -radius * 0.5),
+				maxi(1, int(round(shield_damage))), crit, "", elem)
+		if castle_shield_hp <= 0.0:
+			_break_castle_shield()
+		queue_redraw()
+		return
+
+	var hit_kind := ""
+	if elem != "" and elem != "phys":
+		if elem == weak:
+			d *= 1.5
+			hit_kind = "weak"
+		elif elem == resist:
+			d *= 0.6
+			hit_kind = "resist"
+	if vulnerable_t > 0.0:
+		d *= 1.80
+
+	if not castle_throne_started:
+		var threshold_hp := max_hp * CASTLE_THRONE_THRESHOLD
+		if hp > threshold_hp and hp - d <= threshold_hp:
+			d = maxf(0.0, hp - threshold_hp)
+	var actual := minf(maxf(0.0, hp), maxf(0.0, d))
+	if m and m.has_method("record_damage_dealt"):
+		m.record_damage_dealt(actual)
+	hp -= d
+	if m and m.has_method("_spawn_dmg_num"):
+		if d >= 1.0:
+			m._spawn_dmg_num(position + Vector2(0, -radius * 0.5),
+				maxi(1, int(round(d))), crit, hit_kind, elem)
+		else:
+			_dmg_accum += d
+	if not castle_throne_started and hp <= max_hp * CASTLE_THRONE_THRESHOLD + 0.01:
+		hp = max_hp * CASTLE_THRONE_THRESHOLD
+		_start_castle_throne()
+		queue_redraw()
+		return
+	if hp <= 0.0:
+		if m and m.has_method("on_boss_killed"):
+			m.on_boss_killed()
+		queue_free()
+
+
 func take_damage(d: float, _crit: bool = true, element: String = "") -> void:
 	var m := get_parent()
 	# 상성: 공격 속성 미지정이면 플레이어 공격 속성 사용. 약점 ×1.5 / 저항 ×0.6.
@@ -504,6 +729,9 @@ func take_damage(d: float, _crit: bool = true, element: String = "") -> void:
 		return
 	if void_final:
 		_take_damage_void(d, _crit, elem, m)
+		return
+	if castle_final:
+		_take_damage_castle(d, _crit, elem, m)
 		return
 	# 화염 군주의 갑옷은 체력과 별도다. 냉기는 빠르게 파괴하고 화염은 거의 통하지 않는다.
 	# 전용 무기 어픽스는 이 파괴량에만 적용해 일반 DPS 영구 누적을 만들지 않는다.
@@ -947,6 +1175,8 @@ func _draw() -> void:
 		_draw_glacier_warning()
 	elif void_final:
 		_draw_void_warning()
+	elif castle_final:
+		_draw_castle_warning()
 	var tex: Texture2D = null
 	if _atk_play > 0.0:
 		var fa: Array = Assets.frames("res://assets/anim/%s_attack" % key)
@@ -1056,6 +1286,16 @@ func _draw() -> void:
 			Vector2(-w2 * 0.5, -radius - 43.0),
 			Vector2(-w2 * 0.5 + 3.0, -radius - 27.0),
 		]), Color(1.0, 0.58, 0.16))
+	if castle_final and castle_throne_active and castle_shield_hp_max > 0.0:
+		var castle_shield_ratio := clampf(castle_shield_hp / castle_shield_hp_max, 0.0, 1.0)
+		draw_rect(Rect2(Vector2(-w2 / 2.0, -radius - 34), Vector2(w2, 7)),
+			Color(0.08, 0.05, 0.04, 0.96))
+		draw_rect(Rect2(Vector2(-w2 / 2.0, -radius - 34), Vector2(w2 * castle_shield_ratio, 7)),
+			Color(0.94, 0.74, 0.34) if castle_guards_alive == 0 else Color(0.52, 0.44, 0.34))
+		# 남은 왕좌 지휘관 수를 사각 점으로. 색만이 아니라 개수로 읽힌다.
+		for gi in castle_guards_alive:
+			draw_rect(Rect2(Vector2(-w2 * 0.5 + float(gi) * 11.0, -radius - 46), Vector2(8, 8)),
+				Color(1.0, 0.52, 0.40))
 	if void_final and void_echo_active and void_core_hp_max > 0.0:
 		var void_core_ratio := clampf(void_core_hp / void_core_hp_max, 0.0, 1.0)
 		draw_rect(Rect2(Vector2(-w2 / 2.0, -radius - 34), Vector2(w2, 7)),
@@ -1070,6 +1310,56 @@ func _draw() -> void:
 				Vector2(marker_x + 8.0, -radius - 43.0),
 				Vector2(marker_x + 4.0, -radius - 39.0),
 			]), Color(0.84, 0.64, 1.0))
+
+
+func _draw_castle_warning() -> void:
+	var danger := Color(1.0, 0.42, 0.24)
+	match _castle_state:
+		CastleState.EXECUTE_WINDUP:
+			# 처형선: 긴 직선. 옆으로 한 발 비키면 피할 수 있어야 한다.
+			var execute_duration := maxf(0.66, 0.98 - (castle_phase - 1) * 0.06)
+			var execute_p := clampf(1.0 - _castle_t / execute_duration, 0.0, 1.0)
+			var side := _castle_lock_dir.orthogonal() * CASTLE_EXECUTE_WIDTH
+			var finish := _castle_lock_dir * CASTLE_EXECUTE_LENGTH
+			draw_colored_polygon(PackedVector2Array([-side, side, finish + side, finish - side]),
+				Color(danger.r, danger.g, danger.b, 0.05 + execute_p * 0.14))
+			draw_line(Vector2.ZERO, finish,
+				Color(1.0, 0.72, 0.40, 0.48 + execute_p * 0.46), 2.0 + execute_p * 3.5)
+		CastleState.FAN_WINDUP:
+			# 부채꼴 강타: 뒤로 빠지거나 등 뒤로 돌아야 한다.
+			var fan_duration := maxf(0.62, 0.90 - (castle_phase - 1) * 0.05)
+			var fan_p := clampf(1.0 - _castle_t / fan_duration, 0.0, 1.0)
+			var base := _castle_lock_dir.angle()
+			var points := PackedVector2Array([Vector2.ZERO])
+			for i in 17:
+				var angle := base - CASTLE_FAN_HALF_ANGLE \
+					+ CASTLE_FAN_HALF_ANGLE * 2.0 * float(i) / 16.0
+				points.append(Vector2.from_angle(angle) * CASTLE_FAN_RADIUS)
+			draw_colored_polygon(points,
+				Color(danger.r, danger.g, danger.b, 0.06 + fan_p * 0.13))
+			draw_arc(Vector2.ZERO, CASTLE_FAN_RADIUS,
+				base - CASTLE_FAN_HALF_ANGLE, base + CASTLE_FAN_HALF_ANGLE, 32,
+				Color(1.0, 0.68, 0.34, 0.42 + fan_p * 0.46), 3.0)
+		CastleState.SUMMON_WINDUP:
+			# 소환 지휘: 위치가 아니라 "지금 소환한다"만 알린다. 소환 지점은 Main이 정한다.
+			var summon_duration := maxf(0.70, 1.00 - (castle_phase - 1) * 0.05)
+			var summon_p := clampf(1.0 - _castle_t / summon_duration, 0.0, 1.0)
+			draw_arc(Vector2.ZERO, lerpf(radius * 2.6, radius * 1.5, summon_p), 0.0, TAU, 40,
+				Color(0.98, 0.52, 0.30, 0.34 + summon_p * 0.44), 2.5 + summon_p * 2.0)
+	if castle_throne_active:
+		# 왕좌 보호막. 지휘관이 남아 있으면 굳게 닫힌 이중 고리, 전멸하면 얇아져 "이제 깨진다"를 알린다.
+		var pulse := 0.5 + 0.5 * sin(_anim_t * 7.0)
+		var locked := castle_guards_alive > 0
+		draw_arc(Vector2.ZERO, radius * 1.58, 0.0, TAU, 48,
+			Color(0.94, 0.74, 0.36, (0.62 if locked else 0.34) + pulse * 0.22),
+			5.0 if locked else 2.5)
+		if locked:
+			draw_arc(Vector2.ZERO, radius * 1.86, 0.0, TAU, 48,
+				Color(0.78, 0.58, 0.28, 0.34 + pulse * 0.18), 2.0)
+	elif vulnerable_t > 0.0:
+		var stun_pulse := 0.5 + 0.5 * sin(_anim_t * 12.0)
+		draw_arc(Vector2.ZERO, radius * 1.5, 0.0, TAU, 40,
+			Color(1.0, 0.88, 0.44, 0.52 + stun_pulse * 0.34), 4.0)
 
 
 func _draw_void_warning() -> void:

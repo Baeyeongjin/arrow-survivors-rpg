@@ -12,6 +12,7 @@ const GraveSealScript = preload("res://GraveSeal.gd")
 const GlacierBrazierScript = preload("res://GlacierBrazier.gd")
 const VoidAnchorScript = preload("res://VoidAnchor.gd")
 const VoidGravityFieldScript = preload("res://VoidGravityField.gd")
+const CastleGateScript = preload("res://CastleGate.gd")
 const ExpeditionRulesScript = preload("res://ExpeditionRules.gd")
 const RunTelemetryScript = preload("res://RunTelemetry.gd")
 const UiTypographyScript = preload("res://UiTypography.gd")
@@ -216,6 +217,15 @@ const VOID_ANCHOR_TIMES := [45.0, 115.0, 205.0]
 const VOID_ANCHOR_REQUIRED := 3
 const VOID_ANCHOR_DURATION := 8.0
 const VOID_MIDBOSS_TIME := 160.0
+# M5-D 마왕성 세로 슬라이스: 성문 관문 2곳(봉쇄전) · 2:35 흑기사 사령관 · 5:00 마왕 아바돈.
+# 다른 던전이 목표 3개인 것과 달리 관문은 2개다. 관문 하나가 정예 묶음 전투 하나라
+# 밀도가 훨씬 높고, "첫 성문 → 중간보스 → 마지막 성문 → 마왕"의 관문 던전 리듬을 만든다.
+const CASTLE_STAGE := 5
+const CASTLE_GATE_TIMES := [50.0, 210.0]   # 00:50 / 03:30
+const CASTLE_GATE_REQUIRED := 2
+const CASTLE_GATE_RADIUS := 150.0
+const CASTLE_GATE_GUARDS := 4              # 관문 봉쇄전 수비대 수(지휘관 1 + 정예 3)
+const CASTLE_MIDBOSS_TIME := 155.0         # 02:35 흑기사 사령관
 const EXPEDITION_FLOORS := ExpeditionRulesScript.FLOOR_COUNT
 const MAX_ENEMIES := 300     # 동시 등장 상한 (뱀서형 밀도 + 내장 GPU 부하 관리. 340은 Iris Xe에서 랙 → 300으로 한 단계 롤백)
 # 무기 진화 레시피 (뱀서식): 무기 만렙(Lv8) + 필수 패시브 보유 → 보스 상자 개봉 시 진화
@@ -639,6 +649,15 @@ var void_midboss_spawned := false
 var void_midboss_alive := false
 var void_midboss_defeated := false
 var void_boss_wait_warned := false
+
+# M5-D 마왕성 층 상태
+var castle_gates_spawned := 0
+var castle_gates_opened := 0
+var castle_midboss_spawned := false
+var castle_midboss_alive := false
+var castle_midboss_defeated := false
+var castle_boss_wait_warned := false
+var _castle_block_fx_cd := 0.0   # 보호막 미동 안내 연출 쿨다운
 
 # M4 3층 원정. 총 런 시간은 time_survived에 누적하고, 각 층의 5분 시계는
 # expedition_floor_started_at을 빼서 계산한다.
@@ -1136,6 +1155,7 @@ func _autoshot() -> void:
 	var grave_preview := ""
 	var glacier_preview := ""
 	var void_preview := ""
+	var castle_preview := ""
 	for arg in args:
 		if arg.begins_with("--active-preview="):
 			var requested_active := arg.trim_prefix("--active-preview=")
@@ -1157,6 +1177,10 @@ func _autoshot() -> void:
 			var requested_void := arg.trim_prefix("--void-preview=")
 			if requested_void in ["anchor", "midboss", "boss"]:
 				void_preview = requested_void
+		elif arg.begins_with("--castle-preview="):
+			var requested_castle := arg.trim_prefix("--castle-preview=")
+			if requested_castle in ["gate", "midboss", "boss"]:
+				castle_preview = requested_castle
 		elif arg.begins_with("--stress-stage="):
 			# --stress-test를 어느 던전에서 잴지. 지형마다 도형 수가 달라 경로찾기 비용이 다르다.
 			sel_stage = clampi(int(arg.trim_prefix("--stress-stage=")), 1, FINAL_STAGE)
@@ -1186,6 +1210,8 @@ func _autoshot() -> void:
 		sel_stage = GLACIER_STAGE
 	if void_preview != "":
 		sel_stage = VOID_STAGE
+	if castle_preview != "":
+		sel_stage = CASTLE_STAGE
 	title_panel.visible = false
 	sel_modifier = {}
 	_start_game(GameConfig.difficulties()[0])
@@ -1601,6 +1627,72 @@ func _autoshot() -> void:
 		var void_image := get_viewport().get_texture().get_image()
 		void_image.save_png("user://autoshot.png")
 		print("VOID_PREVIEW %s" % void_preview)
+		print("AUTOSHOT SAVED: ", ProjectSettings.globalize_path("user://autoshot.png"))
+		get_tree().quit()
+		return
+
+	# --castle-preview=gate|midboss|boss: M5-D 핵심 전투 상태를 실제 렌더로 검수한다.
+	if castle_preview != "":
+		player.invuln = 999.0
+		weapons.clear()
+		wtimer.clear()
+		xp_to_next = 999999
+		for preview_enemy in get_tree().get_nodes_in_group("enemies"):
+			if is_instance_valid(preview_enemy):
+				preview_enemy.queue_free()
+		await get_tree().process_frame
+		_wave_minute = 0
+		_current_wave = GameConfig.wave_for_minute(0, CASTLE_STAGE)
+		featured_enemy = str(_current_wave.get("primary", "dark_knight"))
+		match castle_preview:
+			"gate":
+				time_survived = CASTLE_GATE_TIMES[0]
+				var gate = _spawn_castle_gate(0)
+				gate.position = player.position + Vector2.RIGHT * 40.0
+				on_castle_gate_engaged(gate)
+				gate.process_mode = Node.PROCESS_MODE_DISABLED
+				gate.queue_redraw()
+				for preview_guard in get_tree().get_nodes_in_group("enemies"):
+					if is_instance_valid(preview_guard):
+						preview_guard.process_mode = Node.PROCESS_MODE_DISABLED
+			"midboss":
+				time_survived = CASTLE_MIDBOSS_TIME
+				castle_gates_spawned = 1
+				castle_gates_opened = 1
+				_wave_minute = int(time_survived / 60.0)
+				_current_wave = GameConfig.wave_for_minute(_wave_minute, CASTLE_STAGE)
+				var marshal := _spawn_castle_midboss()
+				marshal.position = player.position + Vector2.RIGHT * 210.0
+				marshal._cstate = 1
+				marshal._ctimer = 0.26
+				marshal._clock = Vector2.LEFT
+				marshal.process_mode = Node.PROCESS_MODE_DISABLED
+				marshal.queue_redraw()
+			"boss":
+				time_survived = DUNGEON_BOSS_TIME
+				_wave_minute = int(time_survived / 60.0)
+				_current_wave = GameConfig.wave_for_minute(_wave_minute, CASTLE_STAGE)
+				castle_gates_spawned = CASTLE_GATE_REQUIRED
+				castle_gates_opened = 1
+				castle_midboss_spawned = true
+				castle_midboss_defeated = true
+				_spawn_dungeon_boss()
+				boss.position = player.position + Vector2.RIGHT * 230.0
+				boss.take_damage(boss.max_hp * 0.55, false, "phys")
+				boss._castle_state = boss.CastleState.EXECUTE_WINDUP
+				boss._castle_lock_dir = Vector2.LEFT
+				boss._castle_t = 0.30
+				boss.process_mode = Node.PROCESS_MODE_DISABLED
+				boss.queue_redraw()
+				for preview_guard2 in get_tree().get_nodes_in_group("enemies"):
+					if is_instance_valid(preview_guard2):
+						preview_guard2.process_mode = Node.PROCESS_MODE_DISABLED
+		_update_ui()
+		await get_tree().process_frame
+		await get_tree().process_frame
+		var castle_image := get_viewport().get_texture().get_image()
+		castle_image.save_png("user://autoshot.png")
+		print("CASTLE_PREVIEW %s" % castle_preview)
 		print("AUTOSHOT SAVED: ", ProjectSettings.globalize_path("user://autoshot.png"))
 		get_tree().quit()
 		return
@@ -2181,8 +2273,12 @@ func _process(delta: float) -> void:
 		_update_glacier_encounter(delta)
 	elif map_stage == VOID_STAGE:
 		_update_void_encounter()
+	elif map_stage == CASTLE_STAGE:
+		_update_castle_encounter()
 	if grave_requiem_cd > 0.0:
 		grave_requiem_cd = maxf(0.0, grave_requiem_cd - delta)
+	if _castle_block_fx_cd > 0.0:
+		_castle_block_fx_cd = maxf(0.0, _castle_block_fx_cd - delta)
 	if abyss_mode:
 		# 심연: 예약 시간마다 보스 (무한)
 		if not boss_spawned and time_survived >= next_boss_time:
@@ -2213,6 +2309,10 @@ func _process(delta: float) -> void:
 					if not void_boss_wait_warned:
 						void_boss_wait_warned = true
 						_event_banner("[경고] 심연의 눈을 먼저 처치해야 한다!")
+				elif map_stage == CASTLE_STAGE and castle_midboss_alive:
+					if not castle_boss_wait_warned:
+						castle_boss_wait_warned = true
+						_event_banner("[경고] 흑기사 사령관을 먼저 처치해야 한다!")
 				else:
 					_spawn_dungeon_boss()
 
@@ -5388,6 +5488,207 @@ func on_void_echo_broken(window: float) -> void:
 	play_sfx("ult", -7.0)
 
 
+# ── M5-D 마사읍성 세로 슬라이스 ──────────────────────
+func _update_castle_encounter() -> void:
+	if map_stage != CASTLE_STAGE or state != State.PLAYING:
+		return
+	var elapsed := _dungeon_elapsed()
+	while castle_gates_spawned < CASTLE_GATE_TIMES.size() \
+			and elapsed >= float(CASTLE_GATE_TIMES[castle_gates_spawned]):
+		_spawn_castle_gate(castle_gates_spawned)
+	if not castle_midboss_spawned and elapsed >= CASTLE_MIDBOSS_TIME:
+		_spawn_castle_midboss()
+
+
+func _spawn_castle_gate(index: int) -> Node2D:
+	if index < 0 or index >= CASTLE_GATE_REQUIRED:
+		return null
+	var gate := CastleGateScript.new()
+	# 관부는 목표 지점 양 끝을 쓴다. 가운데(1번)를 뱄면 동일 방에 둘이 몰리지 않는다.
+	var objective_slot := 0 if index == 0 else 2
+	var spawn_pos := player.position + Vector2.RIGHT * 240.0 if player else WORLD * 0.5
+	if stage_layout and objective_slot < stage_layout.objective_positions.size():
+		spawn_pos = stage_layout.objective_positions[objective_slot]
+	if stage_layout:
+		spawn_pos = stage_layout.nearest_walkable(spawn_pos, 58.0)
+	gate.position = spawn_pos
+	gate.configure(index, CASTLE_GATE_RADIUS)
+	add_child(gate)
+	castle_gates_spawned = maxi(castle_gates_spawned, index + 1)
+	_event_banner("[마왈성] 성문 발견 — 접근하면 봉쇄전이 시작된다 (%d/%d)" % [
+		castle_gates_opened, CASTLE_GATE_REQUIRED])
+	return gate
+
+
+# 성문 봉쇄전 시작. 지효관 1 + 정예 3을 관문 주위에 돌려 소환하고 관문에 등록한다.
+# 모두 처쳤하면 CastleGate가 스스로 개방한다(시간으로 넘길 수 없는 관문).
+func on_castle_gate_engaged(gate: Node2D) -> void:
+	if gate == null or not gate.has_method("engage") or not gate.engage():
+		return
+	var origin: Vector2 = gate.position
+	for i in CASTLE_GATE_GUARDS:
+		var angle := TAU * float(i) / float(CASTLE_GATE_GUARDS) + 0.35
+		var guard_pos := origin + Vector2.from_angle(angle) * (CASTLE_GATE_RADIUS * 0.62)
+		if stage_layout:
+			guard_pos = stage_layout.nearest_walkable(guard_pos, 34.0)
+		var tier := GameConfig.castle_elite_tier() if i == 0 \
+			else GameConfig.tier_by_key("dark_knight")
+		var guard := _make_enemy(guard_pos, true, tier)
+		# 관문 하나가 다른 던전 정예 한 번보다 무겁지 않도록 개체를 가볍게 잡는다.
+		guard.hp *= 0.72
+		guard.max_hp = guard.hp
+		gate.register_guard(guard)
+	_event_banner("[봉쇄전] 성문 수변대 %d명 — 전원 처쳤 시 개방" % CASTLE_GATE_GUARDS)
+	_flash(Color(1.0, 0.58, 0.26, 0.30))
+	shake_t = maxf(shake_t, 0.22)
+	play_sfx("boss", -9.0)
+
+
+func on_castle_gate_opened(gate: Node2D) -> void:
+	castle_gates_opened = mini(CASTLE_GATE_REQUIRED, castle_gates_opened + 1)
+	run_gold += 14
+	if player:
+		player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.06)
+	if _has_gear_special("commanders_seal"):
+		player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.08)
+		skill_e_cd = maxf(0.0, skill_e_cd - 2.5)
+	var fx_pos: Vector2 = gate.position if gate != null else WORLD * 0.5
+	_spawn_proc_fx("shatter", fx_pos, 92.0, Color(1.0, 0.78, 0.36), 0.52)
+	_spawn_proc_fx("ring", fx_pos, 140.0, Color(1.0, 0.66, 0.28), 0.50)
+	for i in 4:
+		_spawn_coin(fx_pos + Vector2.from_angle(TAU * float(i) / 4.0) * 26.0, 2)
+	# 번호에 마왈 지효관 감소를 명시해 관문을 여는 이유를 바로 읽게 한다.
+	_event_banner("[개방] 성문 %d/%d — 마왈 지효관 %d명" % [
+		castle_gates_opened, CASTLE_GATE_REQUIRED, maxi(1, 3 - castle_gates_opened)])
+	play_sfx("levelup", -8.0)
+
+
+func _spawn_castle_midboss() -> Enemy:
+	if castle_midboss_spawned:
+		return null
+	castle_midboss_spawned = true
+	castle_midboss_alive = true
+	var spawn_pos := player.position + Vector2.LEFT * 340.0 if player else WORLD * 0.5
+	if stage_layout:
+		spawn_pos = stage_layout.nearest_walkable(spawn_pos, 46.0)
+	var marshal := _make_enemy(spawn_pos, true, GameConfig.castle_midboss_tier(), 0.0, false, false)
+	marshal.midboss = true
+	marshal.hp *= 2.7
+	marshal.max_hp = marshal.hp
+	marshal.radius *= 1.08
+	marshal.touch_damage *= 1.18
+	_event_banner("[중간 보스] 흔기사 사령관 — 돌진 전조 회피")
+	_flash(Color(0.58, 0.48, 0.62, 0.36))
+	shake_t = maxf(shake_t, 0.27)
+	return marshal
+
+
+# 마왈 패턴 3종. 모닠 Boss.gd가 전조를 그리고 이것들은 판정만 한다.
+func castle_boss_execute(origin: Vector2, aim_dir: Vector2, length: float,
+		width: float, damage: float) -> void:
+	_spawn_proc_fx("burst", origin, 78.0, Color(1.0, 0.62, 0.30), 0.30, aim_dir)
+	if player == null:
+		return
+	var finish := origin + aim_dir.normalized() * length
+	var closest := Geometry2D.get_closest_point_to_segment(player.position, origin, finish)
+	if player.position.distance_to(closest) <= width + player.radius:
+		apply_castle_boss_damage(damage, closest)
+
+
+func castle_boss_fan(origin: Vector2, aim_dir: Vector2, reach: float,
+		half_angle: float, damage: float) -> void:
+	_spawn_proc_fx("burst", origin, 92.0, Color(1.0, 0.52, 0.24), 0.32, aim_dir)
+	if player == null:
+		return
+	var to_player := player.position - origin
+	if to_player.length() <= reach + player.radius and to_player.length_squared() > 0.01 \
+			and absf(aim_dir.angle_to(to_player.normalized())) <= half_angle:
+		apply_castle_boss_damage(damage, origin)
+
+
+# 소환 지휘: 읽을 수 있는 위치(보스 주밀 고리)에만 낳는다. 화면 밖 기습 소환은 안 한다.
+func castle_boss_summon(origin: Vector2, count: int) -> void:
+	var spawned := maxi(1, count)
+	for i in spawned:
+		var angle := TAU * float(i) / float(spawned) + randf_range(-0.25, 0.25)
+		var guard_pos := origin + Vector2.from_angle(angle) * 168.0
+		if stage_layout:
+			guard_pos = stage_layout.nearest_walkable(guard_pos, 34.0)
+		var guard := _make_enemy(guard_pos, true, GameConfig.castle_guard_tier())
+		guard.hp *= 0.80
+		guard.max_hp = guard.hp
+		_spawn_proc_fx("ring", guard_pos, 74.0, Color(1.0, 0.48, 0.32), 0.42)
+	_event_banner("[소환] 마왈이 지효관을 부른다")
+
+
+func apply_castle_boss_damage(amount: float, source: Vector2) -> bool:
+	if player == null or player.invuln > 0.0:
+		return false
+	var damage := maxf(1.0, amount * _castle_incoming_damage_multiplier() - player.armor)
+	apply_player_damage(damage, "castle_boss")
+	player.invuln = 0.70
+	player.play_hurt()
+	player.knockback(source, Player.KNOCKBACK_BOSS)
+	play_sfx("hurt", -7.0, 0.25)
+	shake_t = maxf(shake_t, 0.20)
+	_spawn_proc_fx("burst", player.position, 44.0, Color(1.0, 0.56, 0.26), 0.26,
+		(player.position - source).normalized())
+	return true
+
+
+func on_castle_throne_started(guards: int) -> void:
+	_event_banner("[보스] 마왈의 왕좌 — 지효관 %d명을 먼지 제거해야 보호막이 뻓렸다" % guards)
+	_flash(Color(0.96, 0.66, 0.30, 0.32))
+	shake_t = maxf(shake_t, 0.26)
+	if boss and is_instance_valid(boss):
+		castle_boss_summon(boss.position, guards)
+
+
+func on_castle_guards_remaining(remaining: int) -> void:
+	if remaining > 0:
+		_event_banner("[왕좌] 지효관 %d명 남았다" % remaining)
+		return
+	_event_banner("[왕좌] 지효관 전멸 — 보호막을 깨려라")
+	_flash(Color(1.0, 0.82, 0.42, 0.26))
+
+
+# 지효관이 남은 동안 보호막은 미동이다. 숫자 대슴 짧은 바리 연출로 이유를 알린다.
+func on_castle_shield_blocked(remaining: int) -> void:
+	if boss == null or not is_instance_valid(boss):
+		return
+	if _castle_block_fx_cd > 0.0:
+		return
+	_castle_block_fx_cd = 0.75
+	_spawn_proc_fx("ring", boss.position, boss.radius * 1.7, Color(0.94, 0.76, 0.38), 0.26)
+	_event_banner("[보호막] 지효관 %d명을 먼지 처리해야 한다" % remaining)
+
+
+func on_castle_shield_broken(window: float) -> void:
+	_event_banner("[기회] 왕좌 보호막 파괴 — %.0f초 집중 공공" % window)
+	_flash(Color(1.0, 0.86, 0.44, 0.36))
+	_slowmo(0.55, 180)
+	shake_t = maxf(shake_t, 0.30)
+	play_sfx("ult", -7.0)
+
+
+func _castle_shield_damage_multiplier() -> float:
+	return 1.35 if _has_gear_special("siegebreaker") else 1.0
+
+
+func _castle_incoming_damage_multiplier() -> float:
+	return 0.74 if _has_gear_special("bulwark_of_gates") else 1.0
+
+
+func _reset_castle_floor_state() -> void:
+	castle_gates_spawned = 0
+	castle_gates_opened = 0
+	castle_midboss_spawned = false
+	castle_midboss_alive = false
+	castle_midboss_defeated = false
+	castle_boss_wait_warned = false
+	_castle_block_fx_cd = 0.0
+
+
 func _reset_void_floor_state() -> void:
 	void_anchors_spawned = 0
 	void_anchors_stabilized = 0
@@ -5451,6 +5752,13 @@ func _spawn_dungeon_boss() -> void:
 			boss.attack_damage = (22.0 + stage_num * 2.2) \
 				* sqrt(diff_enemy_hp) * _expedition_floor_damage_pressure()
 			boss.configure_glacier_final(glacier_braziers_lit)
+		elif map_stage == CASTLE_STAGE:
+			for gate in get_tree().get_nodes_in_group("castle_gates"):
+				if is_instance_valid(gate) and gate.has_method("absorb_without_reward"):
+					gate.absorb_without_reward()
+			boss.attack_damage = (24.0 + stage_num * 2.6) \
+				* sqrt(diff_enemy_hp) * _expedition_floor_damage_pressure()
+			boss.configure_castle_final(castle_gates_opened)
 		elif map_stage == VOID_STAGE:
 			for anchor in get_tree().get_nodes_in_group("void_anchors"):
 				if is_instance_valid(anchor) and anchor.has_method("absorb_without_reward"):
@@ -5473,6 +5781,10 @@ func _spawn_dungeon_boss() -> void:
 	elif map_stage == GLACIER_STAGE:
 		_event_banner("[보스] %s빙결 거상 — 얼음 갑옷 파쇄 · 화로 %d/%d" % [
 			final_prefix, glacier_braziers_lit, GLACIER_BRAZIER_REQUIRED])
+	elif map_stage == CASTLE_STAGE:
+		var throne_guards := maxi(1, 3 - castle_gates_opened)
+		_event_banner("[보스] %s마왕 아바돈 — 처형선·부채꼴 회피 · 왕좌 지휘관 %d명%s" % [
+			final_prefix, throne_guards, hint])
 	elif map_stage == VOID_STAGE:
 		var echo_cores := maxi(1, 4 - void_anchors_stabilized)
 		_event_banner("[보스] %s공허 감시자 — 시선·광선·중력 회피 · 분신 핵 %d개%s" % [
@@ -5761,6 +6073,10 @@ func on_enemy_killed(e: Enemy) -> void:
 	ult_gauge = minf(1.0, ult_gauge + (0.05 if e.elite else 0.008))
 	_refresh_ult_bar()
 	_maybe_drop_gear(e.position, e.elite)   # 장비 드롭 (엘리트 확정급, 일반 저확률)
+	# 왕좌 지휘관을 처치하면 마왕 보호막 게이트가 한 칸 열린다.
+	if str(e.tier.get("key", "")) == "throne_guard" \
+			and boss and is_instance_valid(boss) and boss.has_method("on_castle_guard_killed"):
+		boss.on_castle_guard_killed()
 	if e.elite and _has_gear_special("grave_echo"):
 		_grave_echo_on_elite()   # 혼령의 메아리: 정예 처치 시 E 재사용 단축 + 궁 게이지
 	if e.midboss:
@@ -5779,6 +6095,12 @@ func on_enemy_killed(e: Enemy) -> void:
 			_spawn_gear_pickup(e.position, _roll_glacier_gear(true))
 			_event_banner("[획득] 빙벽 골렘 격파 — 빙하 전용 장비")
 			_flash(Color(0.46, 0.76, 1.0, 0.40))
+		elif map_stage == CASTLE_STAGE:
+			castle_midboss_alive = false
+			castle_midboss_defeated = true
+			_spawn_gear_pickup(e.position, _roll_castle_gear(true))
+			_event_banner("[획득] 흑기사 사령관 격파 — 마왕성 전용 장비")
+			_flash(Color(0.86, 0.62, 0.42, 0.40))
 		elif map_stage == VOID_STAGE:
 			void_midboss_alive = false
 			void_midboss_defeated = true
@@ -5974,6 +6296,8 @@ func _roll_boss_reward(stage: int, force_epic: bool) -> Dictionary:
 		return _roll_glacier_gear(force_epic)
 	if stage == VOID_STAGE:
 		return _roll_void_gear(force_epic)
+	if stage == CASTLE_STAGE:
+		return _roll_castle_gear(force_epic)
 	var slot: String = EQUIP_SLOTS[randi() % EQUIP_SLOTS.size()]
 	var rarity := "epic" if force_epic else _roll_rarity(diff_rarity_luck + 1.5)
 	return _roll_gear_for(slot, rarity)
@@ -6089,6 +6413,7 @@ func _transition_to_expedition_floor(target_stage: int) -> void:
 	_reset_grave_floor_state()
 	_reset_glacier_floor_state()
 	_reset_void_floor_state()
+	_reset_castle_floor_state()
 	# 다음 층은 새 배치로 (같은 던전을 다시 밟아도 지형이 달라진다).
 	if layout_seed_override != 0:
 		layout_seed_override = randi()
@@ -6473,6 +6798,22 @@ const VOID_GEAR_SPECIALS := {
 	},
 }
 
+# M5-D 마왕성 전용 어픽스. 상시 공격력 증가 대신 관문·소환·처형 패턴에 대응하는 규칙을 바꾼다.
+const CASTLE_GEAR_SPECIALS := {
+	"weapon": {
+		"key": "siegebreaker", "name": "공성의 무기",
+		"desc": "마왕 왕좌 보호막에 주는 파괴 피해 +35%",
+	},
+	"armor": {
+		"key": "bulwark_of_gates", "name": "관문의 방벽",
+		"desc": "처형선·부채꼴 등 마왕 패턴 피해 -26%",
+	},
+	"trinket": {
+		"key": "commanders_seal", "name": "지휘관의 인장",
+		"desc": "성문 개방 시 최대체력 8% 회복·E 재사용 2.5초 단축",
+	},
+}
+
 # Phase 5 대장간: 장비 하나당 최대 5회, 강화마다 모든 어픽스가 +12%씩 강해진다.
 # 런 골드가 초반 영구 강화와 함께 자연스럽게 소모되도록 등급별 비용을 별도로 둔다.
 const FORGE_MAX_LEVEL := 5
@@ -6562,6 +6903,20 @@ func _roll_void_gear(force_epic: bool = false, slot_override: String = "") -> Di
 	item["dungeon_tag"] = "void"
 	item["special"] = (VOID_GEAR_SPECIALS[slot] as Dictionary).duplicate(true)
 	item["name"] = "공허벼림 %s" % str(item["name"])
+	return item
+
+
+func _roll_castle_gear(force_epic: bool = false, slot_override: String = "") -> Dictionary:
+	var slot := slot_override if slot_override in EQUIP_SLOTS else str(EQUIP_SLOTS[randi() % EQUIP_SLOTS.size()])
+	var rarity := _roll_rarity(diff_rarity_luck + 2.0)
+	if int(RARITY_ORDER.get(rarity, 1)) < 2:
+		rarity = "rare"
+	if force_epic and int(RARITY_ORDER.get(rarity, 1)) < 3:
+		rarity = "epic"
+	var item := _roll_gear_for(slot, rarity)
+	item["dungeon_tag"] = "castle"
+	item["special"] = (CASTLE_GEAR_SPECIALS[slot] as Dictionary).duplicate(true)
+	item["name"] = "마왕성벼림 %s" % str(item["name"])
 	return item
 
 
@@ -8956,6 +9311,10 @@ func _record_current_floor(cleared: bool) -> void:
 		objective_key = "void_anchors"
 		objectives_completed = void_anchors_stabilized
 		objectives_total = VOID_ANCHOR_REQUIRED
+	elif map_stage == CASTLE_STAGE:
+		objective_key = "castle_gates"
+		objectives_completed = castle_gates_opened
+		objectives_total = CASTLE_GATE_REQUIRED
 	run_floor_stats.append({
 		"floor": floor_no,
 		"stage": map_stage,
@@ -9158,6 +9517,7 @@ func _start_game(d: Dictionary) -> void:
 	_reset_grave_floor_state()
 	_reset_glacier_floor_state()
 	_reset_void_floor_state()
+	_reset_castle_floor_state()
 	# B블렌드: 장착한 무기 장비가 캐릭터 주무기(weapon1)를 대체. 없으면 캐릭터 기본 무기.
 	# (캐릭터 고유 2번째 무기 weapon2는 유지 → 캐릭터 정체성 일부 보존)
 	var gear_wpn := str(equipped.get("weapon", {}).get("weapon_kind", ""))
@@ -13213,6 +13573,30 @@ func _nearest_landmark_hint() -> String:
 		elif void_midboss_defeated:
 			void_progress += " · 최종 관문 준비"
 		return void_progress
+	if map_stage == CASTLE_STAGE:
+		if boss and is_instance_valid(boss) and boss.castle_final:
+			if boss.castle_throne_active:
+				if boss.castle_guards_alive > 0:
+					return "왕좌 지휘관 %d명 — 보호막은 아직 미동" % boss.castle_guards_alive
+				var shield_pct := int(round(100.0 * boss.castle_shield_hp \
+					/ maxf(1.0, boss.castle_shield_hp_max)))
+				return "왕좌 보호막 %d%% — 지금 파괴" % shield_pct
+			if boss.vulnerable_t > 0.0:
+				return "보호막 파괴! 집중 공격 %.1f초" % boss.vulnerable_t
+			return "마왕 아바돈 페이즈 %d · 처형선·부채꼴·소환 회피" % boss.castle_phase
+		var castle_progress := "성문 개방 %d/%d" % [
+			castle_gates_opened, CASTLE_GATE_REQUIRED]
+		var engaged_guards := 0
+		for gate in get_tree().get_nodes_in_group("castle_gates"):
+			if is_instance_valid(gate) and gate.is_engaged() and not gate.is_opened():
+				engaged_guards = maxi(engaged_guards, gate.alive_guard_count())
+		if engaged_guards > 0:
+			castle_progress += " · 봉쇄전 수비대 %d명" % engaged_guards
+		if castle_midboss_alive:
+			castle_progress += " · 흑기사 사령관"
+		elif castle_midboss_defeated:
+			castle_progress += " · 최종 관문 준비"
+		return castle_progress
 	if expedition_active:
 		var remaining := maxi(0, int(ceil(DUNGEON_BOSS_TIME - _dungeon_elapsed())))
 		return "%d/%d층 · 보스까지 %02d:%02d" % [
