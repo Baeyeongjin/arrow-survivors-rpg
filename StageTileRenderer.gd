@@ -32,6 +32,39 @@ const STAGE_DIRS := {
 	4: "void_altar",
 	5: "demon_castle",
 }
+const LOWER_MACRO := 128
+const LOWER_PALETTES := {
+	"graveyard": {
+		"base": Color(0.027, 0.035, 0.039),
+		"deep": Color(0.043, 0.052, 0.050),
+		"mid": Color(0.071, 0.086, 0.071),
+		"accent": Color(0.145, 0.165, 0.105),
+	},
+	"hell_bridge": {
+		"base": Color(0.025, 0.020, 0.026),
+		"deep": Color(0.060, 0.039, 0.043),
+		"mid": Color(0.105, 0.058, 0.055),
+		"accent": Color(0.365, 0.105, 0.060),
+	},
+	"glacier": {
+		"base": Color(0.025, 0.052, 0.082),
+		"deep": Color(0.039, 0.086, 0.130),
+		"mid": Color(0.064, 0.145, 0.205),
+		"accent": Color(0.235, 0.485, 0.610),
+	},
+	"void_altar": {
+		"base": Color(0.018, 0.013, 0.031),
+		"deep": Color(0.043, 0.026, 0.074),
+		"mid": Color(0.082, 0.043, 0.135),
+		"accent": Color(0.330, 0.165, 0.510),
+	},
+	"demon_castle": {
+		"base": Color(0.029, 0.029, 0.039),
+		"deep": Color(0.057, 0.054, 0.068),
+		"mid": Color(0.105, 0.094, 0.112),
+		"accent": Color(0.280, 0.215, 0.205),
+	},
+}
 
 
 # Builds one map texture from the exact same StageLayout used by movement.
@@ -103,6 +136,11 @@ static func build(layout, stage_id: int, world_size: Vector2, tint := Color.WHIT
 	var columns := ceili(world_size.x / float(CELL))
 	var rows := ceili(world_size.y / float(CELL))
 	var map_image := Image.create(columns * CELL, rows * CELL, false, Image.FORMAT_RGBA8)
+	# Wang lower tiles are intentionally skipped in fully blocked cells. Their tiny
+	# 32 px pattern looked like an editor grid when it covered most of the screen.
+	# A deterministic macro field gives each dungeon a readable rock/chasm layer,
+	# while transition tiles still draw the authored PixelLab cliff edge.
+	_paint_lower_field(map_image, stage_dir)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(stage_dir)   # 스테이지마다 고정 — 매 판 같은 맵이 나온다
 	for row in rows:
@@ -118,6 +156,8 @@ static func build(layout, stage_id: int, world_size: Vector2, tint := Color.WHIT
 			if layout.is_walkable(origin + Vector2(CELL, CELL), 0.0):
 				index += 1
 			var dst := Vector2i(column * CELL, row * CELL)
+			if index == 0:
+				continue
 			# 사방이 전부 바닥인 칸만 변형. 경계 타일은 이어짐이 깨지면 안 되므로 원본 유지.
 			if index == FILL_INDEX and fill_variants.size() > 0:
 				var pick := rng.randi_range(0, fill_variants.size() - 1)
@@ -125,6 +165,117 @@ static func build(layout, stage_id: int, world_size: Vector2, tint := Color.WHIT
 			else:
 				map_image.blit_rect(atlas, tile_rects[index], dst)
 	return ImageTexture.create_from_image(map_image)
+
+
+static func _paint_lower_field(image: Image, stage_dir: String) -> void:
+	var palette: Dictionary = LOWER_PALETTES.get(stage_dir, LOWER_PALETTES["graveyard"])
+	var base: Color = palette["base"]
+	var deep: Color = palette["deep"]
+	var mid: Color = palette["mid"]
+	var accent: Color = palette["accent"]
+	image.fill(base)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("lower-field-%s" % stage_dir)
+	var half_macro := int(LOWER_MACRO * 0.5)
+	for y in range(-LOWER_MACRO, image.get_height() + LOWER_MACRO, LOWER_MACRO):
+		for x in range(-LOWER_MACRO, image.get_width() + LOWER_MACRO, LOWER_MACRO):
+			var center := Vector2i(
+				x + half_macro + rng.randi_range(-34, 34),
+				y + half_macro + rng.randi_range(-34, 34))
+			var patch_size := Vector2i(
+				rng.randi_range(78, 172),
+				rng.randi_range(62, 154))
+			_paint_jagged_patch(image, center, patch_size, deep, rng)
+			if rng.randf() < 0.62:
+				_paint_jagged_patch(
+					image,
+					center + Vector2i(rng.randi_range(-28, 28), rng.randi_range(-24, 24)),
+					Vector2i(maxi(32, int(patch_size.x * 0.58)),
+						maxi(28, int(patch_size.y * 0.48))),
+					mid,
+					rng)
+			match stage_dir:
+				"hell_bridge":
+					if rng.randf() < 0.58:
+						_paint_crack(image,
+							center + Vector2i(rng.randi_range(-38, 38), -half_macro),
+							rng.randi_range(4, 7), accent, rng, true)
+				"glacier":
+					if rng.randf() < 0.68:
+						_paint_crack(image,
+							center + Vector2i(-half_macro, rng.randi_range(-32, 32)),
+							rng.randi_range(4, 7), accent, rng, false)
+				"void_altar":
+					_paint_void_sparks(image, center, accent, rng)
+				"demon_castle":
+					if rng.randf() < 0.54:
+						var seam_y := center.y + rng.randi_range(-46, 46)
+						_fill_rect_clipped(image,
+							Rect2i(center.x - 72, seam_y, 144, 3), accent)
+						var seam_x := center.x + rng.randi_range(-46, 46)
+						_fill_rect_clipped(image,
+							Rect2i(seam_x, seam_y - 42, 3, 84), deep)
+				_:
+					if rng.randf() < 0.34:
+						_paint_crack(image,
+							center + Vector2i(rng.randi_range(-30, 30), -half_macro),
+							rng.randi_range(3, 5), accent, rng, true)
+
+
+static func _paint_jagged_patch(
+		image: Image, center: Vector2i, size: Vector2i,
+		color: Color, rng: RandomNumberGenerator) -> void:
+	var row_height := 8
+	var half_h := maxi(row_height, int(size.y * 0.5))
+	for py in range(-half_h, half_h, row_height):
+		var edge_ratio := absf(float(py)) / float(half_h)
+		var inset := int(edge_ratio * float(size.x) * 0.34) + rng.randi_range(-8, 10)
+		inset = maxi(0, inset)
+		var width := maxi(8, size.x - inset * 2)
+		_fill_rect_clipped(image,
+			Rect2i(center.x - int(size.x * 0.5) + inset, center.y + py,
+				width, row_height),
+			color)
+
+
+static func _paint_crack(
+		image: Image, start: Vector2i, segments: int, color: Color,
+		rng: RandomNumberGenerator, mostly_vertical: bool) -> void:
+	var cursor := start
+	var thickness := rng.randi_range(2, 4)
+	for _segment in segments:
+		var next := cursor
+		if mostly_vertical:
+			next += Vector2i(rng.randi_range(-22, 22), rng.randi_range(18, 38))
+		else:
+			next += Vector2i(rng.randi_range(18, 38), rng.randi_range(-22, 22))
+		var x0 := mini(cursor.x, next.x)
+		var y0 := mini(cursor.y, next.y)
+		_fill_rect_clipped(image,
+			Rect2i(x0, cursor.y, absi(next.x - cursor.x) + thickness, thickness),
+			color)
+		_fill_rect_clipped(image,
+			Rect2i(next.x, y0, thickness, absi(next.y - cursor.y) + thickness),
+			color)
+		cursor = next
+
+
+static func _paint_void_sparks(
+		image: Image, center: Vector2i, color: Color,
+		rng: RandomNumberGenerator) -> void:
+	for _spark in rng.randi_range(1, 3):
+		var p := center + Vector2i(rng.randi_range(-58, 58), rng.randi_range(-58, 58))
+		var size := 2 if rng.randf() < 0.78 else 3
+		_fill_rect_clipped(image, Rect2i(p, Vector2i(size, size)), color)
+		if size == 3 and rng.randf() < 0.45:
+			_fill_rect_clipped(image, Rect2i(p + Vector2i(-3, 1), Vector2i(9, 1)), color)
+			_fill_rect_clipped(image, Rect2i(p + Vector2i(1, -3), Vector2i(1, 9)), color)
+
+
+static func _fill_rect_clipped(image: Image, rect: Rect2i, color: Color) -> void:
+	var clipped := rect.intersection(Rect2i(Vector2i.ZERO, image.get_size()))
+	if clipped.size.x > 0 and clipped.size.y > 0:
+		image.fill_rect(clipped, color)
 
 
 static func _apply_tint(img: Image, tint: Color) -> void:

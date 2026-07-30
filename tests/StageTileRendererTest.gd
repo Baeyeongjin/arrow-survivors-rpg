@@ -7,6 +7,27 @@ const WORLD := StageLayout.WORLD
 const STAGE_DIRS := ["graveyard", "hell_bridge", "glacier", "void_altar", "demon_castle"]
 
 
+func _pure_lower_color_count(texture: Texture2D, layout) -> int:
+	var colors := {}
+	var image := texture.get_image()
+	var cell := int(StageTileRendererScript.CELL)
+	var columns := int(image.get_width() / float(cell))
+	var rows := int(image.get_height() / float(cell))
+	var half_cell := int(cell * 0.5)
+	for row in rows:
+		for column in columns:
+			var origin := Vector2(column * cell, row * cell)
+			if layout.is_walkable(origin, 0.0) \
+					or layout.is_walkable(origin + Vector2(cell, 0), 0.0) \
+					or layout.is_walkable(origin + Vector2(0, cell), 0.0) \
+					or layout.is_walkable(origin + Vector2(cell, cell), 0.0):
+				continue
+			colors[image.get_pixel(
+				column * cell + half_cell,
+				row * cell + half_cell).to_rgba32()] = true
+	return colors.size()
+
+
 func _initialize() -> void:
 	var failures: Array[String] = []
 	for stage_id in range(1, 6):
@@ -25,6 +46,14 @@ func _initialize() -> void:
 			)
 		else:
 			print("STAGE_TILE_OK stage=%d size=%s" % [stage_id, texture.get_size()])
+			var lower_color_count := _pure_lower_color_count(texture, layout)
+			if lower_color_count < 3:
+				failures.append(
+					"stage %d: lower field is still a flat/repeating tile (%d sampled colors)" % [
+						stage_id, lower_color_count])
+			else:
+				print("STAGE_LOWER_FIELD_OK stage=%d colors=%d" % [
+					stage_id, lower_color_count])
 			if "--render-stage-previews" in OS.get_cmdline_user_args():
 				var preview_path := OS.get_temp_dir().path_join("arrow_stage_%d.png" % stage_id)
 				var save_error := texture.get_image().save_png(preview_path)

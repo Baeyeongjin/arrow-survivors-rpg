@@ -9,6 +9,13 @@ const DEATH_INSURANCE_LIMIT := 1
 const FLOOR_CLEAR_STAT_POINTS := 1
 const MERCHANT_COST := 45
 const BOSS_CRAFT_COST := 5
+# Later floors should add tactical pressure instead of only creating HP sponges.
+# Floor 1 remains the onboarding baseline; floors 2 and 3 ramp on separate axes.
+const FLOOR_HEALTH_PRESSURE := [1.00, 1.30, 1.68]
+const FLOOR_DAMAGE_PRESSURE := [1.00, 1.16, 1.34]
+const FLOOR_SPEED_PRESSURE := [1.00, 1.05, 1.10]
+const FLOOR_SPAWN_PRESSURE := [1.00, 1.14, 1.30]
+const FLOOR_ELITE_BONUS := [0.00, 0.025, 0.060]
 
 const NODE_DEFS := {
 	"camp": {
@@ -73,8 +80,28 @@ static func fragment_reward(cleared_floor: int) -> int:
 	return 3 if cleared_floor >= FLOOR_COUNT else 1
 
 
-static func floor_pressure(cleared_floor: int) -> float:
-	return 1.0 + 0.18 * float(clampi(cleared_floor, 1, FLOOR_COUNT) - 1)
+static func floor_pressure(current_floor: int) -> float:
+	return _floor_value(FLOOR_HEALTH_PRESSURE, current_floor)
+
+
+static func floor_damage_pressure(current_floor: int) -> float:
+	return _floor_value(FLOOR_DAMAGE_PRESSURE, current_floor)
+
+
+static func floor_speed_pressure(current_floor: int) -> float:
+	return _floor_value(FLOOR_SPEED_PRESSURE, current_floor)
+
+
+static func floor_spawn_pressure(current_floor: int) -> float:
+	return _floor_value(FLOOR_SPAWN_PRESSURE, current_floor)
+
+
+static func floor_elite_bonus(current_floor: int) -> float:
+	return _floor_value(FLOOR_ELITE_BONUS, current_floor)
+
+
+static func _floor_value(values: Array, current_floor: int) -> float:
+	return float(values[clampi(current_floor, 1, FLOOR_COUNT) - 1])
 
 
 static func merchant_rarity(cleared_floor: int) -> String:

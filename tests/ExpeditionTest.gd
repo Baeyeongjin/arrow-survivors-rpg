@@ -49,6 +49,23 @@ func _initialize() -> void:
 	_expect(Rules.floor_pressure(1) < Rules.floor_pressure(2)
 		and Rules.floor_pressure(2) < Rules.floor_pressure(3),
 		"층별 적 압박이 상승하지 않음")
+	_expect(is_equal_approx(Rules.floor_pressure(1), 1.0)
+		and Rules.floor_pressure(2) >= 1.30
+		and Rules.floor_pressure(3) >= 1.68,
+		"2·3층 체력 압박 목표가 적용되지 않음")
+	_expect(Rules.floor_damage_pressure(1) < Rules.floor_damage_pressure(2)
+		and Rules.floor_damage_pressure(2) < Rules.floor_damage_pressure(3),
+		"층별 공격력 압박이 상승하지 않음")
+	_expect(Rules.floor_speed_pressure(1) < Rules.floor_speed_pressure(2)
+		and Rules.floor_speed_pressure(2) < Rules.floor_speed_pressure(3),
+		"층별 이동 속도 압박이 상승하지 않음")
+	_expect(Rules.floor_spawn_pressure(1) < Rules.floor_spawn_pressure(2)
+		and Rules.floor_spawn_pressure(2) < Rules.floor_spawn_pressure(3),
+		"층별 출현 밀도 압박이 상승하지 않음")
+	_expect(Rules.floor_elite_bonus(1) == 0.0
+		and Rules.floor_elite_bonus(2) > 0.0
+		and Rules.floor_elite_bonus(3) > Rules.floor_elite_bonus(2),
+		"층별 정예 확률 보너스가 상승하지 않음")
 
 	var game = MainScript.new()
 	game.expedition_active = true

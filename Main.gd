@@ -2218,7 +2218,10 @@ func _process(delta: float) -> void:
 		var boss_ease: float = 1.4 if boss_spawned else 1.0
 		var wave_density: float = maxf(0.5, float(_current_wave.get("density", 1.0)))
 		var density_pace: float = lerpf(1.0, wave_density, 0.45)
-		spawn_timer = max(0.14, max(0.16, 0.45 - time_survived * 0.0008) / density_pace) * diff_spawn * boss_ease
+		var floor_spawn_pressure := _expedition_floor_spawn_pressure()
+		spawn_timer = maxf(0.12,
+			maxf(0.16, 0.45 - time_survived * 0.0008)
+				/ density_pace * diff_spawn * boss_ease / floor_spawn_pressure)
 		# 방 배치형 던전에서는 상시 스폰을 끈다. 방을 비웠는데 허공에서 계속 걸어나오면
 		# "정리했다"는 감각이 사라지기 때문. 압박은 목표 점령 중과 보스전에만 붙인다.
 		if _ambient_spawn_allowed():
@@ -4129,13 +4132,17 @@ func _spawn_wave() -> void:
 	# 체력 x2.2 / 피해 x1.45 / 경험치 x2.4로 올라가 총량은 유지되고 교전이 길어진다.
 	#   동시 상한 90+0.75t → 28+0.22t, 웨이브 10+t/8 → 3+t/24, 웨이브 상한 84 → 16
 	var density := float(_current_wave.get("density", 1.0))
-	var cap: int = min(MAX_ENEMIES, int((28 + time_survived * 0.22) * density))
+	var floor_spawn_pressure := _expedition_floor_spawn_pressure()
+	var cap: int = min(MAX_ENEMIES,
+		int((28 + time_survived * 0.22) * density * floor_spawn_pressure))
 	if boss_spawned and diff_label == "쉬움":
 		cap = int(cap * 0.6)
 	var cur := get_tree().get_nodes_in_group("enemies").size()
 	if cur >= cap:
 		return
-	var cnt: int = min(16, int((3 + int(time_survived / 24.0)) * run_pressure_mult * density))
+	var cnt: int = min(20,
+		int((3 + int(time_survived / 24.0))
+			* run_pressure_mult * density * floor_spawn_pressure))
 	cnt = min(cnt, cap - cur)
 	for i in cnt:
 		_spawn_one()
@@ -4167,11 +4174,15 @@ func _ambient_spawn_allowed() -> bool:
 func _populate_rooms() -> void:
 	if stage_layout == null or map_stage <= 0:
 		return
+	var floor_spawn_pressure := _expedition_floor_spawn_pressure()
 	for i in stage_layout.rooms.size():
 		var room: Rect2 = stage_layout.rooms[i]
 		if room.has_point(stage_layout.landmark_position):
 			continue   # 시작 방
-		var count := randi_range(ROOM_ENEMY_MIN, ROOM_ENEMY_MAX)
+		var count := clampi(
+			int(round(float(randi_range(ROOM_ENEMY_MIN, ROOM_ENEMY_MAX)) * floor_spawn_pressure)),
+			ROOM_ENEMY_MIN,
+			9)
 		for _n in count:
 			var spot := _random_point_in_room(room)
 			if spot == Vector2.INF:
@@ -4257,7 +4268,11 @@ func _make_enemy(pos: Vector2, force_elite := false, tier_override = null, despa
 	e.setup(tier, time_survived)
 	_apply_enemy_run_scaling(e, time_survived)
 	# 자연 엘리트 확률은 분 단위 웨이브 표에 따라 1% → 10%로 상승한다.
-	if force_elite or randf() < float(_current_wave.get("elite", 0.05)):
+	var elite_chance := clampf(
+		float(_current_wave.get("elite", 0.05)) + _expedition_floor_elite_bonus(),
+		0.0,
+		0.35)
+	if force_elite or randf() < elite_chance:
 		e.elite = true
 		e.hp *= 6.0
 		e.radius *= 1.5
@@ -4277,9 +4292,13 @@ func _apply_enemy_run_scaling(e: Enemy, at_time: float) -> void:
 	# 시간 경과 강화 (30분 기준): 웨이브 티어/밀도와 중복 폭증하지 않는 완만한 마감 보정.
 	var tprog: float = clampf(at_time / RUN_TIME, 0.0, 1.0)
 	var floor_pressure := _expedition_floor_pressure()
+	var floor_damage_pressure := _expedition_floor_damage_pressure()
+	var floor_speed_pressure := _expedition_floor_speed_pressure()
 	e.hp *= diff_enemy_hp * (1.0 + tprog * 0.85) * run_pressure_mult * floor_pressure
-	e.touch_damage *= (1.0 + tprog * 0.22) * sqrt(floor_pressure)
-	e.speed *= diff_enemy_speed * (1.0 + tprog * 0.08 + (run_pressure_mult - 1.0) * 0.5)  # 최대 +8% 속도
+	e.touch_damage *= (1.0 + tprog * 0.22) * floor_damage_pressure
+	e.speed *= diff_enemy_speed \
+		* (1.0 + tprog * 0.08 + (run_pressure_mult - 1.0) * 0.5) \
+		* floor_speed_pressure  # 최대 +8% 시간 보정 + 원정 층 압박
 
 
 # 적은 막힌 지형을 넘지 않고, 직접 경로가 막히면 각도를 바꿔 우회한다.
@@ -4597,7 +4616,7 @@ func _spawn_hell_fissure(index: int) -> Node2D:
 	var health := (150.0 + float(index) * 35.0 + _dungeon_elapsed() * 0.18) \
 		* sqrt(diff_enemy_hp) * _expedition_floor_pressure()
 	var pulse_damage := (16.0 + float(index) * 2.0) \
-		* sqrt(diff_enemy_hp * _expedition_floor_pressure())
+		* sqrt(diff_enemy_hp) * _expedition_floor_damage_pressure()
 	fissure.configure(index, health, pulse_damage)
 	add_child(fissure)
 	_spawn_hell_elite_guardian(index, spawn_pos)
@@ -5295,7 +5314,8 @@ func _spawn_boss(forced_key: String = "") -> void:
 	boss.position = player.position + Vector2(0, -280)
 	boss.max_hp = (850.0 + level * 95.0) * diff_enemy_hp * _expedition_floor_pressure()
 	boss.hp = boss.max_hp
-	boss.move_speed = (58.0 + stage_num * 4.0) * diff_enemy_speed
+	boss.move_speed = (58.0 + stage_num * 4.0) \
+		* diff_enemy_speed * _expedition_floor_speed_pressure()
 	add_child(boss)
 	_clear_easy_boss_arena()
 	# 일반/어려움은 호드를 유지하고, 쉬움만 주변 일반 몬스터를 정리한다.
@@ -5321,25 +5341,25 @@ func _spawn_dungeon_boss() -> void:
 				if is_instance_valid(fissure) and fissure.has_method("absorb_without_reward"):
 					fissure.absorb_without_reward()
 			boss.attack_damage = (24.0 + stage_num * 2.5) \
-				* sqrt(diff_enemy_hp * _expedition_floor_pressure())
+				* sqrt(diff_enemy_hp) * _expedition_floor_damage_pressure()
 			boss.configure_hell_final(unsealed)
 		elif map_stage == GRAVE_STAGE:
 			for seal in get_tree().get_nodes_in_group("grave_seals"):
 				if is_instance_valid(seal) and seal.has_method("absorb_without_reward"):
 					seal.absorb_without_reward()
 			boss.attack_damage = (20.0 + stage_num * 2.0) \
-				* sqrt(diff_enemy_hp * _expedition_floor_pressure())
+				* sqrt(diff_enemy_hp) * _expedition_floor_damage_pressure()
 			boss.configure_grave_final(grave_seals_completed)
 		elif map_stage == GLACIER_STAGE:
 			boss.attack_damage = (22.0 + stage_num * 2.2) \
-				* sqrt(diff_enemy_hp * _expedition_floor_pressure())
+				* sqrt(diff_enemy_hp) * _expedition_floor_damage_pressure()
 			boss.configure_glacier_final(glacier_braziers_lit)
 		elif map_stage == VOID_STAGE:
 			for anchor in get_tree().get_nodes_in_group("void_anchors"):
 				if is_instance_valid(anchor) and anchor.has_method("absorb_without_reward"):
 					anchor.absorb_without_reward()
 			boss.attack_damage = (22.0 + stage_num * 2.2) \
-				* sqrt(diff_enemy_hp * _expedition_floor_pressure())
+				* sqrt(diff_enemy_hp) * _expedition_floor_damage_pressure()
 			boss.configure_void_final(void_anchors_stabilized)
 	var wk := str(GameConfig.stage_info(map_stage).get("boss_weak", ""))
 	var hint := "  (약점: %s)" % str(ELEMENT_NAME.get(wk, "")) if wk != "" else ""
@@ -8874,6 +8894,22 @@ func _record_current_floor(cleared: bool) -> void:
 
 func _expedition_floor_pressure() -> float:
 	return ExpeditionRulesScript.floor_pressure(expedition_floor) if expedition_active else 1.0
+
+
+func _expedition_floor_damage_pressure() -> float:
+	return ExpeditionRulesScript.floor_damage_pressure(expedition_floor) if expedition_active else 1.0
+
+
+func _expedition_floor_speed_pressure() -> float:
+	return ExpeditionRulesScript.floor_speed_pressure(expedition_floor) if expedition_active else 1.0
+
+
+func _expedition_floor_spawn_pressure() -> float:
+	return ExpeditionRulesScript.floor_spawn_pressure(expedition_floor) if expedition_active else 1.0
+
+
+func _expedition_floor_elite_bonus() -> float:
+	return ExpeditionRulesScript.floor_elite_bonus(expedition_floor) if expedition_active else 0.0
 
 
 func _apply_difficulty_profile(d: Dictionary) -> void:
@@ -13190,8 +13226,6 @@ func _draw_stage_layout_overlay() -> void:
 		var block_radius := float(block["radius"])
 		draw_circle(block_center, block_radius, blocked)
 		draw_arc(block_center, block_radius, 0.0, TAU, 64, edge.darkened(0.35), 5.0)
-	_draw_stage_obstacle_art()
-	_draw_stage_identity_marks(edge)
 
 
 # 장애물 자리에 스테이지 전용 조형물 아트를 얹는다.
@@ -13204,6 +13238,48 @@ const STAGE_OBSTACLE_ART := {
 	4: ["void_monoliths", "ritual_altar"],
 	5: ["wall_chamber"],
 }
+const STAGE_OUTER_SCATTER_COUNT := {1: 12, 2: 7, 3: 13, 4: 8, 5: 16}
+const OUTER_SCENERY_GRID := 256.0
+
+
+func _draw_stage_outer_scenery(center: Vector2, view: Vector2) -> void:
+	if stage_layout == null or map_stage <= 0:
+		return
+	var dirs := {1: "graveyard", 2: "hell_bridge", 3: "glacier", 4: "void_altar", 5: "demon_castle"}
+	var dir_name := str(dirs.get(map_stage, ""))
+	var texture_count := int(STAGE_OUTER_SCATTER_COUNT.get(map_stage, 0))
+	if dir_name == "" or texture_count <= 0:
+		return
+	var left_cell := int(floor((center.x - view.x * 0.5 - OUTER_SCENERY_GRID) / OUTER_SCENERY_GRID))
+	var right_cell := int(ceil((center.x + view.x * 0.5 + OUTER_SCENERY_GRID) / OUTER_SCENERY_GRID))
+	var top_cell := int(floor((center.y - view.y * 0.5 - OUTER_SCENERY_GRID) / OUTER_SCENERY_GRID))
+	var bottom_cell := int(ceil((center.y + view.y * 0.5 + OUTER_SCENERY_GRID) / OUTER_SCENERY_GRID))
+	var stage_tint: Color = STAGE_SCATTER_TINTS[clampi(map_stage - 1, 0, STAGE_SCATTER_TINTS.size() - 1)]
+	for gy in range(top_cell, bottom_cell + 1):
+		for gx in range(left_cell, right_cell + 1):
+			var h := absi(hash(Vector3i(gx, gy, map_stage)))
+			if h % 100 >= 30:
+				continue
+			var h2 := absi(hash(Vector3i(gx * 17 + 5, gy * 23 + 11, map_stage * 31)))
+			var position := Vector2(
+				(float(gx) + 0.5) * OUTER_SCENERY_GRID + float(posmod(h2, 91) - 45),
+				(float(gy) + 0.5) * OUTER_SCENERY_GRID + float(posmod(h, 91) - 45))
+			if position.x < 40.0 or position.y < 40.0 \
+					or position.x > WORLD.x - 40.0 or position.y > WORLD.y - 40.0:
+				continue
+			if stage_layout.is_walkable(position, 64.0):
+				continue
+			var texture_index := posmod(h2, texture_count)
+			var tex := Assets.tex("res://assets/maps/%s/scatter/%02d.png" % [dir_name, texture_index])
+			if tex == null:
+				continue
+			var target := 46.0 + float(posmod(h, 25))
+			var aspect := float(tex.get_width()) / maxf(1.0, float(tex.get_height()))
+			var size := Vector2(target * aspect, target)
+			var dim := Color(stage_tint.r * 0.48, stage_tint.g * 0.48, stage_tint.b * 0.48, 0.38)
+			draw_texture_rect(tex, Rect2(position - size * 0.5, size), false, dim)
+
+
 func _draw_stage_obstacle_art() -> void:
 	var dirs := {1: "graveyard", 2: "hell_bridge", 3: "glacier", 4: "void_altar", 5: "demon_castle"}
 	var dir_name := str(dirs.get(map_stage, ""))
@@ -13347,6 +13423,15 @@ func _draw() -> void:
 	# geometry for rendering and collision. Missing sets safely keep the prototype.
 	if stage_map_texture:
 		draw_texture(stage_map_texture, Vector2.ZERO)
+	if stage_layout != null and map_stage > 0:
+		_draw_stage_outer_scenery(center, view)
+		_draw_stage_obstacle_art()
+		var stage_edge := Color(
+			stage_layout.tint.r * 0.9,
+			stage_layout.tint.g * 0.9,
+			stage_layout.tint.b * 0.9,
+			0.66)
+		_draw_stage_identity_marks(stage_edge)
 
 	# 바닥 장식물 산포 (뼈/깨진돌/이끼/묘비) — 투명 오브젝트, 결정론적 배치로 반복감 제거
 	var decors: Array = _floor_decor_textures()
