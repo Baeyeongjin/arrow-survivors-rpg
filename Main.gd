@@ -294,6 +294,24 @@ const EVO_FX := {
 }
 var _evo_kind := ""   # 현재 발사 중인 진화 무기 kind (Arrow가 EVO_FX 조회용)
 
+# 범위 배수의 체감 감쇠. area_mult는 숙련 분기·패시브(촛대·봉인의서)·스탯 집중·장비
+# 어픽스·가호·유물·리밋 등 8곳에서 곱으로 누적돼, 그대로 반경에 넣으면 진화 무기가
+# 화면을 덮는다(로그라이크를 벗어난 뒤로는 넓은 범위가 재미를 깎는다).
+# 소프트캡까지는 투자한 만큼 그대로 주고, 넘는 만큼은 일부만 반영한다.
+# ponytail: 단일 곡선으로 전 무기를 일괄 조정한다. 무기별 시그니처(관통·상태이상·처형)로
+#   차별화하는 재설계는 플레이 표본을 본 뒤에 한다.
+const AREA_SOFT_CAP := 1.6
+const AREA_OVER_RATE := 0.30
+
+
+func _area_scale() -> float:
+	if player == null:
+		return 1.0
+	var m: float = player.area_mult
+	if m <= AREA_SOFT_CAP:
+		return m
+	return AREA_SOFT_CAP + (m - AREA_SOFT_CAP) * AREA_OVER_RATE
+
 # 진화 무기 시그니처 색 — 진화하면 투사체·이펙트·후광·트레일이 이 색으로 물든다.
 # 기본 무기 색과 확 다르게 잡아 "진화했다"가 한눈에 보이게 (뱀서식 비주얼 정체성).
 const EVO_TINT := {
@@ -2271,13 +2289,15 @@ func _physics_process(delta: float) -> void:
 				if combos.has("aura_frost"):
 					e.apply_slow(0.25, 0.4)
 		if evolved.get("aura", false) and _aura_pulse_t <= 0.0:
-			_aura_pulse_t = 1.25
+			# 지옥불 맥동: 크기를 줄인 대신 한 방이 세고 태워서 둔화시킨다(범위 대신 효과).
+			_aura_pulse_t = 1.1
 			for e in enemies:
 				if is_instance_valid(e) and player.position.distance_to(e.position) < ar + e.radius:
-					e.take_damage(dps * 0.55)
-					e.shove(player.position, 95.0)
-			_spawn_proc_fx("ring", player.position, ar, Color(1.0, 0.32, 0.08), 0.42)
-			_spawn_proc_fx("burst", player.position, ar * 0.32, Color(1.0, 0.82, 0.25), 0.30)
+					e.take_damage(dps * 1.15)
+					e.shove(player.position, 130.0)
+					e.apply_slow(0.30, 0.9)   # 화상: 맥동에 휩쓸린 적은 느려진다
+			# 연출도 절제 — 형광 주황 대신 어두운 잉걸빛, 반경은 실제 타격 범위만.
+			_spawn_proc_fx("ring", player.position, ar, Color(0.86, 0.38, 0.16), 0.30)
 		if boss and is_instance_valid(boss) and player.position.distance_to(boss.position) < ar + boss.radius:
 			boss.take_damage(dps * delta)
 			if evolved.get("aura", false) and _aura_pulse_t > 1.15:
@@ -2650,7 +2670,7 @@ func _fire_frostfire() -> void:
 	# 최근접 적 위치에 화상+빙결 대폭발
 	var t = _nearest_enemy(player.position)
 	var pos: Vector2 = (t as Node2D).position if t else player.position + player._last_dir * 160.0
-	var rad := 150.0 * player.area_mult * WPN_AREA
+	var rad := 150.0 * _area_scale() * WPN_AREA
 	_explode(pos, rad, 60.0 * player.damage_mult * char_ranged, null)
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if is_instance_valid(e) and pos.distance_to(e.position) <= rad and e.has_method("apply_slow"):
@@ -2661,7 +2681,7 @@ func _fire_frostfire() -> void:
 
 func _fire_cyclone() -> void:
 	# 플레이어 주변 전방위 고속 회전 참격 + 넉백
-	var rad := 150.0 * player.area_mult * WPN_AREA
+	var rad := 150.0 * _area_scale() * WPN_AREA
 	var dmg := 34.0 * player.damage_mult * char_melee
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if is_instance_valid(e) and player.position.distance_to(e.position) <= rad:
@@ -2679,7 +2699,7 @@ func _fire_plague_bomb() -> void:
 	# 최근접 적 위치에 폭발 + 독구름(Hazard) 잔류
 	var t = _nearest_enemy(player.position)
 	var pos: Vector2 = (t as Node2D).position if t else player.position + player._last_dir * 150.0
-	var rad := 130.0 * player.area_mult * WPN_AREA
+	var rad := 130.0 * _area_scale() * WPN_AREA
 	_explode(pos, rad, 44.0 * player.damage_mult * char_ranged, null)
 	# 독구름: 범위 내 적 강한 둔화 (플레이어 무해)
 	for e in get_tree().get_nodes_in_group("enemies"):
@@ -2701,7 +2721,7 @@ func _fire_divine_storm() -> void:
 			s.target = (e as Node2D).position
 			s.fall_time = 0.16 + i * 0.05
 			s.dmg = dmg
-			s.radius = 64.0 * player.area_mult * WPN_AREA
+			s.radius = 64.0 * _area_scale() * WPN_AREA
 			s.col = Color(1.0, 0.95, 0.6)
 			s.fx_name = "fx_judgment"   # 신성 빛기둥 (테마 유지)
 			s.bolt_fx = true            # 낙뢰는 코드 지그재그 (fx_thunder 기둥 아트 폐기)
@@ -2710,7 +2730,7 @@ func _fire_divine_storm() -> void:
 
 func _fire_blade_dance() -> void:
 	# 검+오라 융합: 플레이어 주변 강한 지속 광역
-	var rad := 130.0 * player.area_mult * WPN_AREA
+	var rad := 130.0 * _area_scale() * WPN_AREA
 	var dmg := 30.0 * player.damage_mult * char_melee
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if is_instance_valid(e) and player.position.distance_to(e.position) <= rad:
@@ -2775,7 +2795,7 @@ func _fire_fireball() -> void:
 			meteor.trail_col = Color(1.0, 0.26, 0.06)
 			meteor.visual_kind = "meteor"
 			meteor.anim_dir = "res://assets/anim/proj_meteor"
-			meteor.explode_radius = (68.0 + lv * 8.0) * player.area_mult * WPN_AREA
+			meteor.explode_radius = (68.0 + lv * 8.0) * _area_scale() * WPN_AREA
 			meteor.explode_damage = dmg * 0.72
 			meteor.fx_hit = "fx_meteorshower"
 			meteor.fx_hit_size = meteor.explode_radius * 1.8
@@ -2792,7 +2812,7 @@ func _fire_fireball() -> void:
 	a.anim_dir = "res://assets/anim/proj_fireball"
 	a.upright = true   # 불꽃은 회전 없이 일렁이는 프레임 애니로 (진행방향 회전 시 어색)
 	a.sprite_path = "res://assets/items/icon_fireball.png"
-	a.explode_radius = (56.0 + lv * 7.0) * player.area_mult * WPN_AREA * (1.5 if evo else 1.0)
+	a.explode_radius = (56.0 + lv * 7.0) * _area_scale() * WPN_AREA * (1.5 if evo else 1.0)
 	a.explode_damage = (14.0 + lv * 5.0) * player.damage_mult * char_ranged * (1.5 if evo else 1.0)
 	# 조합 「증기 폭발」: 둔화 + 폭발 범위 증가
 	if combos.has("fire_frost"):
@@ -2847,7 +2867,7 @@ func _fire_holy() -> void:
 			strike.target = (e as Node2D).position
 			strike.fall_time = 0.18 + i * 0.05
 			strike.dmg = dmg
-			strike.radius = (46.0 + lv * 4.0) * player.area_mult * WPN_AREA * (1.4 if evo else 1.0)
+			strike.radius = (46.0 + lv * 4.0) * _area_scale() * WPN_AREA * (1.4 if evo else 1.0)
 			strike.col = Color(1.0, 0.92, 0.5)
 			strike.fx_name = "fx_judgment" if evo else "fx_holy"
 			strike.show_warn = false   # 예고 원 제거 (사장님 결정)
@@ -2931,7 +2951,7 @@ func _fire_starfall() -> void:
 		st.target = pos
 		st.fall_time = 0.2 + i * 0.06
 		st.dmg = dmg
-		st.radius = (48.0 + lv * 4.0) * player.area_mult * WPN_AREA
+		st.radius = (48.0 + lv * 4.0) * _area_scale() * WPN_AREA
 		st.col = Color(1.0, 0.85, 0.4)
 		st.fx_name = "fx_explosion"
 		st.big = lv >= MAX_WLEVEL
@@ -3070,11 +3090,12 @@ func _fire_poison_cloud() -> void:
 		else:
 			pos = player.position + Vector2(randf_range(-240, 240), randf_range(-240, 240))
 		var z := VoidZone.new()
-		z.radius = (48.0 + lv * 12.0) * player.area_mult * WPN_AREA
+		# 반경 하향 (Lv8 기준 144 → 100). 크기 대신 중첩 독으로 "머무를 이유"를 만든다.
+		z.radius = (44.0 + lv * 7.0) * _area_scale() * WPN_AREA
 		z.anim_dir = "res://assets/anim/zone_poison"
 		z.dps = dmg
 		z.pull = 0.0
-		z.col = Color(0.4, 0.85, 0.3)
+		z.col = Color(0.36, 0.58, 0.30)   # 형광 초록 → 탁한 늪색
 		z.outline = false   # 초록 외곽 링 제거 — 구름 자체가 범위를 보여줌
 		# 중첩: 초당 +40%씩, 최대 +140% (약 3.5초 노출 시 2.4배)
 		z.stack_rate = 0.4 + lv * 0.05
@@ -3097,7 +3118,7 @@ func _fire_quake() -> void:
 		st.target = player.position + Vector2.from_angle(ang) * randf_range(50.0, rad)
 		st.fall_time = 0.15 + i * 0.03
 		st.dmg = dmg
-		st.radius = (54.0 + lv * 5.0) * player.area_mult * WPN_AREA
+		st.radius = (54.0 + lv * 5.0) * _area_scale() * WPN_AREA
 		st.col = Color(0.7, 0.5, 0.3)
 		st.fx_name = "fx_rocks"   # 지진: 암석 파편(Foozle Rocks)
 		st.big = true
@@ -3238,7 +3259,7 @@ func _fire_moonlight() -> void:
 				randf_range(-vr.y * 0.5, vr.y * 0.5))
 		st.fall_time = 0.25 + randf() * 0.5
 		st.dmg = dmg
-		st.radius = (48.0 + lv * 4.0) * player.area_mult * WPN_AREA
+		st.radius = (48.0 + lv * 4.0) * _area_scale() * WPN_AREA
 		st.col = Color(0.82, 0.88, 1.0)
 		st.fx_name = ""
 		# 월광답게: 낙하 점·파란 링 대신 하늘에서 내리쬐는 달빛 기둥 + 초승달 호
@@ -3339,7 +3360,7 @@ func _fire_chain_bolt() -> void:
 		st.target = (e as Node2D).position
 		st.fall_time = 0.08 + i * 0.06
 		st.dmg = dmg
-		st.radius = (44.0 + lv * 4.0) * player.area_mult * WPN_AREA
+		st.radius = (44.0 + lv * 4.0) * _area_scale() * WPN_AREA
 		st.col = Color(0.7, 0.85, 1.0)
 		# fx_lightning 아트가 번개가 아니라 '회색 기둥'으로 보여 폐기 — 코드 지그재그 낙뢰로.
 		st.fx_name = ""
@@ -3388,7 +3409,9 @@ func _fire_blood_sword() -> void:
 	if kt:
 		dir = ((kt as Node2D).position - player.position).normalized()
 	# 1랩부터 넓게(검기 Lv1의 ~1.6배), 레벨당 증가폭은 작게
-	var rad := (95.0 + lv * 4.0) * char_range * player.area_mult * WPN_AREA * (1.35 if evo else 1.0)
+	# 진화(흡혈 대검)는 범위를 키우는 대신 처형을 준다: 빈사(체력 20% 이하) 적을 즉사시키고
+	# 그만큼 크게 흡혈한다. 범위 배수는 1.35 → 1.12로 낮췄다(사장님 피드백: 넓기만 하면 별로).
+	var rad := (95.0 + lv * 4.0) * char_range * _area_scale() * WPN_AREA * (1.12 if evo else 1.0)
 	var dmg := (20.0 + lv * 9.0) * player.damage_mult * char_melee * (1.6 if evo else 1.0)
 	var ls: float = min(0.18 if evo else 0.10, 0.015 + lv * 0.011)   # 흡혈 성장 (진화 시 상한↑)
 	var healed := 0.0
@@ -3397,8 +3420,15 @@ func _fire_blood_sword() -> void:
 			continue
 		var to: Vector2 = (e as Node2D).position - player.position
 		if to.length() <= rad + e.radius and to.normalized().dot(dir) > 0.30:
-			e.take_damage(dmg)
-			healed += dmg * ls
+			# 처형: 빈사 잡몹은 남은 체력을 무시하고 끝낸다(보스·엘리트는 제외).
+			var finisher := dmg
+			if evo and e is Enemy and not (e as Enemy).elite \
+					and e.hp <= e.max_hp * 0.20:
+				finisher = e.hp
+				healed += e.hp * 0.35
+				_spawn_proc_fx("burst", (e as Node2D).position, 40.0, Color(0.95, 0.20, 0.28), 0.26)
+			e.take_damage(finisher)
+			healed += finisher * ls
 	if healed > 0.0:
 		player.hp = min(player.max_hp, player.hp + healed)
 		# 벤 자리에서 피가 플레이어로 빨려오는 연출
@@ -3441,7 +3471,7 @@ func _fire_venom() -> void:
 		a.fx_hit_size = 66.0
 		# 조합 「맹독 화염」: 명중 시 화염 폭발 추가
 		if combos.has("venom_fire"):
-			a.explode_radius = 42.0 * player.area_mult * WPN_AREA
+			a.explode_radius = 42.0 * _area_scale() * WPN_AREA
 			a.explode_damage = dmg * 0.7
 		a.position = player.position
 		a.velocity = dir.rotated((i - (n - 1) / 2.0) * 0.18) * 700.0
@@ -3462,17 +3492,26 @@ func _fire_whip() -> void:
 	else:
 		hx = -1.0 if player._dir == "w" else 1.0   # 상/하로만 움직일 땐 마지막 좌우 방향
 	var dir := Vector2(hx, 0.0)
-	var reach := (120.0 + lv * 12.0) * char_range * (1.25 if evo else 1.0)
+	# 진화(피의 눈물)는 범위를 키우는 대신 시그니처를 준다: 맞은 적을 둔화시키고
+	# 명중당 소량 흡혈. 범위만 넓히면 화면을 덮기만 하고 특별함이 없다(사장님 피드백).
+	var reach := (120.0 + lv * 12.0) * char_range * (1.10 if evo else 1.0)
 	if combos.has("whip_boomerang"):
 		reach *= 1.3
-	var halfarc := 1.1 if evo else 0.9
+	var halfarc := 1.0 if evo else 0.9
+	var whip_drain := 0.0
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if is_instance_valid(e):
 			var to: Vector2 = e.position - player.position
 			if to.length() <= reach + e.radius and abs(to.angle_to(dir)) < halfarc:
 				e.take_damage(dmg)
+				if evo:
+					whip_drain += dmg
 				if is_instance_valid(e):
 					e.position += to.normalized() * 24.0
+					if evo:
+						e.apply_slow(0.35, 1.4)   # 피의 눈물: 채찍에 맞으면 둔해진다
+	if evo and whip_drain > 0.0 and player:
+		player.hp = minf(player.max_hp, player.hp + whip_drain * 0.05)
 	if boss and is_instance_valid(boss):
 		var tob: Vector2 = boss.position - player.position
 		if tob.length() <= reach + boss.radius and abs(tob.angle_to(dir)) < halfarc:
@@ -3515,7 +3554,7 @@ func _fire_excalibur() -> void:
 	a.trail = true
 	a.sprite_path = "res://assets/items/icon_excalibur.png"
 	a.anim_dir = "res://assets/anim/proj_excalibur"
-	a.explode_radius = (50.0 + lv * 6.0) * player.area_mult * WPN_AREA
+	a.explode_radius = (50.0 + lv * 6.0) * _area_scale() * WPN_AREA
 	a.explode_damage = (18.0 + lv * 6.0) * player.damage_mult * char_ranged
 	a.fx_hit = "bolt"   # 벼락창: 코드 지그재그 낙뢰 (fx_thunder 기둥 아트 폐기)
 	a.fx_hit_size = 84.0
@@ -3534,8 +3573,12 @@ func _fire_void_orb() -> void:
 		center = (t as Node2D).position
 	var vz := VoidZone.new()
 	vz.position = center
-	vz.radius = (120.0 + lv * 16.0) * player.area_mult * WPN_AREA
+	# 반경 하향 (사장님 피드백: 장판이 너무 크고 화려하다). Lv8 기준 248 → 168.
+	# 대신 끌어당김을 키워 "빨아들이는 구멍"이라는 정체성을 크기 대신 동작으로 준다.
+	vz.radius = (96.0 + lv * 9.0) * _area_scale() * WPN_AREA
 	vz.dps = (16.0 + lv * 6.0) * player.damage_mult * char_ranged
+	vz.pull = 108.0
+	vz.col = Color(0.46, 0.30, 0.62)   # 채도 낮춘 보라 (형광 보라 → 어두운 자수정)
 	vz.life = 2.0 + lv * 0.2
 	add_child(vz)
 	play_sfx("ult", -16.0, 0.1)
@@ -3565,7 +3608,7 @@ func _fire_cleave() -> void:
 	var kt = _nearest_enemy(player.position)
 	if kt:
 		dir = ((kt as Node2D).position - player.position).normalized()
-	var rad := (60.0 + lv * 11.0) * char_range * player.area_mult * WPN_AREA   # 초반 좁게 → 레벨로 확장
+	var rad := (60.0 + lv * 11.0) * char_range * _area_scale() * WPN_AREA   # 초반 좁게 → 레벨로 확장
 	var dmg := (16.0 + lv * 6.0) * player.damage_mult * char_melee
 	# 부채꼴 범위 내 적/보스 타격 (넉백 포함)
 	for e in _enemies_and_boss():
@@ -3584,9 +3627,9 @@ func _fire_cleave() -> void:
 # 범위 무기 헬퍼 (area_mult + 진화 반영)
 func _aura_radius() -> float:
 	var lv: int = weapons.get("aura", 0)
-	var r := (44.0 + lv * 13.0) * player.area_mult * WPN_AREA   # 초반 좁게(정통 마늘) → 레벨로 확장
+	var r := (44.0 + lv * 10.0) * _area_scale() * WPN_AREA   # 초반 좁게(정통 마늘) → 레벨로 확장
 	if evolved.get("aura", false):
-		r *= 1.5
+		r *= 1.15   # 1.5 → 1.15. 진화 가치는 크기가 아니라 맥동(밀어내기·화상)으로 준다.
 	if combos.has("blade_aura"):
 		r *= 1.15
 	return r
@@ -3607,7 +3650,7 @@ func _blade_count() -> int:
 	return c
 
 func _blade_orbit() -> float:
-	return 72.0 * player.area_mult * WPN_AREA
+	return 72.0 * _area_scale() * WPN_AREA
 
 func _blade_dps() -> float:
 	var lv: int = weapons.get("blade", 0)
@@ -3708,7 +3751,7 @@ func _fire_lightning() -> void:
 func _fire_frost() -> void:
 	var lv: int = weapons["frost"]
 	var evo: bool = evolved.get("frost", false)
-	var rad := (90.0 + lv * 16.0) * player.area_mult * WPN_AREA * char_range
+	var rad := (90.0 + lv * 16.0) * _area_scale() * WPN_AREA * char_range
 	var dmg := (12.0 + lv * 5.0) * player.damage_mult * char_ranged
 	var st := 1.4 + lv * 0.2
 	if evo:
@@ -3800,16 +3843,16 @@ func _weapon_muzzle(kind: String) -> void:
 	e.position = player.position
 	match style:
 		"slash":
-			e.rad = 60.0 * player.area_mult * WPN_AREA
+			e.rad = 60.0 * _area_scale() * WPN_AREA
 			e.from_global = player.position + dir * 60.0   # 전방 부채꼴 방향
 			e.life = 0.16
 			e.max_life = 0.16
 		"spin":
-			e.rad = 70.0 * player.area_mult * WPN_AREA
+			e.rad = 70.0 * _area_scale() * WPN_AREA
 			e.life = 0.22
 			e.max_life = 0.22
 		"ring":
-			e.rad = 64.0 * player.area_mult * WPN_AREA
+			e.rad = 64.0 * _area_scale() * WPN_AREA
 			e.life = 0.24
 			e.max_life = 0.24
 		_:   # burst
@@ -9195,7 +9238,7 @@ func _fire_weapon_active() -> bool:
 func _fire_sword_active(dir: Vector2) -> void:
 	var element := _active_skill_element()
 	var col: Color = ELEMENT_COL.get(element, Color.WHITE)
-	var reach := 180.0 * player.area_mult
+	var reach := 180.0 * _area_scale()
 	var damage := _weapon_active_damage(108.0, true)
 	var blood_variant: bool = equipped.get("weapon", {}).is_empty() and _primary_weapon_kind() == "blood_sword"
 	var blood_heal := 0.0
@@ -9223,7 +9266,7 @@ func _fire_sword_active(dir: Vector2) -> void:
 func _fire_axe_active() -> void:
 	var element := _active_skill_element()
 	var col: Color = ELEMENT_COL.get(element, Color(0.9, 0.65, 0.3))
-	var radius := 172.0 * player.area_mult
+	var radius := 172.0 * _area_scale()
 	var damage := _weapon_active_damage(152.0, true)
 	player.play_attack()
 	for target in _enemies_and_boss():
@@ -9252,7 +9295,7 @@ func _fire_staff_active(target_override: Vector2 = Vector2.ZERO) -> void:
 	var target_point := target_override if target_override != Vector2.ZERO else _skill_target_point()
 	if character_weapon and primary_kind == "aura":
 		target_point = player.position
-	var radius := 118.0 * player.area_mult
+	var radius := 118.0 * _area_scale()
 	var damage := _weapon_active_damage(126.0, false)
 	if element == "fire":
 		damage *= 1.15
@@ -13005,11 +13048,17 @@ func _draw() -> void:
 			if inferno.is_empty():
 				inferno = Assets.frames("res://assets/anim/fx_inferno")
 		if inferno.size() > 0:
+			# 사장님 피드백: 오라가 너무 크고 화려해서 화면을 덮었다.
+			# 텍스처를 실제 타격 반경에 맞추고(2.15 → 1.5) 알파를 크게 낮춘다(0.9 → 0.40).
+			# 진화 정체성은 크기가 아니라 1.25초 맥동(밀어내기 + 추가 피해)이 담당한다.
 			var it: Texture2D = inferno[int(_blade_angle * 3.0) % inferno.size()]
-			var isz := ar * 2.15
-			draw_texture_rect(it, Rect2(player.position - Vector2(isz / 2.0, isz / 2.0), Vector2(isz, isz)), false, Color(1, 1, 1, 0.9))
+			var isz := ar * 1.5
+			draw_texture_rect(it, Rect2(player.position - Vector2(isz / 2.0, isz / 2.0), Vector2(isz, isz)),
+				false, Color(1, 1, 1, 0.40))
+			# 실제 피해 반경을 얇은 호로만 알려준다(꽉 찬 채움은 시야를 막는다).
+			draw_arc(player.position, ar, 0.0, TAU, 48, Color(0.90, 0.45, 0.20, 0.22), 2.0)
 		else:
-			draw_circle(player.position, ar, Color(1.0, 0.95, 0.6, 0.10))
+			draw_circle(player.position, ar, Color(1.0, 0.95, 0.6, 0.08))
 			# (금색 링 테두리 제거 — 구려서 뺌. 부드러운 채움 글로우만 유지)
 
 	# 회전 검 표시 (진화 시 사신의 대검 아트).
