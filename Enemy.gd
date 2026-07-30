@@ -147,8 +147,9 @@ func setup(t: Dictionary, time: float) -> void:
 	# 스프라이트 경로는 tier가 정해지면 바뀌지 않는다. _draw에서 매 프레임 문자열을
 	# 만들면 300마리 × 60fps = 초당 수만 번의 할당이 되므로 여기서 한 번만 해석한다.
 	var key := str(t.get("key", ""))
-	# 애니 폴더는 key가 아니라 스프라이트 파일명으로 찾는다. 정예·중간보스 티어 6종
-	# (ember_stalker/hell_enforcer/grave_warden/tomb_knight/frost_sentry/icewall_golem)은
+	# 애니 폴더는 key가 아니라 스프라이트 파일명으로 찾는다. 정예·중간보스 티어 8종
+	# (ember_stalker/hell_enforcer/grave_warden/tomb_knight/frost_sentry/icewall_golem/
+	# rift_stalker/abyss_oracle)은
 	# 고유 key를 쓰지만 스프라이트는 base 몹과 같으므로, 같은 프레임 폴더를 복제하지 않고
 	# 그대로 재사용한다. 일반 몹은 key == 스프라이트 파일명이라 동작이 바뀌지 않는다.
 	var sprite := str(t.get("sprite", ""))
@@ -242,7 +243,9 @@ func _process(delta: float) -> void:
 						_attacking = false
 						var m := get_parent()
 						if m and m.has_method("spawn_enemy_arrow"):
-							m.spawn_enemy_arrow(position, _shoot_lock, touch_damage * 1.1, tier.get("shot_chill", false))
+							m.spawn_enemy_arrow(position, _shoot_lock, touch_damage * 1.1,
+								tier.get("shot_chill", false), 220.0, false,
+								str(tier.get("damage_source", "enemy_projectile")))
 				else:
 					var pref := radius + 190.0
 					if not hold:

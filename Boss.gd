@@ -89,6 +89,36 @@ var _glacier_lock_dir := Vector2.DOWN
 var _glacier_erupt_pos := Vector2.ZERO
 var _glacier_armor_index := 0
 
+# M5-C 공허 최종 보스: 시선 원뿔·회전 광선·중력 붕괴의 3개 예고 패턴과
+# 55% 분신 핵 국면. 안정화한 공허 닻이 많을수록 분신 핵 수가 줄어든다.
+const VOID_ECHO_THRESHOLD := 0.55
+const VOID_VULNERABLE_TIME := 5.0
+const VOID_GAZE_RADIUS := 330.0
+const VOID_GAZE_HALF_ANGLE := 0.58
+const VOID_LASER_LENGTH := 430.0
+const VOID_LASER_WIDTH := 18.0
+const VOID_LASER_SWEEP_TIME := 1.45
+const VOID_WELL_RADIUS := 224.0
+enum VoidState { CHASE, GAZE_WINDUP, LASER_WINDUP, LASER_SWEEP, WELL_WINDUP, RECOVERY, STUNNED }
+
+var void_final := false
+var void_phase := 1
+var stabilized_anchors := 0
+var void_echo_active := false
+var void_echo_started := false
+var void_echo_core_max := 1
+var void_echo_cores := 1
+var void_core_hp := 0.0
+var void_core_hp_max := 0.0
+
+var _void_state: int = VoidState.CHASE
+var _void_t := 1.25
+var _void_attack_index := 0
+var _void_lock_dir := Vector2.DOWN
+var _void_well_pos := Vector2.ZERO
+var _void_laser_angle := 0.0
+var _void_laser_sweep_dir := 1.0
+
 func _ready() -> void:
 	add_to_group("boss")
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
@@ -110,7 +140,7 @@ func configure_hell_final(unsealed: int) -> void:
 
 
 func uses_pattern_damage() -> bool:
-	return hell_final or grave_final or glacier_final
+	return hell_final or grave_final or glacier_final or void_final
 
 
 func hell_armor_element_multiplier(element: String) -> float:
@@ -151,6 +181,25 @@ func configure_glacier_final(lit: int) -> void:
 	_glacier_armor_index = 0
 
 
+func configure_void_final(stabilized: int) -> void:
+	void_final = true
+	stabilized_anchors = clampi(stabilized, 0, 3)
+	weak = "holy"
+	resist = "dark"
+	void_phase = 1
+	void_echo_active = false
+	void_echo_started = false
+	void_echo_core_max = maxi(1, 4 - stabilized_anchors)
+	void_echo_cores = void_echo_core_max
+	void_core_hp = 0.0
+	void_core_hp_max = 0.0
+	vulnerable_t = 0.0
+	_void_state = VoidState.CHASE
+	_void_t = 2.45
+	_void_attack_index = 0
+	_void_laser_angle = 0.0
+
+
 func _process(delta: float) -> void:
 	_anim_t += delta
 	var pl := get_tree().get_first_node_in_group("player") as Player
@@ -161,6 +210,8 @@ func _process(delta: float) -> void:
 			_process_grave(delta, pl)
 		elif glacier_final:
 			_process_glacier(delta, pl)
+		elif void_final:
+			_process_void(delta, pl)
 		else:
 			var to: Vector2 = pl.position - position
 			# 일반 보스는 기존 추격형 동작을 보존한다. 지옥 보스만 패턴 전투를 사용한다.
@@ -351,6 +402,94 @@ func _start_next_glacier_attack(pl: Player) -> void:
 			_glacier_t = maxf(0.66, 0.94 - (glacier_phase - 1) * 0.05)
 
 
+func _process_void(delta: float, pl: Player) -> void:
+	var main := get_parent()
+	if _void_state == VoidState.STUNNED:
+		vulnerable_t = maxf(0.0, vulnerable_t - delta)
+		if vulnerable_t <= 0.0:
+			_void_state = VoidState.CHASE
+			_void_t = maxf(0.70, 1.28 - void_phase * 0.13)
+		return
+
+	_void_t -= delta
+	match _void_state:
+		VoidState.CHASE:
+			var to := pl.position - position
+			if to.length() > radius + 105.0:
+				if main and main.has_method("stage_enemy_step"):
+					position = main.stage_enemy_step(position, pl.position,
+						move_speed * (0.90 + (void_phase - 1) * 0.10) * delta, radius)
+				else:
+					position += to.normalized() * move_speed * delta
+				_atk_play = maxf(_atk_play, 0.32)
+			if _void_t <= 0.0:
+				_start_next_void_attack(pl)
+		VoidState.GAZE_WINDUP:
+			_atk_play = maxf(_atk_play, 0.24)
+			if _void_t <= 0.0:
+				if main and main.has_method("void_boss_gaze"):
+					main.void_boss_gaze(position, _void_lock_dir, VOID_GAZE_RADIUS,
+						VOID_GAZE_HALF_ANGLE, attack_damage * 1.05)
+				_void_state = VoidState.RECOVERY
+				_void_t = 0.62
+				_atk_play = 0.5
+				_atk_t = 0.0
+		VoidState.LASER_WINDUP:
+			_atk_play = maxf(_atk_play, 0.24)
+			if _void_t <= 0.0:
+				_void_state = VoidState.LASER_SWEEP
+				_void_t = VOID_LASER_SWEEP_TIME
+				_atk_play = 0.5
+				_atk_t = 0.0
+		VoidState.LASER_SWEEP:
+			var sweep_speed := (1.18 + (void_phase - 1) * 0.14) * _void_laser_sweep_dir
+			_void_laser_angle += sweep_speed * delta
+			if main and main.has_method("void_boss_laser"):
+				main.void_boss_laser(position, Vector2.from_angle(_void_laser_angle),
+					VOID_LASER_LENGTH, VOID_LASER_WIDTH, attack_damage * 0.62)
+			if _void_t <= 0.0:
+				_void_state = VoidState.RECOVERY
+				_void_t = 0.58
+		VoidState.WELL_WINDUP:
+			_atk_play = maxf(_atk_play, 0.24)
+			if _void_t <= 0.0:
+				if main and main.has_method("spawn_void_gravity_field"):
+					main.spawn_void_gravity_field(_void_well_pos, VOID_WELL_RADIUS,
+						142.0 + (void_phase - 1) * 16.0, 4.2, attack_damage * 0.82)
+				_void_state = VoidState.RECOVERY
+				_void_t = 0.64
+				_atk_play = 0.5
+				_atk_t = 0.0
+		VoidState.RECOVERY:
+			if _void_t <= 0.0:
+				_void_state = VoidState.CHASE
+				_void_t = maxf(0.70, 1.32 - void_phase * 0.13)
+
+
+func _start_next_void_attack(pl: Player) -> void:
+	var pattern := _void_attack_index % 3
+	_void_attack_index += 1
+	match pattern:
+		0:
+			_void_lock_dir = (pl.position - position).normalized()
+			if _void_lock_dir == Vector2.ZERO:
+				_void_lock_dir = Vector2.DOWN
+			_void_state = VoidState.GAZE_WINDUP
+			_void_t = maxf(0.66, 0.96 - (void_phase - 1) * 0.06)
+		1:
+			_void_lock_dir = (pl.position - position).normalized()
+			if _void_lock_dir == Vector2.ZERO:
+				_void_lock_dir = Vector2.DOWN
+			_void_laser_sweep_dir = -1.0 if _void_attack_index % 2 == 0 else 1.0
+			_void_laser_angle = _void_lock_dir.angle() - _void_laser_sweep_dir * 0.74
+			_void_state = VoidState.LASER_WINDUP
+			_void_t = maxf(0.68, 0.94 - (void_phase - 1) * 0.05)
+		_:
+			_void_well_pos = pl.position
+			_void_state = VoidState.WELL_WINDUP
+			_void_t = maxf(0.68, 0.96 - (void_phase - 1) * 0.05)
+
+
 func take_damage(d: float, _crit: bool = true, element: String = "") -> void:
 	var m := get_parent()
 	# 상성: 공격 속성 미지정이면 플레이어 공격 속성 사용. 약점 ×1.5 / 저항 ×0.6.
@@ -362,6 +501,9 @@ func take_damage(d: float, _crit: bool = true, element: String = "") -> void:
 		return
 	if glacier_final:
 		_take_damage_glacier(d, _crit, elem, m)
+		return
+	if void_final:
+		_take_damage_void(d, _crit, elem, m)
 		return
 	# 화염 군주의 갑옷은 체력과 별도다. 냉기는 빠르게 파괴하고 화염은 거의 통하지 않는다.
 	# 전용 무기 어픽스는 이 파괴량에만 적용해 일반 DPS 영구 누적을 만들지 않는다.
@@ -708,6 +850,94 @@ func _take_damage_glacier(d: float, crit: bool, elem: String, m) -> void:
 		queue_free()
 
 
+func _start_void_echo() -> void:
+	void_echo_started = true
+	void_echo_active = true
+	void_phase = 2
+	void_echo_cores = void_echo_core_max
+	void_core_hp_max = maxf(1.0, max_hp * 0.105)
+	void_core_hp = void_core_hp_max
+	vulnerable_t = 0.0
+	_void_state = VoidState.CHASE
+	_void_t = 2.30
+	var main := get_parent()
+	if main and main.has_method("on_void_echo_started"):
+		main.on_void_echo_started(void_echo_cores)
+
+
+func _break_void_echo() -> void:
+	void_echo_active = false
+	void_core_hp = 0.0
+	void_phase = 3
+	vulnerable_t = VOID_VULNERABLE_TIME
+	_void_state = VoidState.STUNNED
+	_void_t = vulnerable_t
+	var main := get_parent()
+	if main and main.has_method("on_void_echo_broken"):
+		main.on_void_echo_broken(vulnerable_t)
+
+
+# 공허 감시자 피해 규칙. 55%에서 체력을 정확히 고정한 뒤 분신 핵을 모두
+# 파괴해야 본체 피해가 다시 들어간다. 안정화한 닻이 많을수록 핵 수가 줄어든다.
+func _take_damage_void(d: float, crit: bool, elem: String, m) -> void:
+	if void_echo_active:
+		var core_damage := maxf(0.0, d)
+		if m and m.has_method("_void_core_damage_multiplier"):
+			core_damage *= float(m._void_core_damage_multiplier())
+		var actual_core := minf(void_core_hp, core_damage)
+		void_core_hp -= core_damage
+		if m and m.has_method("record_damage_dealt"):
+			m.record_damage_dealt(actual_core)
+		if m and m.has_method("_spawn_dmg_num") and core_damage >= 1.0:
+			m._spawn_dmg_num(position + Vector2(0, -radius * 0.5),
+				maxi(1, int(round(core_damage))), crit, "", elem)
+		if void_core_hp <= 0.0:
+			void_echo_cores -= 1
+			if void_echo_cores > 0:
+				void_core_hp = void_core_hp_max
+				if m and m.has_method("on_void_echo_core_broken"):
+					m.on_void_echo_core_broken(void_echo_cores)
+			else:
+				_break_void_echo()
+		queue_redraw()
+		return
+
+	var hit_kind := ""
+	if elem != "" and elem != "phys":
+		if elem == weak:
+			d *= 1.5
+			hit_kind = "weak"
+		elif elem == resist:
+			d *= 0.6
+			hit_kind = "resist"
+	if vulnerable_t > 0.0:
+		d *= 1.75
+
+	if not void_echo_started:
+		var threshold_hp := max_hp * VOID_ECHO_THRESHOLD
+		if hp > threshold_hp and hp - d <= threshold_hp:
+			d = maxf(0.0, hp - threshold_hp)
+	var actual := minf(maxf(0.0, hp), maxf(0.0, d))
+	if m and m.has_method("record_damage_dealt"):
+		m.record_damage_dealt(actual)
+	hp -= d
+	if m and m.has_method("_spawn_dmg_num"):
+		if d >= 1.0:
+			m._spawn_dmg_num(position + Vector2(0, -radius * 0.5),
+				maxi(1, int(round(d))), crit, hit_kind, elem)
+		else:
+			_dmg_accum += d
+	if not void_echo_started and hp <= max_hp * VOID_ECHO_THRESHOLD + 0.01:
+		hp = max_hp * VOID_ECHO_THRESHOLD
+		_start_void_echo()
+		queue_redraw()
+		return
+	if hp <= 0.0:
+		if m and m.has_method("on_boss_killed"):
+			m.on_boss_killed()
+		queue_free()
+
+
 func _draw() -> void:
 	if hell_final:
 		_draw_hell_warning()
@@ -715,6 +945,8 @@ func _draw() -> void:
 		_draw_grave_warning()
 	elif glacier_final:
 		_draw_glacier_warning()
+	elif void_final:
+		_draw_void_warning()
 	var tex: Texture2D = null
 	if _atk_play > 0.0:
 		var fa: Array = Assets.frames("res://assets/anim/%s_attack" % key)
@@ -757,6 +989,10 @@ func _draw() -> void:
 			tint = Color(0.68, 0.88, 1.28)
 		elif glacier_final and vulnerable_t > 0.0:
 			tint = Color(1.18, 0.88, 0.54)
+		elif void_final and void_echo_active:
+			tint = Color(0.86, 0.58, 1.30)
+		elif void_final and vulnerable_t > 0.0:
+			tint = Color(1.20, 0.92, 0.58)
 		# 충전 중엔 붉게 달아오름 (맥동)
 		if _tele_t > 0.0:
 			var tp: float = clamp(1.0 - _tele_t / TELE_DUR, 0.0, 1.0)
@@ -820,6 +1056,80 @@ func _draw() -> void:
 			Vector2(-w2 * 0.5, -radius - 43.0),
 			Vector2(-w2 * 0.5 + 3.0, -radius - 27.0),
 		]), Color(1.0, 0.58, 0.16))
+	if void_final and void_echo_active and void_core_hp_max > 0.0:
+		var void_core_ratio := clampf(void_core_hp / void_core_hp_max, 0.0, 1.0)
+		draw_rect(Rect2(Vector2(-w2 / 2.0, -radius - 34), Vector2(w2, 7)),
+			Color(0.06, 0.02, 0.10, 0.96))
+		draw_rect(Rect2(Vector2(-w2 / 2.0, -radius - 34), Vector2(w2 * void_core_ratio, 7)),
+			Color(0.72, 0.42, 1.0))
+		for ci in void_echo_cores:
+			var marker_x := -w2 * 0.5 + 4.0 + float(ci) * 11.0
+			draw_colored_polygon(PackedVector2Array([
+				Vector2(marker_x, -radius - 43.0),
+				Vector2(marker_x + 4.0, -radius - 47.0),
+				Vector2(marker_x + 8.0, -radius - 43.0),
+				Vector2(marker_x + 4.0, -radius - 39.0),
+			]), Color(0.84, 0.64, 1.0))
+
+
+func _draw_void_warning() -> void:
+	var danger := Color(0.76, 0.42, 1.0)
+	match _void_state:
+		VoidState.GAZE_WINDUP:
+			var duration := maxf(0.66, 0.96 - (void_phase - 1) * 0.06)
+			var progress := clampf(1.0 - _void_t / duration, 0.0, 1.0)
+			var base := _void_lock_dir.angle()
+			var points := PackedVector2Array([Vector2.ZERO])
+			for i in 17:
+				var angle := base - VOID_GAZE_HALF_ANGLE \
+					+ VOID_GAZE_HALF_ANGLE * 2.0 * float(i) / 16.0
+				points.append(Vector2.from_angle(angle) * VOID_GAZE_RADIUS)
+			draw_colored_polygon(points,
+				Color(danger.r, danger.g, danger.b, 0.06 + progress * 0.13))
+			draw_arc(Vector2.ZERO, VOID_GAZE_RADIUS,
+				base - VOID_GAZE_HALF_ANGLE, base + VOID_GAZE_HALF_ANGLE, 32,
+				Color(0.90, 0.62, 1.0, 0.42 + progress * 0.46), 3.0)
+		VoidState.LASER_WINDUP:
+			var duration := maxf(0.68, 0.94 - (void_phase - 1) * 0.05)
+			var progress := clampf(1.0 - _void_t / duration, 0.0, 1.0)
+			var direction := Vector2.from_angle(_void_laser_angle)
+			var side := direction.orthogonal() * VOID_LASER_WIDTH
+			var finish := direction * VOID_LASER_LENGTH
+			draw_colored_polygon(PackedVector2Array([-side, side, finish + side, finish - side]),
+				Color(danger.r, danger.g, danger.b, 0.05 + progress * 0.13))
+			draw_line(Vector2.ZERO, finish,
+				Color(0.92, 0.68, 1.0, 0.48 + progress * 0.46), 2.0 + progress * 3.0)
+		VoidState.LASER_SWEEP:
+			var direction := Vector2.from_angle(_void_laser_angle)
+			draw_line(Vector2.ZERO, direction * VOID_LASER_LENGTH,
+				Color(0.92, 0.58, 1.0, 0.92), VOID_LASER_WIDTH * 1.25)
+			draw_line(Vector2.ZERO, direction * VOID_LASER_LENGTH,
+				Color(1.0, 0.90, 1.0, 0.94), 4.0)
+		VoidState.WELL_WINDUP:
+			var duration := maxf(0.68, 0.96 - (void_phase - 1) * 0.05)
+			var progress := clampf(1.0 - _void_t / duration, 0.0, 1.0)
+			var local := _void_well_pos - position
+			draw_circle(local, VOID_WELL_RADIUS,
+				Color(danger.r, danger.g, danger.b, 0.05 + progress * 0.10))
+			draw_arc(local, lerpf(VOID_WELL_RADIUS * 1.36, VOID_WELL_RADIUS, progress),
+				0.0, TAU, 52, Color(0.86, 0.58, 1.0, 0.44 + progress * 0.45),
+				3.0 + progress * 2.0)
+	if void_echo_active:
+		var pulse := 0.5 + 0.5 * sin(_anim_t * 8.0)
+		draw_arc(Vector2.ZERO, radius * 1.62, 0.0, TAU, 48,
+			Color(0.72, 0.42, 1.0, 0.58 + pulse * 0.26), 4.0)
+		for i in void_echo_cores:
+			var angle := TAU * float(i) / float(maxi(1, void_echo_core_max)) \
+				- PI * 0.5 + _anim_t * 0.34
+			var center := Vector2.from_angle(angle) * radius * 1.62
+			draw_colored_polygon(PackedVector2Array([
+				center + Vector2(0, -7), center + Vector2(7, 0),
+				center + Vector2(0, 7), center + Vector2(-7, 0),
+			]), Color(0.88, 0.68, 1.0))
+	elif vulnerable_t > 0.0:
+		var pulse := 0.5 + 0.5 * sin(_anim_t * 10.0)
+		draw_arc(Vector2.ZERO, radius * (1.32 + pulse * 0.10), 0.0, TAU, 42,
+			Color(1.0, 0.78, 0.38, 0.76), 4.0)
 
 
 func _draw_glacier_warning() -> void:

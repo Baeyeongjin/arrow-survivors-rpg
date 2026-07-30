@@ -185,7 +185,7 @@ static func stages() -> Array:
 			"props": ["res://assets/props/s3_a.png", "res://assets/props/s3_b.png"]},
 		{"name": "공허",   "boss": "boss_4", "boss_name": "공허 감시자", "tint": Color(0.60, 0.45, 0.85),
 			"element": "dark", "boss_weak": "holy",
-			"rule": "5분 동안 성장한 뒤 목표 보스를 처치",
+			"rule": "공허 닻 3곳 안정화 · 중력장 탈출 · 공허 감시자 분신 핵 파괴",
 			"field_passives": ["duplicator", "keen_eye", "clover", "skull"],
 			"props": ["res://assets/props/s4_a.png", "res://assets/props/s4_b.png"]},
 		{"name": "마왕성", "boss": "boss_5", "boss_name": "마왕 아바돈", "tint": Color(0.75, 0.65, 0.55),
@@ -259,6 +259,26 @@ static func glacier_midboss_tier() -> Dictionary:
 		"color": Color(0.48, 0.72, 0.98), "hp_mult": 5.2, "speed_mult": 0.78,
 		"xp": 20, "radius": 29.0, "behavior": "charge",
 		"sprite": "res://assets/enemies/frost_golem.png", "weak": "fire", "resist": "ice",
+	}
+
+
+# M5-C 공허 닻을 지키는 돌진 정예. void_wraith 스프라이트와 애니메이션을 재사용한다.
+static func void_elite_tier() -> Dictionary:
+	return {
+		"name": "균열 추적자", "key": "rift_stalker", "shape": "demon",
+		"color": Color(0.68, 0.38, 0.96), "hp_mult": 3.3, "speed_mult": 1.24,
+		"xp": 12, "radius": 19.0, "behavior": "charge",
+		"sprite": "res://assets/enemies/void_wraith.png", "weak": "holy", "resist": "dark",
+	}
+
+
+# M5-C 공허 중간보스. 원거리 투사체와 추종 중력장이 이동 경로 선택을 압박한다.
+static func void_midboss_tier() -> Dictionary:
+	return {
+		"name": "심연의 눈", "key": "abyss_oracle", "shape": "demon",
+		"color": Color(0.72, 0.42, 0.92), "hp_mult": 5.6, "speed_mult": 0.88,
+		"xp": 21, "radius": 27.0, "behavior": "ranged", "damage_source": "void_boss",
+		"sprite": "res://assets/enemies/eye_mass.png", "weak": "holy", "resist": "dark",
 	}
 
 

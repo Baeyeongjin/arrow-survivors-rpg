@@ -1,6 +1,6 @@
 extends SceneTree
 # 플레이어 11종과 일반 몬스터 22종의 걷기 프레임을 전수 검사한다.
-# 고유 key와 스프라이트 파일명이 다른 정예·중간보스 6종도 실제 Enemy.setup()을
+# 고유 key와 스프라이트 파일명이 다른 정예·중간보스 8종도 실제 Enemy.setup()을
 # 통과시켜 기본 몬스터의 걷기/공격 애니메이션을 재사용하는지 잠근다.
 
 const MIN_WALK_FRAMES := 4
@@ -14,7 +14,7 @@ func _initialize() -> void:
 	ok = _check_special_enemy_reuse() and ok
 
 	if ok:
-		print("WALK_OK: players=11 monsters=22 special_reuse=6")
+		print("WALK_OK: players=11 monsters=22 special_reuse=8")
 		quit(0)
 	else:
 		quit(1)
@@ -51,6 +51,8 @@ func _check_special_enemy_reuse() -> bool:
 		{"tier": GameConfig.graveyard_midboss_tier(), "asset_key": "dark_knight"},
 		{"tier": GameConfig.glacier_elite_tier(), "asset_key": "ice_wisp"},
 		{"tier": GameConfig.glacier_midboss_tier(), "asset_key": "frost_golem"},
+		{"tier": GameConfig.void_elite_tier(), "asset_key": "void_wraith"},
+		{"tier": GameConfig.void_midboss_tier(), "asset_key": "eye_mass"},
 	]
 	var ok := true
 	for test_case in cases:

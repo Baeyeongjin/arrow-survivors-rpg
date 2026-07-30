@@ -10,6 +10,8 @@ enum State { TITLE, PLAYING, LEVELUP, GAMEOVER, VICTORY, PAUSED, ROUTE, EXTRACTI
 const HellFissureScript = preload("res://HellFissure.gd")
 const GraveSealScript = preload("res://GraveSeal.gd")
 const GlacierBrazierScript = preload("res://GlacierBrazier.gd")
+const VoidAnchorScript = preload("res://VoidAnchor.gd")
+const VoidGravityFieldScript = preload("res://VoidGravityField.gd")
 const ExpeditionRulesScript = preload("res://ExpeditionRules.gd")
 const RunTelemetryScript = preload("res://RunTelemetry.gd")
 const UiTypographyScript = preload("res://UiTypography.gd")
@@ -208,6 +210,12 @@ const GLACIER_MIDBOSS_TIME := 155.0   # 02:35 빙벽 골렘
 const GLACIER_CHILL_MAX := 100.0
 const GLACIER_CHILL_RATE := 1.05
 const GLACIER_WARMTH_DRAIN := 24.0
+# M5-C 공허 세로 슬라이스: 공허 닻 3곳 · 2:40 심연의 눈 · 5:00 공허 감시자.
+const VOID_STAGE := 4
+const VOID_ANCHOR_TIMES := [45.0, 115.0, 205.0]
+const VOID_ANCHOR_REQUIRED := 3
+const VOID_ANCHOR_DURATION := 8.0
+const VOID_MIDBOSS_TIME := 160.0
 const EXPEDITION_FLOORS := ExpeditionRulesScript.FLOOR_COUNT
 const MAX_ENEMIES := 300     # 동시 등장 상한 (뱀서형 밀도 + 내장 GPU 부하 관리. 340은 Iris Xe에서 랙 → 300으로 한 단계 롤백)
 # 무기 진화 레시피 (뱀서식): 무기 만렙(Lv8) + 필수 패시브 보유 → 보스 상자 개봉 시 진화
@@ -620,6 +628,14 @@ var glacier_boss_wait_warned := false
 var glacier_chill := 0.0
 var glacier_in_warmth := false
 var glacier_cold_tick_cd := 0.0
+
+# M5-C 공허 인카운터 상태 (층 전환 시 초기화)
+var void_anchors_spawned := 0
+var void_anchors_stabilized := 0
+var void_midboss_spawned := false
+var void_midboss_alive := false
+var void_midboss_defeated := false
+var void_boss_wait_warned := false
 
 # M4 3층 원정. 총 런 시간은 time_survived에 누적하고, 각 층의 5분 시계는
 # expedition_floor_started_at을 빼서 계산한다.
@@ -1116,6 +1132,7 @@ func _autoshot() -> void:
 	var hell_preview := ""
 	var grave_preview := ""
 	var glacier_preview := ""
+	var void_preview := ""
 	for arg in args:
 		if arg.begins_with("--active-preview="):
 			var requested_active := arg.trim_prefix("--active-preview=")
@@ -1133,6 +1150,10 @@ func _autoshot() -> void:
 			var requested_glacier := arg.trim_prefix("--glacier-preview=")
 			if requested_glacier in ["brazier", "midboss", "boss"]:
 				glacier_preview = requested_glacier
+		elif arg.begins_with("--void-preview="):
+			var requested_void := arg.trim_prefix("--void-preview=")
+			if requested_void in ["anchor", "midboss", "boss"]:
+				void_preview = requested_void
 		elif arg.begins_with("--stress-stage="):
 			# --stress-test를 어느 던전에서 잴지. 지형마다 도형 수가 달라 경로찾기 비용이 다르다.
 			sel_stage = clampi(int(arg.trim_prefix("--stress-stage=")), 1, FINAL_STAGE)
@@ -1160,6 +1181,8 @@ func _autoshot() -> void:
 		sel_stage = GRAVE_STAGE
 	if glacier_preview != "":
 		sel_stage = GLACIER_STAGE
+	if void_preview != "":
+		sel_stage = VOID_STAGE
 	title_panel.visible = false
 	sel_modifier = {}
 	_start_game(GameConfig.difficulties()[0])
@@ -1511,6 +1534,70 @@ func _autoshot() -> void:
 		var glacier_image := get_viewport().get_texture().get_image()
 		glacier_image.save_png("user://autoshot.png")
 		print("GLACIER_PREVIEW %s" % glacier_preview)
+		print("AUTOSHOT SAVED: ", ProjectSettings.globalize_path("user://autoshot.png"))
+		get_tree().quit()
+		return
+
+	# --void-preview=anchor|midboss|boss: M5-C 핵심 전투 상태를 실제 렌더로 검수한다.
+	if void_preview != "":
+		player.invuln = 999.0
+		weapons.clear()
+		wtimer.clear()
+		xp_to_next = 999999
+		for preview_enemy in get_tree().get_nodes_in_group("enemies"):
+			if is_instance_valid(preview_enemy):
+				preview_enemy.queue_free()
+		await get_tree().process_frame
+		match void_preview:
+			"anchor":
+				time_survived = VOID_ANCHOR_TIMES[0]
+				var anchor = _spawn_void_anchor(0)
+				anchor.position = player.position + Vector2.RIGHT * 122.0
+				anchor.progress = anchor.duration * 0.58
+				anchor._in_stable_band = true
+				anchor.process_mode = Node.PROCESS_MODE_DISABLED
+				anchor.queue_redraw()
+			"midboss":
+				time_survived = VOID_MIDBOSS_TIME
+				void_anchors_spawned = 2
+				void_anchors_stabilized = 1
+				_wave_minute = int(time_survived / 60.0)
+				_current_wave = GameConfig.wave_for_minute(_wave_minute, VOID_STAGE)
+				featured_enemy = str(_current_wave.get("primary", "void_wraith"))
+				var oracle := _spawn_void_midboss()
+				oracle.position = player.position + Vector2.RIGHT * 210.0
+				oracle._shoot_windup = 0.28
+				oracle._shoot_lock = Vector2.LEFT
+				oracle.process_mode = Node.PROCESS_MODE_DISABLED
+				oracle.queue_redraw()
+				for field in get_tree().get_nodes_in_group("void_gravity_fields"):
+					if is_instance_valid(field):
+						field.position = oracle.position
+						field.force_active_for_preview()
+						field.process_mode = Node.PROCESS_MODE_DISABLED
+			"boss":
+				time_survived = DUNGEON_BOSS_TIME
+				_wave_minute = int(time_survived / 60.0)
+				_current_wave = GameConfig.wave_for_minute(_wave_minute, VOID_STAGE)
+				featured_enemy = str(_current_wave.get("primary", "void_wraith"))
+				void_anchors_spawned = VOID_ANCHOR_REQUIRED
+				void_anchors_stabilized = 1
+				void_midboss_spawned = true
+				void_midboss_defeated = true
+				_spawn_dungeon_boss()
+				boss.position = player.position + Vector2.RIGHT * 220.0
+				boss.take_damage(boss.max_hp * 0.45, false, "phys")
+				boss._void_state = boss.VoidState.LASER_WINDUP
+				boss._void_laser_angle = PI
+				boss._void_t = 0.34
+				boss.process_mode = Node.PROCESS_MODE_DISABLED
+				boss.queue_redraw()
+		_update_ui()
+		await get_tree().process_frame
+		await get_tree().process_frame
+		var void_image := get_viewport().get_texture().get_image()
+		void_image.save_png("user://autoshot.png")
+		print("VOID_PREVIEW %s" % void_preview)
 		print("AUTOSHOT SAVED: ", ProjectSettings.globalize_path("user://autoshot.png"))
 		get_tree().quit()
 		return
@@ -2072,6 +2159,8 @@ func _process(delta: float) -> void:
 		_update_grave_encounter()
 	elif map_stage == GLACIER_STAGE:
 		_update_glacier_encounter(delta)
+	elif map_stage == VOID_STAGE:
+		_update_void_encounter()
 	if grave_requiem_cd > 0.0:
 		grave_requiem_cd = maxf(0.0, grave_requiem_cd - delta)
 	if abyss_mode:
@@ -2100,6 +2189,10 @@ func _process(delta: float) -> void:
 					if not glacier_boss_wait_warned:
 						glacier_boss_wait_warned = true
 						_event_banner("[경고] 빙벽 골렘을 먼저 처치해야 한다!")
+				elif map_stage == VOID_STAGE and void_midboss_alive:
+					if not void_boss_wait_warned:
+						void_boss_wait_warned = true
+						_event_banner("[경고] 심연의 눈을 먼저 처치해야 한다!")
 				else:
 					_spawn_dungeon_boss()
 
@@ -2392,6 +2485,8 @@ func _physics_process(delta: float) -> void:
 						apply_grave_boss_damage(ea.damage, ea.position)
 					"glacier_boss":
 						apply_glacier_boss_damage(ea.damage, ea.position, 10.0)
+					"void_boss":
+						apply_void_boss_damage(ea.damage, ea.position)
 					_:
 						apply_player_damage(max(1.0, ea.damage - player.armor), "enemy_projectile")
 						player.invuln = 0.6
@@ -5000,6 +5095,192 @@ func _reset_glacier_floor_state() -> void:
 		player.environment_speed_mult = 1.0
 
 
+# ── M5-C 공허 세로 슬라이스 ────────────────────────────────────────────
+func _update_void_encounter() -> void:
+	if map_stage != VOID_STAGE or state != State.PLAYING:
+		return
+	var elapsed := _dungeon_elapsed()
+	while void_anchors_spawned < VOID_ANCHOR_TIMES.size() \
+			and elapsed >= float(VOID_ANCHOR_TIMES[void_anchors_spawned]):
+		_spawn_void_anchor(void_anchors_spawned)
+	if not void_midboss_spawned and elapsed >= VOID_MIDBOSS_TIME:
+		_spawn_void_midboss()
+
+
+func _spawn_void_anchor(index: int) -> Node2D:
+	if index < 0 or index >= VOID_ANCHOR_REQUIRED:
+		return null
+	var anchor := VoidAnchorScript.new()
+	var spawn_pos := player.position + Vector2.RIGHT * 240.0 if player else WORLD * 0.5
+	if stage_layout and index < stage_layout.objective_positions.size():
+		spawn_pos = stage_layout.objective_positions[index]
+	if stage_layout:
+		spawn_pos = stage_layout.nearest_walkable(spawn_pos, 58.0)
+	anchor.position = spawn_pos
+	anchor.configure(index, VOID_ANCHOR_DURATION, 104.0 + float(index) * 8.0)
+	add_child(anchor)
+	_spawn_void_elite_guardian(index, spawn_pos)
+	void_anchors_spawned = maxi(void_anchors_spawned, index + 1)
+	_event_banner("[공허] 닻 안정화 — 빛나는 고리 안에서 중력을 버텨라 (%d/%d)" % [
+		void_anchors_stabilized, VOID_ANCHOR_REQUIRED])
+	return anchor
+
+
+func _spawn_void_elite_guardian(index: int, origin: Vector2) -> Enemy:
+	var offset := Vector2.from_angle(PI * 0.5 * float(index + 1)) * 145.0
+	var guardian_pos := origin + offset
+	if stage_layout:
+		guardian_pos = stage_layout.nearest_walkable(guardian_pos, 34.0)
+	var guardian := _make_enemy(guardian_pos, true, GameConfig.void_elite_tier())
+	guardian.hp *= 0.88
+	guardian.max_hp = guardian.hp
+	return guardian
+
+
+func _spawn_void_midboss() -> Enemy:
+	if void_midboss_spawned:
+		return null
+	void_midboss_spawned = true
+	void_midboss_alive = true
+	var spawn_pos := player.position + Vector2.LEFT * 360.0 if player else WORLD * 0.5
+	if stage_layout:
+		spawn_pos = stage_layout.nearest_walkable(spawn_pos, 46.0)
+	var oracle := _make_enemy(spawn_pos, true, GameConfig.void_midboss_tier())
+	oracle.midboss = true
+	oracle.hp *= 2.6
+	oracle.max_hp = oracle.hp
+	oracle.radius *= 1.08
+	oracle.touch_damage *= 1.16
+	spawn_void_gravity_field(oracle.position, 188.0, 94.0, 999.0, 0.0, oracle)
+	_event_banner("[중간 보스] 심연의 눈 — 중력장 이탈 · 탄막 회피")
+	_flash(Color(0.62, 0.34, 0.92, 0.36))
+	shake_t = maxf(shake_t, 0.27)
+	return oracle
+
+
+func on_void_anchor_stabilized(anchor: Node2D) -> void:
+	void_anchors_stabilized = mini(VOID_ANCHOR_REQUIRED, void_anchors_stabilized + 1)
+	run_gold += 10
+	if player:
+		player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.05)
+	if _has_gear_special("anchor_echo"):
+		skill_e_cd = maxf(0.0, skill_e_cd - 2.5)
+	_spawn_proc_fx("shatter", anchor.position, 88.0, Color(0.78, 0.56, 1.0), 0.50)
+	_spawn_proc_fx("ring", anchor.position, 136.0, Color(0.72, 0.46, 1.0), 0.54)
+	for i in 4:
+		_spawn_coin(anchor.position + Vector2.from_angle(TAU * float(i) / 4.0) * 25.0, 2)
+	_event_banner("[안정화] 공허 닻 %d/%d%s" % [
+		void_anchors_stabilized, VOID_ANCHOR_REQUIRED,
+		" · 감시자 분신 핵 최소화" if void_anchors_stabilized == VOID_ANCHOR_REQUIRED else ""])
+	play_sfx("levelup", -8.0)
+
+
+func _void_core_damage_multiplier() -> float:
+	return 1.35 if _has_gear_special("corebreaker") else 1.0
+
+
+func _void_pull_multiplier() -> float:
+	return 0.55 if _has_gear_special("gravity_ward") else 1.0
+
+
+func _void_incoming_damage_multiplier() -> float:
+	return 0.75 if _has_gear_special("gravity_ward") else 1.0
+
+
+func _void_anchor_ring_bonus() -> float:
+	return 24.0 if _has_gear_special("anchor_echo") else 0.0
+
+
+# 닻·중력장의 공통 끌어당김 규칙. 회피 중에는 완전히 저항하며 지형 충돌을 건너뛰지 않는다.
+func apply_void_pull(source: Vector2, field_radius: float, strength: float, delta: float) -> bool:
+	if player == null or player.is_dodging():
+		return false
+	var offset := source - player.position
+	var distance := offset.length()
+	if distance <= 1.0 or distance > field_radius + player.radius:
+		return false
+	var falloff := clampf(1.0 - distance / maxf(1.0, field_radius), 0.18, 1.0)
+	var pull_distance := strength * _void_pull_multiplier() * falloff * maxf(0.0, delta)
+	var desired := player.position + offset.normalized() * pull_distance
+	player.position = stage_layout.resolve_move(player.position, desired, player.radius) \
+		if stage_layout else desired
+	return true
+
+
+func spawn_void_gravity_field(origin: Vector2, field_radius: float, pull_strength: float,
+		duration: float, damage: float = 0.0, follow_target: Node2D = null) -> Node2D:
+	var field := VoidGravityFieldScript.new()
+	field.position = origin
+	field.configure(field_radius, pull_strength, duration, damage, follow_target)
+	add_child(field)
+	return field
+
+
+func apply_void_boss_damage(amount: float, source: Vector2) -> bool:
+	if player == null or player.invuln > 0.0:
+		return false
+	var damage := maxf(1.0, amount * _void_incoming_damage_multiplier() - player.armor)
+	apply_player_damage(damage, "void_boss")
+	player.invuln = 0.70
+	player.play_hurt()
+	play_sfx("hurt", -7.0, 0.25)
+	shake_t = maxf(shake_t, 0.20)
+	_spawn_proc_fx("burst", player.position, 44.0, Color(0.72, 0.42, 1.0), 0.26,
+		(player.position - source).normalized())
+	return true
+
+
+func void_boss_gaze(origin: Vector2, aim_dir: Vector2, reach: float,
+		half_angle: float, damage: float) -> void:
+	_spawn_proc_fx("burst", origin, 74.0, Color(0.78, 0.46, 1.0), 0.30, aim_dir)
+	if player == null:
+		return
+	var to_player := player.position - origin
+	if to_player.length() <= reach + player.radius and to_player.length_squared() > 0.01 \
+			and absf(aim_dir.angle_to(to_player.normalized())) <= half_angle:
+		apply_void_boss_damage(damage, origin)
+
+
+func void_boss_laser(origin: Vector2, direction: Vector2, length: float,
+		width: float, damage: float) -> void:
+	if player == null:
+		return
+	var finish := origin + direction.normalized() * length
+	var closest := Geometry2D.get_closest_point_to_segment(player.position, origin, finish)
+	if player.position.distance_to(closest) <= width + player.radius:
+		apply_void_boss_damage(damage, closest)
+
+
+func on_void_echo_started(cores: int) -> void:
+	_event_banner("[보스] 공허 분신 — 핵 %d개를 부숴 본체를 드러내라!" % cores)
+	_flash(Color(0.64, 0.34, 0.94, 0.30))
+	shake_t = maxf(shake_t, 0.24)
+
+
+func on_void_echo_core_broken(remaining: int) -> void:
+	var fx_pos: Vector2 = boss.position if (boss and is_instance_valid(boss)) else WORLD * 0.5
+	_spawn_proc_fx("shatter", fx_pos, 76.0, Color(0.82, 0.62, 1.0), 0.42)
+	_event_banner("[분신] 공허 핵 파괴 — 남은 핵 %d개" % remaining)
+	play_sfx("kill", -8.0, 0.05)
+
+
+func on_void_echo_broken(window: float) -> void:
+	_event_banner("[기회] 공허 분신 붕괴 — %.0f초 집중 공격" % window)
+	_flash(Color(1.0, 0.78, 0.38, 0.36))
+	_slowmo(0.55, 180)
+	shake_t = maxf(shake_t, 0.30)
+	play_sfx("ult", -7.0)
+
+
+func _reset_void_floor_state() -> void:
+	void_anchors_spawned = 0
+	void_anchors_stabilized = 0
+	void_midboss_spawned = false
+	void_midboss_alive = false
+	void_midboss_defeated = false
+	void_boss_wait_warned = false
+
+
 func _spawn_boss(forced_key: String = "") -> void:
 	boss_spawned = true
 	play_sfx("boss", -4.0)
@@ -5053,6 +5334,13 @@ func _spawn_dungeon_boss() -> void:
 			boss.attack_damage = (22.0 + stage_num * 2.2) \
 				* sqrt(diff_enemy_hp * _expedition_floor_pressure())
 			boss.configure_glacier_final(glacier_braziers_lit)
+		elif map_stage == VOID_STAGE:
+			for anchor in get_tree().get_nodes_in_group("void_anchors"):
+				if is_instance_valid(anchor) and anchor.has_method("absorb_without_reward"):
+					anchor.absorb_without_reward()
+			boss.attack_damage = (22.0 + stage_num * 2.2) \
+				* sqrt(diff_enemy_hp * _expedition_floor_pressure())
+			boss.configure_void_final(void_anchors_stabilized)
 	var wk := str(GameConfig.stage_info(map_stage).get("boss_weak", ""))
 	var hint := "  (약점: %s)" % str(ELEMENT_NAME.get(wk, "")) if wk != "" else ""
 	var final_prefix := "최종 " if expedition_active and expedition_floor >= EXPEDITION_FLOORS else ""
@@ -5068,6 +5356,10 @@ func _spawn_dungeon_boss() -> void:
 	elif map_stage == GLACIER_STAGE:
 		_event_banner("[보스] %s빙결 거상 — 얼음 갑옷 파쇄 · 화로 %d/%d" % [
 			final_prefix, glacier_braziers_lit, GLACIER_BRAZIER_REQUIRED])
+	elif map_stage == VOID_STAGE:
+		var echo_cores := maxi(1, 4 - void_anchors_stabilized)
+		_event_banner("[보스] %s공허 감시자 — 시선·광선·중력 회피 · 분신 핵 %d개%s" % [
+			final_prefix, echo_cores, hint])
 	else:
 		_event_banner("[보스] %s던전 보스 출현 — 처치하면 전리품%s" % [final_prefix, hint])
 
@@ -5338,6 +5630,7 @@ const DEATH_FX := {
 	"frost_spider": "fx_death_ice", "eye_mass": "fx_death_soul", "cultist": "fx_death_blood",
 	"grave_warden": "fx_death_soul", "tomb_knight": "fx_death_soul",
 	"frost_sentry": "fx_death_ice", "icewall_golem": "fx_death_ice",
+	"rift_stalker": "fx_death_soul", "abyss_oracle": "fx_death_soul",
 }
 func _death_fx_for(key: String) -> String:
 	return DEATH_FX.get(key, "fx_death_blood")
@@ -5367,6 +5660,12 @@ func on_enemy_killed(e: Enemy) -> void:
 			_spawn_gear_pickup(e.position, _roll_glacier_gear(true))
 			_event_banner("[획득] 빙벽 골렘 격파 — 빙하 전용 장비")
 			_flash(Color(0.46, 0.76, 1.0, 0.40))
+		elif map_stage == VOID_STAGE:
+			void_midboss_alive = false
+			void_midboss_defeated = true
+			_spawn_gear_pickup(e.position, _roll_void_gear(true))
+			_event_banner("[획득] 심연의 눈 격파 — 공허 전용 장비")
+			_flash(Color(0.68, 0.42, 1.0, 0.40))
 		else:
 			hell_midboss_alive = false
 			hell_midboss_defeated = true
@@ -5549,6 +5848,8 @@ func _roll_boss_reward(stage: int, force_epic: bool) -> Dictionary:
 		return _roll_graveyard_gear(force_epic)
 	if stage == GLACIER_STAGE:
 		return _roll_glacier_gear(force_epic)
+	if stage == VOID_STAGE:
+		return _roll_void_gear(force_epic)
 	var slot: String = EQUIP_SLOTS[randi() % EQUIP_SLOTS.size()]
 	var rarity := "epic" if force_epic else _roll_rarity(diff_rarity_luck + 1.5)
 	return _roll_gear_for(slot, rarity)
@@ -5631,6 +5932,7 @@ func _clear_floor_runtime() -> void:
 		"breakables", "gems", "coins", "hazards", "hell_fissures",
 		"hell_objectives", "grave_seals", "grave_objectives",
 		"glacier_braziers", "glacier_objectives",
+		"void_anchors", "void_objectives", "void_gravity_fields",
 		"voidzones", "effects", "floor_runtime",
 	]
 	var queued := {}
@@ -5661,6 +5963,7 @@ func _transition_to_expedition_floor(target_stage: int) -> void:
 	_reset_hell_floor_state()
 	_reset_grave_floor_state()
 	_reset_glacier_floor_state()
+	_reset_void_floor_state()
 	# 다음 층은 새 배치로 (같은 던전을 다시 밟아도 지형이 달라진다).
 	if layout_seed_override != 0:
 		layout_seed_override = randi()
@@ -6052,6 +6355,22 @@ const GLACIER_GEAR_SPECIALS := {
 	},
 }
 
+# M5-C 공허 전용 어픽스. 분신 핵·중력 압박·닻 안정화 규칙을 직접 바꾼다.
+const VOID_GEAR_SPECIALS := {
+	"weapon": {
+		"key": "corebreaker", "name": "분신 파쇄",
+		"desc": "공허 감시자 분신 핵에 주는 파괴 피해 +35%",
+	},
+	"armor": {
+		"key": "gravity_ward", "name": "중력 수호",
+		"desc": "공허 끌어당김 -45% · 심연의 눈·감시자 패턴 피해 -25%",
+	},
+	"trinket": {
+		"key": "anchor_echo", "name": "닻의 메아리",
+		"desc": "닻 안정화 고리 폭 +24 · 완료 시 E 재사용 2.5초 단축",
+	},
+}
+
 # Phase 5 대장간: 장비 하나당 최대 5회, 강화마다 모든 어픽스가 +12%씩 강해진다.
 # 런 골드가 초반 영구 강화와 함께 자연스럽게 소모되도록 등급별 비용을 별도로 둔다.
 const FORGE_MAX_LEVEL := 5
@@ -6130,6 +6449,20 @@ func _roll_glacier_gear(force_epic: bool = false, slot_override: String = "") ->
 	return item
 
 
+func _roll_void_gear(force_epic: bool = false, slot_override: String = "") -> Dictionary:
+	var slot := slot_override if slot_override in EQUIP_SLOTS else str(EQUIP_SLOTS[randi() % EQUIP_SLOTS.size()])
+	var rarity := _roll_rarity(diff_rarity_luck + 2.0)
+	if int(RARITY_ORDER.get(rarity, 1)) < 2:
+		rarity = "rare"
+	if force_epic and int(RARITY_ORDER.get(rarity, 1)) < 3:
+		rarity = "epic"
+	var item := _roll_gear_for(slot, rarity)
+	item["dungeon_tag"] = "void"
+	item["special"] = (VOID_GEAR_SPECIALS[slot] as Dictionary).duplicate(true)
+	item["name"] = "공허벼림 %s" % str(item["name"])
+	return item
+
+
 # 혼령의 메아리: 정예 처치 시 E 재사용 단축 + 궁극기 게이지 소량 충전.
 func _grave_echo_on_elite() -> void:
 	skill_e_cd = maxf(0.0, skill_e_cd - 1.5)
@@ -6163,9 +6496,11 @@ func _grave_try_requiem_interrupt(target) -> bool:
 		target._hell_state = 0
 		target._grave_state = 0
 		target._glacier_state = 0
+		target._void_state = 0
 		target._hell_t = 0.7
 		target._grave_t = 0.7
 		target._glacier_t = 0.7
+		target._void_t = 0.7
 		interrupted = true
 	elif target is Enemy and int(target._cstate) == 1:
 		target._cstate = 3   # 돌진 예열 취소 → 쿨다운으로
@@ -6511,7 +6846,9 @@ func _gear_detail_text(it: Dictionary) -> String:
 	var special = it.get("special", {})
 	if special is Dictionary and not (special as Dictionary).is_empty():
 		lines.append("")
-		var tag_label: String = {"hell": "지옥", "graveyard": "묘지", "glacier": "빙하"}.get(
+		var tag_label: String = {
+			"hell": "지옥", "graveyard": "묘지", "glacier": "빙하", "void": "공허",
+		}.get(
 			str(it.get("dungeon_tag", "")), "던전")
 		lines.append("[%s 전용] %s" % [tag_label, str((special as Dictionary).get("name", "특수 효과"))])
 		lines.append(str((special as Dictionary).get("desc", "")))
@@ -8513,6 +8850,10 @@ func _record_current_floor(cleared: bool) -> void:
 		objective_key = "glacier_braziers"
 		objectives_completed = glacier_braziers_lit
 		objectives_total = GLACIER_BRAZIER_REQUIRED
+	elif map_stage == VOID_STAGE:
+		objective_key = "void_anchors"
+		objectives_completed = void_anchors_stabilized
+		objectives_total = VOID_ANCHOR_REQUIRED
 	run_floor_stats.append({
 		"floor": floor_no,
 		"stage": map_stage,
@@ -8697,6 +9038,7 @@ func _start_game(d: Dictionary) -> void:
 	hell_boss_wait_warned = false
 	_reset_grave_floor_state()
 	_reset_glacier_floor_state()
+	_reset_void_floor_state()
 	# B블렌드: 장착한 무기 장비가 캐릭터 주무기(weapon1)를 대체. 없으면 캐릭터 기본 무기.
 	# (캐릭터 고유 2번째 무기 weapon2는 유지 → 캐릭터 정체성 일부 보존)
 	var gear_wpn := str(equipped.get("weapon", {}).get("weapon_kind", ""))
@@ -12737,6 +13079,21 @@ func _nearest_landmark_hint() -> String:
 		elif glacier_midboss_defeated:
 			glacier_progress += " · 최종 관문 준비"
 		return glacier_progress
+	if map_stage == VOID_STAGE:
+		if boss and is_instance_valid(boss) and boss.void_final:
+			if boss.void_echo_active:
+				return "공허 분신 핵 %d/%d · 핵 파괴 피해 집중" % [
+					boss.void_echo_cores, boss.void_echo_core_max]
+			if boss.vulnerable_t > 0.0:
+				return "분신 붕괴! 집중 공격 %.1f초" % boss.vulnerable_t
+			return "공허 감시자 페이즈 %d · 시선·광선·중력 예고 회피" % boss.void_phase
+		var void_progress := "공허 닻 안정화 %d/%d" % [
+			void_anchors_stabilized, VOID_ANCHOR_REQUIRED]
+		if void_midboss_alive:
+			void_progress += " · 심연의 눈"
+		elif void_midboss_defeated:
+			void_progress += " · 최종 관문 준비"
+		return void_progress
 	if expedition_active:
 		var remaining := maxi(0, int(ceil(DUNGEON_BOSS_TIME - _dungeon_elapsed())))
 		return "%d/%d층 · 보스까지 %02d:%02d" % [
