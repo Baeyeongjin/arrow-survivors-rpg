@@ -76,6 +76,17 @@ func _initialize() -> void:
 		"접촉 피해 x1.75 상향 미적용: %.2f (기대 %.2f)" % [mob.touch_damage, expected_touch])
 	# max_hp는 setup이 아니라 Main._make_enemy가 런 보정까지 끝낸 뒤 세팅한다(HP바 비율용).
 
+	# 4) XP 수입: 젬 값 배수 x2.0 + 잡몹 확률 드랍. 둘을 곱한 것이 성장 복리 루프의 입력이다.
+	_expect(mob.xp_value == int(round(float(tier["xp"]) * 2.0)),
+		"젬 값 배수 x2.0 미적용: %d (티어 xp=%d)" % [mob.xp_value, int(tier["xp"])])
+	_expect(game.GEM_DROP_CHANCE > 0.0 and game.GEM_DROP_CHANCE < 1.0,
+		"잡몹 젬 드랍이 확률이 아님(100% 드랍으로 회귀): %.2f" % game.GEM_DROP_CHANCE)
+	# 총 XP 수입이 예전(드랍 100% x 값 2.4)보다 확실히 낮아야 한다. 여기가 풀리면
+	# 요구 XP를 올려도 레벨업 속도가 되돌아간다.
+	var income_ratio: float = game.GEM_DROP_CHANCE * (2.0 / 2.4)
+	_expect(income_ratio < 0.55,
+		"XP 수입이 충분히 줄지 않음: 예전의 %.0f%%" % (income_ratio * 100.0))
+
 	mob.free()
 	game.player = null
 	player.free()

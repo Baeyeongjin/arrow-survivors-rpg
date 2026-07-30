@@ -2758,8 +2758,11 @@ func _weapon_level_scale(lv: int) -> float:
 # ponytail: 무기별 사거리 차등(활 vs 도끼)은 실플레이 표본을 본 뒤에. 지금은 전 무기 공통 한 줄.
 # 상한이 없으면 범위를 몰아준 빌드에서 사거리가 1200px을 넘어(테스트로 확인) 화면 밖 적
 # 자동 처리가 그대로 되살아난다. 범위 투자는 장판·검기 크기로 계속 보상하고, 사거리만 묶는다.
-const ATTACK_RANGE_BASE := 360.0
-const ATTACK_RANGE_MAX := 560.0
+# 2차 하향(사장님 "사거리를 좀더 너프해도 좋을것같고"): 360/560 -> 300/460.
+# 300px이면 이동 속도 상한(96px/s)인 몬스터가 사거리 진입부터 접촉까지 약 3.1초다.
+# 무기 사이클 몇 번은 돌아가지만 "다 쏴 죽이고 기다린다"는 안 된다.
+const ATTACK_RANGE_BASE := 300.0
+const ATTACK_RANGE_MAX := 460.0
 
 
 func _attack_range() -> float:
@@ -2795,6 +2798,11 @@ func _targets_by_distance() -> Array:
 	arr.sort_custom(func(a, b): return player.position.distance_squared_to((a as Node2D).position) \
 		< player.position.distance_squared_to((b as Node2D).position))
 	return arr
+
+
+# 도끼를 던져 올리는 위 방향 성분(px/s). gravity 900과 맞물려 약 0.29초 상승 후 낙하한다.
+# 이게 0이면 도끼가 직선 투사체가 되고, 너무 크면 표적을 넘겨 뒤로 떨어진다.
+const AXE_LOFT := 260.0
 
 
 # 조준 우선순위 거리: 파괴 오브젝트(관·상자)는 +90 보정으로 후순위 (적 우선, 근처 물체는 쏨)
@@ -3542,8 +3550,15 @@ func _fire_axe() -> void:
 	var dmg := (22.0 + lv * 7.0) * player.damage_mult * char_melee
 	player.play_attack()
 	var n: int = 1 + int((lv - 1) / 3.0) + player.amount
+	# 예전에는 velocity가 Vector2(off * 320, -1)이라 n=1(기본)일 때 off=0 → 정확히 위로만
+	# 던졌다. 사거리 제한(300px)까지 걸린 뒤로는 위로 던진 도끼가 아무것도 못 맞아, 대형도끼
+	# 캐릭터(모르덱)의 주무기가 사실상 놀았다. 포물선 정체성은 유지하고 조준만 붙인다:
+	# 수평 성분은 표적 방향, 거기에 던져 올리는 위 성분을 더해 표적 위로 아치를 그린다.
+	var targets := _targets_by_distance()
+	var basedir: Vector2 = player._last_dir if player else Vector2(0, -1)
 	for i in n:
 		var off := (i - (n - 1) / 2.0) * 0.22
+		var aim := _seek_dir(i, basedir, targets).rotated(off)
 		var a := Arrow.new()
 		a.damage = dmg
 		a.pierce = 4 + int(lv / 2.0)
@@ -3556,7 +3571,7 @@ func _fire_axe() -> void:
 		a.fx_hit = "fx_explosion"   # 도끼: 육중한 강타 폭발 (검 모양 fx_slash는 도끼에 안 맞아 되돌림)
 		a.life = 1.8 * char_range
 		a.position = player.position
-		a.velocity = Vector2(off * 320.0, -1).normalized() * randf_range(520.0, 640.0)
+		a.velocity = aim * randf_range(430.0, 520.0) + Vector2(0.0, -AXE_LOFT)
 		add_child(a)
 
 
@@ -5794,6 +5809,10 @@ func _spawn_dungeon_boss() -> void:
 
 
 const GEM_CAP := 120   # 젬 노드 상한 (성능). 초과 XP는 가까운 젬 병합/먼 젬 재활용으로 총량 유지.
+# 잡몹 경험치 젬 드랍 확률. 정예·중간보스·보스는 이 확률을 무시하고 확정 드랍한다.
+# 젬 값(Enemy.xp_value)의 x2.0 배수와 함께 총 XP 수입을 예전의 약 42%로 만든다.
+# ponytail: 곡선의 나머지 절반(_xp_requirement 곱, 무기 시간캡)은 실제 표본을 본 뒤 만진다.
+const GEM_DROP_CHANCE := 0.50
 
 func _spawn_gem(pos: Vector2, value: int) -> void:
 	var gems := get_tree().get_nodes_in_group("gems")
@@ -6153,7 +6172,14 @@ func on_enemy_killed(e: Enemy) -> void:
 					child.max_hp = child.hp
 					_apply_active_monster_threat(child)
 					add_child(child)
-	_spawn_gem(e.position, e.xp_value)
+	# 경험치 젬 드랍. 예전에는 처치 100%였고, 그게 성장 복리 루프의 입력이었다:
+	#   젬 100% → 레벨업 → 무기 레벨·패시브 → DPS↑ → 킬 속도↑ → 젬↑
+	# 요구 XP만 올리면 곡선이 미뤄질 뿐 루프는 계속 자가 가속한다(사장님 "아직도 레벨업이 너무 빠름").
+	# 잡몹 드랍을 확률로 바꿔 XP를 자동 수입이 아니라 "주우러 가는 것"으로 만든다. 사거리 제한·
+	# 넉백과 맞물려 젬이 놓인 자리(몬스터가 있던 곳)가 위험 지대가 되므로 판단이 생긴다.
+	# 의미 있는 처치(정예·중간보스)는 확정 드랍이라 헛수고로 느껴지지 않는다.
+	if e.elite or e.midboss or randf() < GEM_DROP_CHANCE:
+		_spawn_gem(e.position, e.xp_value)
 	# 골드 드랍. 뱀서식: 보물상자는 보스 전용 → 엘리트는 골드·젬만 확정, 상자 없음.
 	# 필드 재화 하향(사장님 "떨어지는 재화를 좀 줄여줘"): 정예 5+2N -> 3+N,
 	# 일반 확률 0.30 -> 0.16, 값 xp/4 -> xp/6. 골드는 확정 보상(보스·상인·제단)이 주 경로다.

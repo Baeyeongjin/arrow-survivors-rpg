@@ -59,6 +59,37 @@ const STAGE_OUTER_TINTS := {
 	"void_altar": Color(0.78, 0.76, 0.88),
 	"demon_castle": Color(0.75, 0.71, 0.74),
 }
+# 경계(전이) 타일의 하이라이트 압축. Wang 아틀라스 원본은 바닥 팩보다 훨씬 밝아서
+# 어두운 바닥 위에 UI 선처럼 얹혀 보였다(사장님: 빙하 흰 피아노 건반, 묘지 형광 연두 테두리).
+# 실측(assets/maps 전수, 보정 적용 후 HSV):
+#   테마      바닥 명도  경계 명도  경계 p95
+#   묘지        0.09      0.27      0.47
+#   지옥        0.15      0.22      0.41
+#   빙하        0.33      0.70      0.95   <- 거의 순백
+#   공허        0.16      0.18      0.38
+#   마왕성      0.10      0.27      0.56
+# 채도는 오히려 바닥이 더 높아(지옥 1.00) 원인이 아니었다. 순수하게 명도 문제다.
+# 곱셈 틴트로 누르면 어두운 묘사까지 같이 죽어 형태가 뭉개지므로, knee 위의 밝은 픽셀만
+# 선형 압축한다. 색조는 RGB 비율을 그대로 유지해 테마색이 바래지 않는다.
+# 경계는 바닥보다 "살짝" 밝아야 경계로 읽히므로 0으로 눌러 없애지 않는다.
+# cap은 빌드된 맵의 실측 대비(StageTileRendererTest의 STAGE_EDGE_TONE)로 되잡았다.
+# 1차 추정값 → 실측 gap → 보정한 값이다. 소스 아틀라스만 보고 정하면 팩 감광·톤 보정이
+# 겹쳐 실제 화면과 어긋난다.
+#   테마     1차 cap  실측 gap  보정 cap  최종 gap
+#   묘지       0.36    +0.157     0.31     +0.13 이하
+#   지옥       0.42    -0.072     0.44     그대로(벽이 바닥보다 어두운 건 정상)
+#   빙하       0.62    +0.235     0.48     +0.13 이하
+#   공허       0.40    +0.089     0.40     그대로
+#   마왕성     0.40    +0.134     0.37     여유 확보
+const STAGE_EDGE_ROLLOFF := {
+	# 묘지 경계는 분포가 평평해서(평균 0.226 · 피크 0.235) knee 0.22로는 압축 대상이 거의
+	# 없었다. cap만 내려도 gap이 0.005밖에 안 움직였다. knee를 평균 아래로 내려야 걸린다.
+	"graveyard": {"knee": 0.14, "cap": 0.26},
+	"hell_bridge": {"knee": 0.30, "cap": 0.44},
+	"glacier": {"knee": 0.38, "cap": 0.48},
+	"void_altar": {"knee": 0.26, "cap": 0.40},
+	"demon_castle": {"knee": 0.24, "cap": 0.37},
+}
 const STAGE_DIRS := {
 	1: "graveyard",
 	2: "hell_bridge",
@@ -144,6 +175,11 @@ static func build(layout, stage_id: int, world_size: Vector2, tint := Color.WHIT
 	# 같은 보정을 먹이면 뭉개진다. 그래서 그리는 쪽은 흰색으로 두고 여기서 나눠 적용한다.
 	if tint != Color.WHITE:
 		_apply_tint(atlas, tint)
+	# 아틀라스는 이제 경계 칸에만 쓰인다(채움은 팩, 이동 불가는 외곽 재질). 그래서 여기서
+	# 하이라이트를 누르면 정확히 "테두리만" 어두워지고 바닥·외곽은 건드리지 않는다.
+	var rolloff: Dictionary = STAGE_EDGE_ROLLOFF.get(stage_dir, {})
+	if not rolloff.is_empty():
+		_compress_highlights(atlas, float(rolloff["knee"]), float(rolloff["cap"]))
 
 	# 채움 칸 변형. 팩이 있으면 그걸 쓰고, 없으면 기존 Wang 채움 타일 한 장으로 되돌아간다.
 	var fill_variants: Array[Image] = []
@@ -467,6 +503,28 @@ static func _apply_tint(img: Image, tint: Color) -> void:
 		for x in img.get_width():
 			var c := img.get_pixel(x, y)
 			img.set_pixel(x, y, Color(c.r * tint.r, c.g * tint.g, c.b * tint.b, c.a))
+
+
+# knee 위의 밝은 픽셀만 선형 압축한다. v=1.0이 정확히 cap으로 떨어지고 knee 이하는 그대로다.
+# RGB를 같은 배수로 줄이므로 색조·채도는 보존되고 밝기만 내려간다.
+# 테스트가 같은 규칙을 직접 호출한다(StageTileRendererTest).
+static func compress_value(v: float, knee: float, cap: float) -> float:
+	if v <= knee or v <= 0.0:
+		return v
+	var span := maxf(0.0001, 1.0 - knee)
+	return knee + (v - knee) * ((cap - knee) / span)
+
+
+static func _compress_highlights(img: Image, knee: float, cap: float) -> void:
+	img.convert(Image.FORMAT_RGBA8)
+	for y in img.get_height():
+		for x in img.get_width():
+			var c := img.get_pixel(x, y)
+			var v: float = maxf(c.r, maxf(c.g, c.b))
+			if v <= knee:
+				continue
+			var scale := compress_value(v, knee, cap) / v
+			img.set_pixel(x, y, Color(c.r * scale, c.g * scale, c.b * scale, c.a))
 
 
 static func _corner_value(value) -> int:

@@ -99,8 +99,18 @@ func _melee_recovery_duration() -> float:
 	return 0.82 if elite else 0.52
 
 
+# 화면에 보이는 몸 반경. radius는 충돌·분리용 논리값이고 스프라이트는 radius * SPRITE_SCALE
+# 크기로 그려지므로, "닿았다"의 기준은 이쪽이다.
+func _visible_radius() -> float:
+	return radius * SPRITE_SCALE * 0.5
+
+
+# 근접 타격 판정 거리. 예전에는 radius + 30(정예 +50)이라 일반 몹이 몸이 닿기 30px 전에
+# 때렸다. 예고 부채꼴을 그리던 시절에는 그 여유가 화면에 보여서 납득됐지만, 전조를 모션으로
+# 바꾼 뒤에는 "안 닿았는데 맞고 밀려나는" 것으로만 남았다(사장님 보고). 넉백까지 붙어 더 도드라졌다.
+# 보이는 몸 반경 기준으로 되잡아 타격 순간이 시각적 접촉과 맞게 한다.
 func _melee_reach() -> float:
-	return radius + (50.0 if elite else 30.0)
+	return _visible_radius() + (14.0 if elite else 8.0)
 
 
 func _ranged_windup_duration() -> float:
@@ -187,7 +197,10 @@ func is_threatened() -> bool:
 func setup(t: Dictionary, time: float) -> void:
 	tier = t
 	color = t["color"]
-	xp_value = int(round(float(t["xp"]) * 2.4))   # 수가 줄어든 만큼 개체 경험치를 올린다
+	# 수가 줄어든 만큼 개체 경험치를 올렸었다(x2.4 = 총 XP 유지). 하지만 사장님은 총 XP가
+	# 유지되는 게 아니라 줄기를 원한다("레벨업이 너무 빠름"). x2.0으로 낮추고 젬 드랍도
+	# 확률로 바꿔(Main.GEM_DROP_CHANCE) 총 XP 수입을 예전의 약 42%로 내린다.
+	xp_value = int(round(float(t["xp"]) * 2.0))
 	radius = t.get("radius", 18.0)
 	# 시간 강화는 Main의 런 진행 보정과 합쳐 한 번의 완만한 곡선이 되도록 제한한다.
 	# 이전 0.45/초는 30분에 기본 HP 819를 만들어 스테이지 배수와 중복 폭증했다.

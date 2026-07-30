@@ -225,14 +225,27 @@ static func pick_enemy_tier(level: int, stage: int = 1) -> Dictionary:
 	return pool[idx]
 
 
-# 스테이지별 테마 몬스터 로스터 (뱀서식 통일 테마). 심연(6+)은 순환.
+# 스테이지별 테마 몬스터 로스터. 심연(6+)은 순환.
+# 몹 22종을 5던전 x 6칸(30칸)에 배분하므로 중복 8칸은 구조적으로 불가피하다.
+# 정리 기준(사장님 요청 "던전별로 등장하는 몬스터가 다른지 체크"):
+#   1) 최종 던전 마왕성의 정체성 확보 — 전용 4종(다크나이트·망령기사·광신도·가고일)을 두고
+#      나머지 2칸만 지옥과 공유한다. 이전에는 6종 중 3종이 여러 던전과 겹쳐 이미 본 얼굴이었다.
+#   2) 어떤 몹도 3개 던전 이상에 등장하지 않는다 — 최대 2회.
+#   3) 지옥의 화염 태그 4종(임프·용암두꺼비·헬하운드·데몬)은 상성이 걸려 있어 그대로 유지한다.
+#   4) 독버섯을 빙하에서 빼 부패 테마(묘지·공허)로 옮겼다. 냉기 던전에 독은 어긋났다.
+#   5) 22종을 전부 사용한다. 이전에는 용암두꺼비·독버섯이 한 던전에만 있었다.
 static func stage_roster(stage: int) -> Array:
 	var rosters := [
-		["slime", "goblin", "skeleton", "zombie", "bat", "ghoul"],   # 1 던전: 언데드
-		["skeleton", "orc", "fire_imp", "hellhound", "demon", "lava_toad"],   # 2 지옥: 화염
-		["mushroom", "bat", "ice_wisp", "frost_golem", "spider", "frost_spider"],  # 3 빙하: 냉기
-		["spider", "gargoyle", "void_wraith", "demon", "fire_imp", "eye_mass"],    # 4 공허: 공허
-		["hellhound", "demon", "wraith_knight", "dark_knight", "gargoyle", "cultist"],  # 5 마왕성: 마족
+		# 1 묘지: 부패·언데드 (전용 slime/zombie)
+		["slime", "zombie", "ghoul", "skeleton", "bat", "mushroom"],
+		# 2 지옥: 화염 (전용 fire_imp/lava_toad/hellhound/goblin)
+		["fire_imp", "lava_toad", "hellhound", "demon", "orc", "goblin"],
+		# 3 빙하: 냉기 (전용 ice_wisp/frost_golem)
+		["ice_wisp", "frost_spider", "frost_golem", "spider", "bat", "skeleton"],
+		# 4 공허: 이형·포자 (전용 eye_mass/void_wraith)
+		["eye_mass", "void_wraith", "spider", "frost_spider", "ghoul", "mushroom"],
+		# 5 마왕성: 마족 군단 (전용 dark_knight/wraith_knight/cultist/gargoyle)
+		["dark_knight", "wraith_knight", "cultist", "demon", "gargoyle", "orc"],
 	]
 	return rosters[(max(1, stage) - 1) % rosters.size()]
 

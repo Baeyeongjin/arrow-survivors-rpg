@@ -243,6 +243,22 @@ func _process(delta: float) -> void:
 
 	queue_redraw()
 
+# 무적 상태를 몸으로 표현한다. 링 오버레이는 화면을 가리고 이상해 보였다.
+#   회피 중       — 시안으로 물들고 반투명 (짧고 의도한 행동이라 또렷하게)
+#   피격 무적 중  — 12Hz로 몸이 깜빡인다 (고전 액션게임 관용구, 남은 시간이 읽힌다)
+#   평소          — 흰색(보정 없음)
+const INVULN_BLINK_HZ := 12.0
+
+
+func _invuln_tint() -> Color:
+	if dodge_t > 0.0:
+		return Color(0.62, 0.92, 1.10, 0.72)
+	if invuln <= 0.0:
+		return Color.WHITE
+	var on := fmod(invuln * INVULN_BLINK_HZ, 1.0) < 0.5
+	return Color(1.8, 1.8, 1.9, 0.95) if on else Color(1.0, 1.0, 1.0, 0.42)
+
+
 func _draw() -> void:
 	var r := radius
 	# 회피 잔상: 이동 방향 반대쪽에 짧은 속도선을 남겨 순간 이동량과 무적 구간을 읽게 한다.
@@ -300,7 +316,8 @@ func _draw() -> void:
 		var popx := sx * (1.0 - 0.05 * cast)
 		var popy := 1.0 + 0.10 * cast                   # 살짝 곧추섬
 		draw_set_transform(recoil, 0.0, Vector2(popx, popy))
-		draw_texture_rect(tex, Rect2(Vector2(-w / 2.0, -w / 2.0), Vector2(w, w)), false)
+		draw_texture_rect(tex, Rect2(Vector2(-w / 2.0, -w / 2.0), Vector2(w, w)), false,
+			_invuln_tint())
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	else:
 		var col: Color = _stage_data["color"]
@@ -326,10 +343,8 @@ func _draw() -> void:
 		draw_rect(Rect2(Vector2(-bw / 2.0 - 1.0, by - 1.0), Vector2(bw + 2.0, bh + 2.0)), Color(0, 0, 0, 0.8))
 		draw_rect(Rect2(Vector2(-bw / 2.0, by), Vector2(bw * f, bh)), Color(0.88, 0.18, 0.20))
 
-	# 피격 무적 표시
-	if invuln > 0.0:
-		var invuln_col := Color(0.45, 0.9, 1.0, 0.9) if dodge_t > 0.0 else Color(1, 1, 1, 0.7)
-		draw_arc(Vector2.ZERO, r + 5.0, 0.0, TAU, 24, invuln_col, 2.0)
+	# 무적 표시는 링을 그리지 않는다. 캐릭터 주위에 하얀 원이 생겨 이상해 보였다(사장님 보고).
+	# 대신 _invuln_tint()가 몸 자체를 깜빡이거나 물들여 상태를 알린다.
 	# 자석 버프 표시 (흡수 범위 링)
 	if magnet_t > 0.0:
 		draw_arc(Vector2.ZERO, current_pickup_radius(), 0.0, TAU, 48, Color(0.7, 0.5, 1.0, 0.35), 2.0)

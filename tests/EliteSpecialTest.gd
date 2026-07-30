@@ -8,6 +8,7 @@ extends SceneTree
 const EnemyScript = preload("res://Enemy.gd")
 const PlayerScript = preload("res://Player.gd")
 const GameConfigScript = preload("res://GameConfig.gd")
+const MainScript = preload("res://Main.gd")
 
 var failed := false
 
@@ -119,6 +120,56 @@ func _initialize() -> void:
 	hero.dodge_t = 0.1
 	hero.knockback(Vector2(450.0, 500.0), PlayerScript.KNOCKBACK_MELEE)
 	_expect(hero._kb == Vector2.ZERO, "회피 중에 넉백이 적용됨")
+
+	# 5) 근접 타격은 "보이는 몸"이 닿을 때만 들어와야 한다. 예고 도형을 걷어낸 뒤로
+	#    안 보이는 여유에서 맞고 밀려나는 것으로만 남았다(사장님 보고).
+	var biter := _make_elite("skeleton")
+	biter.elite = false
+	biter._melee_state = 2
+	biter._strike_dir = Vector2.RIGHT
+	var hero_radius := 12.6
+	var visible_contact: float = biter._visible_radius() + hero_radius
+	_expect(biter._melee_reach() < biter.radius + 30.0,
+		"근접 판정이 예전 여유(radius+30)로 되돌아감: %.1f" % biter._melee_reach())
+	_expect(biter._melee_reach() + hero_radius <= visible_contact + 12.0,
+		"보이는 접촉보다 %.1fpx 먼 곳에서 맞음" % (
+			biter._melee_reach() + hero_radius - visible_contact))
+	# 확실히 떨어진 거리에서는 안 맞고, 겹친 거리에서는 맞는다.
+	biter.position = Vector2.ZERO
+	_expect(not biter.can_damage_player(Vector2(visible_contact + 30.0, 0.0), hero_radius),
+		"몸이 한참 떨어졌는데 타격 판정이 들어옴")
+	_expect(biter.can_damage_player(Vector2(biter._visible_radius() * 0.5, 0.0), hero_radius),
+		"몸이 겹쳤는데 타격 판정이 안 들어옴")
+
+	# 6) 무적 표시는 링이 아니라 몸 틴트다. 하얀 원이 다시 생기면 안 된다.
+	var tinted = PlayerScript.new()
+	tinted.invuln = 0.0
+	tinted.dodge_t = 0.0
+	_expect(tinted._invuln_tint() == Color.WHITE, "평소에 몸 보정이 걸림")
+	tinted.dodge_t = 0.1
+	var dodge_tint: Color = tinted._invuln_tint()
+	_expect(dodge_tint.a < 1.0 and dodge_tint.b > dodge_tint.r,
+		"회피 중 몸이 시안·반투명으로 표시되지 않음: %s" % dodge_tint)
+	# 피격 무적: 남은 시간에 따라 깜빡여야 한다(켜짐·꺼짐이 모두 나타난다).
+	tinted.dodge_t = 0.0
+	var seen_bright := false
+	var seen_dim := false
+	for step in 40:
+		tinted.invuln = 0.6 - float(step) * 0.015
+		if tinted.invuln <= 0.0:
+			break
+		var blink: Color = tinted._invuln_tint()
+		if blink.a > 0.9:
+			seen_bright = true
+		elif blink.a < 0.6:
+			seen_dim = true
+	_expect(seen_bright and seen_dim, "피격 무적 중 몸이 깜빡이지 않음")
+
+	# 7) 도끼 조준: 표적이 없으면 바라보는 방향을 쓴다. 예전에는 항상 위로만 던졌다.
+	_expect(MainScript.AXE_LOFT > 0.0, "도끼 포물선 성분이 사라짐")
+
+	biter.free()
+	tinted.free()
 
 	grunt.free()
 	archer.free()
