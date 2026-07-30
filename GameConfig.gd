@@ -162,6 +162,51 @@ static func enemy_tiers() -> Array:
 			"sprite": "res://assets/enemies/dark_knight.png", "weak": "holy", "resist": "dark"},
 	]
 
+# 정예·중간보스 전용 특수 공격. 22종을 몬스터 특징 6계열로 묶는다.
+# color는 전조 동안 몸을 물들이는 색이다. 도형 오버레이(원·부채꼴)는 쓰지 않는다
+# (사장님: "원 같은 게 생겨서 집중도를 해친다"). 전조는 정지·몸 색·포즈 고정 셋으로만 읽힌다.
+const ELITE_SPECIALS := {
+	# 느리고 물컹한 것들: 몸을 부풀려 사방으로 독을 터뜨린다
+	"venom_burst": {"name": "독 분출", "color": Color(0.42, 0.95, 0.32)},
+	# 빠른 절지·비행: 앞쪽으로 속박 거미줄을 뱉어 발을 묶는다
+	"web_snare": {"name": "속박 거미줄", "color": Color(0.78, 0.88, 1.00)},
+	# 언데드·사수형: 넓은 부채꼴 일제사격
+	"bone_volley": {"name": "뼈 일제사격", "color": Color(0.96, 0.92, 0.74)},
+	# 화염 계열: 좁은 각도로 관통 화염을 내리 뿜는다
+	"flame_lash": {"name": "화염 채찍", "color": Color(1.00, 0.45, 0.12)},
+	# 거대 탱커·중장 기사: 제자리에서 지면을 내려쳐 주변을 쓸어버린다
+	"ground_slam": {"name": "지면 강타", "color": Color(1.00, 0.72, 0.24)},
+	# 마법·공허 계열: 느리고 큰 저주 구체로 진로를 막는다
+	"hex_orb": {"name": "저주 구체", "color": Color(0.74, 0.44, 1.00)},
+}
+const ELITE_SPECIAL_BY_KEY := {
+	"slime": "venom_burst", "zombie": "venom_burst", "ghoul": "venom_burst",
+	"mushroom": "venom_burst", "lava_toad": "venom_burst",
+	"spider": "web_snare", "frost_spider": "web_snare", "bat": "web_snare",
+	"skeleton": "bone_volley", "goblin": "bone_volley", "cultist": "bone_volley",
+	"fire_imp": "flame_lash", "hellhound": "flame_lash", "demon": "flame_lash",
+	"gargoyle": "flame_lash",
+	"orc": "ground_slam", "frost_golem": "ground_slam",
+	"wraith_knight": "ground_slam", "dark_knight": "ground_slam",
+	"ice_wisp": "hex_orb", "void_wraith": "hex_orb", "eye_mass": "hex_orb",
+	# 던전 전용 정예·중간보스 (고유 키, 스프라이트는 base 몹과 공유)
+	"ember_stalker": "flame_lash", "hell_enforcer": "flame_lash",
+	"grave_warden": "ground_slam", "tomb_knight": "ground_slam",
+	"frost_sentry": "hex_orb", "icewall_golem": "ground_slam",
+	"rift_stalker": "hex_orb", "abyss_oracle": "hex_orb",
+}
+
+
+# 티어 키 → 특수 공격 정의. 없으면 빈 사전(특수 공격 없음).
+static func elite_special(key: String) -> Dictionary:
+	var kind := str(ELITE_SPECIAL_BY_KEY.get(key, ""))
+	if kind == "" or not ELITE_SPECIALS.has(kind):
+		return {}
+	var info: Dictionary = (ELITE_SPECIALS[kind] as Dictionary).duplicate()
+	info["kind"] = kind
+	return info
+
+
 # 현재 레벨·스테이지에 맞는 몬스터 티어를 가중 선택
 static func pick_enemy_tier(level: int, stage: int = 1) -> Dictionary:
 	var pool: Array = []

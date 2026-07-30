@@ -69,6 +69,22 @@ var _hit_t := 0.0
 const HIT_DUR := 0.15
 const RANGED_WINDUP := 0.48
 const CHARGE_WINDUP := 0.55
+# 정예·중간보스 전용 특수 공격. 큰 기술이라 전조를 남기되 도형 오버레이는 쓰지 않는다
+# (사장님: "원 같은 게 생겨서 집중도를 해친다"). 전조는 몸으로만 읽힌다:
+#   1) 완전 정지 — 추격·일반 공격이 멈춘다
+#   2) 몸이 기술 색으로 물든다 — 진행도만큼 진해진다
+#   3) 공격 애니의 windup 포즈에서 프레임이 고정된다 — 루프하지 않아 "모으는 중"으로 읽힌다
+const SPECIAL_WINDUP := 0.85
+const SPECIAL_RECOVER := 0.95
+const SPECIAL_CD := 7.0
+const SPECIAL_RANGE := 430.0
+const SPECIAL_SLAM_RADIUS := 130.0
+var _sp: Dictionary = {}      # GameConfig.elite_special() 결과 (없으면 비어 있음)
+var _sp_state := 0            # 0 없음 / 1 전조 / 2 후딜
+var _sp_t := 0.0
+var _sp_cd := 0.0
+var _sp_lock := Vector2.DOWN
+var _sp_flash := 0.0          # 발동 순간 몸이 하얗게 터지는 짧은 섬광
 
 
 func _melee_windup_duration() -> float:
@@ -189,6 +205,10 @@ func setup(t: Dictionary, time: float) -> void:
 	weak = t.get("weak", "")
 	resist = t.get("resist", "")
 	_shoot_cd = randf_range(0.8, 1.8)
+	# 특수 공격은 정예로 승격됐을 때만 발동한다(elite는 Main이 setup 뒤에 세팅하므로
+	# 여기서는 정의만 찾아 둔다). 첫 쿨다운을 흩어 정예 여럿이 동시에 터지지 않게 한다.
+	_sp = GameConfig.elite_special(str(t.get("key", "")))
+	_sp_cd = randf_range(2.4, SPECIAL_CD)
 	# 스프라이트 경로는 tier가 정해지면 바뀌지 않는다. _draw에서 매 프레임 문자열을
 	# 만들면 300마리 × 60fps = 초당 수만 번의 할당이 되므로 여기서 한 번만 해석한다.
 	var key := str(t.get("key", ""))
@@ -280,6 +300,11 @@ func _process(delta: float) -> void:
 		if abs(to.x) > 4.0:
 			_face_left = to.x < 0.0
 		var dir: Vector2 = to.normalized() if d > 1.0 else Vector2.ZERO
+		# 정예·중간보스 특수 공격이 활성이면 일반 행동을 통째로 건너뛴다.
+		# 이 "멈춤"이 전조의 1번 신호다 — 추격이 딱 멈추면 큰 게 온다는 뜻.
+		if _tick_special(delta, dir, d):
+			queue_redraw()
+			return
 		match behavior:
 			"ranged":
 				# 사수: 방향을 잠근 조준선을 먼저 보여준 뒤 발사한다.
@@ -437,6 +462,99 @@ func take_damage(d: float, crit: bool = false, dot: bool = false, element: Strin
 		_kb = Vector2.ZERO
 		remove_from_group("enemies")
 
+# 특수 공격 진행. true를 반환하면 이번 프레임의 일반 행동을 건너뛴다(= 몸이 멈춘다).
+# 전조 중에는 이동·일반 공격을 모두 멈추고, _draw가 몸 색과 포즈로 신호를 낸다.
+func _tick_special(delta: float, dir: Vector2, distance: float) -> bool:
+	if _sp_flash > 0.0:
+		_sp_flash -= delta
+	if _sp.is_empty() or not elite:
+		return false
+	match _sp_state:
+		1:
+			_sp_t -= delta
+			_attacking = true
+			if _sp_t <= 0.0:
+				_release_special()
+				_sp_state = 2
+				_sp_t = SPECIAL_RECOVER
+			return true
+		2:
+			_sp_t -= delta
+			_attacking = false
+			if _sp_t <= 0.0:
+				_sp_state = 0
+				_sp_cd = SPECIAL_CD
+			return true
+	_sp_cd -= delta
+	if _sp_cd > 0.0 or distance > SPECIAL_RANGE or _hitstop > 0.0 or hold:
+		return false
+	# 지면 강타는 붙어서만 의미가 있다. 멀리서 허공을 치면 전조를 학습할 수 없다.
+	if str(_sp.get("kind", "")) == "ground_slam" and distance > SPECIAL_SLAM_RADIUS + 70.0:
+		return false
+	_sp_state = 1
+	_sp_t = SPECIAL_WINDUP
+	_sp_lock = dir if dir != Vector2.ZERO else Vector2.DOWN
+	_atk_t = 0.0
+	_attacking = true
+	return true
+
+
+func _release_special() -> void:
+	# 섬광은 순수 연출이라 Main 훅 유무와 무관하게 항상 켠다(부모 없는 테스트에서도 동일).
+	_sp_flash = 0.14
+	var m := get_parent()
+	if m == null:
+		return
+	var dmg := touch_damage
+	match str(_sp.get("kind", "")):
+		"venom_burst":
+			# 사방 10발 저속 독탄. 몸으로 막는 대신 틈을 보고 빠져나가야 한다.
+			for i in 10:
+				var a := TAU * float(i) / 10.0
+				_shoot(m, Vector2.from_angle(a), dmg * 0.75, 128.0, false)
+		"web_snare":
+			# 앞쪽 3발 둔화탄. 맞으면 발이 묶여 다음 근접을 피하기 어려워진다.
+			for i in 3:
+				var a := _sp_lock.angle() + (float(i) - 1.0) * 0.30
+				_shoot(m, Vector2.from_angle(a), dmg * 0.70, 240.0, true)
+		"bone_volley":
+			# 넓은 부채꼴 5발. 옆으로 흘리는 이동을 강제한다.
+			for i in 5:
+				var a := _sp_lock.angle() + (float(i) - 2.0) * 0.26
+				_shoot(m, Vector2.from_angle(a), dmg * 0.72, 285.0, false)
+		"flame_lash":
+			# 좁은 3발 고속 화염. 직선상에 서 있으면 겹쳐 맞는다.
+			for i in 3:
+				var a := _sp_lock.angle() + (float(i) - 1.0) * 0.09
+				_shoot(m, Vector2.from_angle(a), dmg * 0.85, 360.0, false, true)
+		"ground_slam":
+			# 투사체 없는 근접 광역. 전조를 보고 물러나는 것만이 답이다.
+			if m.has_method("apply_player_damage") and "player" in m and m.player:
+				var pl = m.player
+				if pl.invuln <= 0.0 \
+						and position.distance_to(pl.position) <= SPECIAL_SLAM_RADIUS + pl.radius:
+					m.apply_player_damage(maxf(1.0, dmg * 1.9 - pl.armor), "enemy_slam")
+					pl.invuln = 0.62
+					pl.play_hurt()
+					pl.knockback(position, 420.0)
+			if "shake_t" in m:
+				m.shake_t = maxf(float(m.shake_t), 0.22)
+		"hex_orb":
+			# 느린 대형 저주 구체 1발 + 좌우 보조 2발. 진로를 막아 위치를 강제한다.
+			_shoot(m, _sp_lock, dmg * 1.05, 96.0, true)
+			for s in [-0.55, 0.55]:
+				_shoot(m, Vector2.from_angle(_sp_lock.angle() + float(s)),
+					dmg * 0.55, 150.0, true)
+
+
+func _shoot(m: Node, dir: Vector2, dmg: float, speed_px: float,
+		chill: bool, fire: bool = false) -> void:
+	if not m.has_method("spawn_enemy_arrow"):
+		return
+	m.spawn_enemy_arrow(position, dir, dmg, chill, speed_px, fire,
+		str(tier.get("damage_source", "enemy_projectile")))
+
+
 # 몸박 넉백: 플레이어(또는 지점)에 겹칠 때 반대로 밀어냄. 쿨다운 무시(겹침 유지 방지).
 # 엘리트/보스급은 저항으로 덜 밀림. 죽는 중엔 무시.
 func shove(from: Vector2, force: float) -> void:
@@ -479,7 +597,11 @@ func _draw() -> void:
 		draw_rect(Rect2(-ebw / 2.0, eby, ebw * hp_ratio, bar_h),
 			Color(1.0, 0.78, 0.28) if elite else Color(0.92, 0.32, 0.30))
 	var tex: Texture2D = null
-	if _attacking and _frames_attack.size() > 0:
+	if _sp_state == 1 and _frames_attack.size() > 0:
+		# 전조 신호 3: windup 포즈에서 프레임을 고정한다. 루프하지 않으므로 평소 공격과
+		# 확실히 구분되고, "무기를 들어올린 채 멈춰 있다"로 읽힌다.
+		tex = _frames_attack[mini(2, _frames_attack.size() - 1)]
+	elif _attacking and _frames_attack.size() > 0:
 		tex = _frames_attack[int(_atk_t * 12.0) % _frames_attack.size()]
 	if tex == null:
 		# 걷기 4방향 (없으면 south 폴백, 서=동 반전)
@@ -500,6 +622,15 @@ func _draw() -> void:
 		# 피격 플래시는 self_modulate에서 별도로 처리하므로 순간 타격감도 유지된다.
 		var tint := (Color(4.0, 0.14, 0.12) if threat_timer > 0.0
 			else (Color(1.3, 1.08, 0.5) if elite else Color(1, 1, 1)))
+		# 전조 신호 2: 몸이 기술 색으로 물든다. 진행도만큼 진해져 발동 시점을 읽게 한다.
+		if _sp_state == 1:
+			var sp_p: float = clampf(1.0 - _sp_t / SPECIAL_WINDUP, 0.0, 1.0)
+			var glow: Color = _sp.get("color", Color(1.0, 0.6, 0.2))
+			tint = tint.lerp(Color(glow.r * 2.6, glow.g * 2.6, glow.b * 2.6),
+				0.30 + sp_p * 0.60)
+		elif _sp_flash > 0.0:
+			# 발동 순간만 하얗게 터진다. 링이 아니라 몸 자체가 번쩍여 타격 프레임이 읽힌다.
+			tint = tint.lerp(Color(3.4, 3.4, 3.6), clampf(_sp_flash / 0.14, 0.0, 1.0))
 		# 스프라이트 기본이 '왼쪽 향함'이므로: 왼쪽 볼 땐 그대로(1), 오른쪽 볼 땐 반전(-1)
 		var sx := 1.0 if _face_left else -1.0
 		# 걷기 흔들림(bob) + 미세 기우뚱(waddle): 단일 걷기 프레임에 생동감. 공격/멈칫 중엔 정지.

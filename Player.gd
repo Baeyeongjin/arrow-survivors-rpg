@@ -6,6 +6,12 @@ const DODGE_DURATION := 0.17
 const DODGE_DISTANCE := 112.0
 const DODGE_INVULN := 0.28
 const DODGE_COOLDOWN := 1.20
+# 피격 넉백. 초기 속도 220px/s가 900px/s^2로 죽으면 총 이동 약 27px, 지속 0.24초.
+# 회피 거리(112px)보다 훨씬 짧게 잡아 "밀렸다"는 무게감만 주고 조작권은 바로 돌려준다.
+const KNOCKBACK_DECAY := 900.0
+const KNOCKBACK_MELEE := 220.0
+const KNOCKBACK_PROJECTILE := 150.0
+const KNOCKBACK_BOSS := 300.0
 
 # 뱀서식 스탯
 var speed := 125.0   # 뱀서식: 느리고 묵직한 이동 (200 → 165 → 145 → 125)
@@ -16,6 +22,7 @@ var cooldown_mult := 1.0    # 무기 쿨다운 배수 (낮을수록 빠름)
 var pickup_radius := 90.0   # 뱀서식 젬 흡수 범위 (55→90)
 var attack_range := 0.0        # 자동공격 사거리 (Main이 매 프레임 갱신, 0이면 안 그림)
 var attack_range_idle := false # 사거리 안에 표적이 없어 무기가 대기 중
+var _kb := Vector2.ZERO        # 피격 넉백 속도 (px/s, 감쇠)
 var regen := 0.0
 var armor := 0.0
 var area_mult := 1.0        # 범위 무기 크기 배수
@@ -116,6 +123,16 @@ func _face_direction(dir: Vector2) -> void:
 		_dir = "n" if dir.y < 0.0 else "s"
 
 
+# 피격 넉백 적용. from은 때린 쪽 위치 — 그 반대로 밀린다. 회피 중에는 무시한다.
+func knockback(from: Vector2, force: float) -> void:
+	if _dying or dodge_t > 0.0:
+		return
+	var away := position - from
+	if away.length_squared() <= 0.01:
+		return
+	_kb = away.normalized() * force
+
+
 func try_dodge(direction: Vector2 = Vector2.ZERO) -> bool:
 	if _dying or dodge_cd > 0.0 or dodge_t > 0.0:
 		return false
@@ -203,6 +220,16 @@ func _process(delta: float) -> void:
 	else:
 		moving = false
 		_walking = false
+	# 피격 넉백. 로그라이크를 벗어난 뒤로는 "맞아도 제자리"가 무게감을 깎는다(사장님 요청).
+	# 입력 이동과 별개로 적분하고 지형은 resolve_move로 통과시켜, 벽을 뚫고 밀려나지 않게 한다.
+	# 회피 중에는 넉백을 받지 않는다 — 회피의 값이 사라지면 안 된다.
+	if _kb.length_squared() > 1.0:
+		if dodge_t > 0.0:
+			_kb = Vector2.ZERO
+		else:
+			var kb_target := position + _kb * delta
+			position = stage_layout.resolve_move(position, kb_target, radius) if stage_layout else kb_target
+			_kb = _kb.move_toward(Vector2.ZERO, KNOCKBACK_DECAY * delta)
 	_anim_t += delta
 	if _attack_t > 0.0:
 		_attack_t -= delta

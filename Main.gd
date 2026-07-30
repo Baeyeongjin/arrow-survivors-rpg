@@ -2486,6 +2486,9 @@ func _physics_process(delta: float) -> void:
 			apply_player_damage(max(1.0, e.touch_damage - player.armor), "enemy_melee")
 			player.invuln = 0.6
 			player.play_hurt()
+			# 정예는 더 세게 민다. 로그라이크를 벗어난 뒤 "맞으면 밀린다"가 무게감을 만든다.
+			player.knockback(e.position,
+				Player.KNOCKBACK_MELEE * (1.35 if e.elite else 1.0))
 			shake_t = 0.15
 			play_sfx("hurt", -8.0, 0.3)
 			_touched = true
@@ -2495,6 +2498,7 @@ func _physics_process(delta: float) -> void:
 			apply_player_damage(max(1.0, boss_touch - player.armor), "boss_contact")
 			player.invuln = 0.75
 			player.play_hurt()
+			player.knockback(boss.position, Player.KNOCKBACK_BOSS)
 
 	# 보스 탄막
 	for ea in get_tree().get_nodes_in_group("enemy_arrows"):
@@ -2515,6 +2519,7 @@ func _physics_process(delta: float) -> void:
 						apply_player_damage(max(1.0, ea.damage - player.armor), "enemy_projectile")
 						player.invuln = 0.6
 						player.play_hurt()
+						player.knockback(ea.position, Player.KNOCKBACK_PROJECTILE)
 				if ea.chill:
 					player.slow_t = 1.5
 				play_sfx("hurt", -8.0, 0.3)
@@ -5810,6 +5815,7 @@ func on_enemy_killed(e: Enemy) -> void:
 				apply_player_damage(max(1.0, e.touch_damage * 2.2 - player.armor), "enemy_explosion")
 				player.invuln = 0.6
 				player.play_hurt()
+				player.knockback(e.position, Player.KNOCKBACK_BOSS)
 		"splitter":
 			if not e.is_split:
 				for i in 2:
