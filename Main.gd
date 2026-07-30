@@ -4237,17 +4237,74 @@ func _spawn_one() -> void:
 	_make_enemy(_stage_spawn_pos(), false, _themed_tier())
 
 
-# Maps pressure the player from visibly different directions.  Layout validation
-# prevents a formation from materializing inside an impassable area.
+# 적 중심이 벽에서 최소 54px 떨어져 태어나므로, 반지름 18px 일반 몬스터는 벽과
+# 최소 36px 간격을 둔다. 화면 경계도 72px 바깥에서 시작해 벽에서 튀어나오는 연출을 없앤다.
+const ENEMY_SPAWN_CLEARANCE := 54.0
+const ENEMY_SPAWN_MARGIN := 72.0
+const ENEMY_SPAWN_ATTEMPTS := 40
+const ENEMY_SPAWN_FALLBACK_ATTEMPTS := 128
+
+
+# 맵별 압박 방향은 유지하되 막힌 점을 nearest_walkable로 벽 가장자리에 붙이지 않는다.
+# 열린 바닥 후보만 채택하고, 실패하면 전역 열린 바닥 중 화면 밖에서 가장 가까운 곳을 고른다.
 func _stage_spawn_pos() -> Vector2:
-	if player == null or map_stage <= 0:
+	if player == null:
+		return WORLD * 0.5
+	if map_stage <= 0 or stage_layout == null:
 		return _ring_pos(player.position)
 	var mode := str(GameConfig.stage_spawn_profile(map_stage).get("mode", "wide"))
-	for _try in 12:
-		var pos := _edge_pos(_stage_pressure_angle(mode), randf_range(45.0, 150.0))
-		if stage_layout == null or stage_layout.is_walkable(pos, 18.0):
-			return pos
-	return _ring_pos(player.position)
+	var view := get_viewport_rect().size
+	var zoom: float = player.cam.zoom.x if player.cam else 1.0
+	var half_view := view * 0.5 / maxf(zoom, 0.01)
+	return _find_stage_spawn_pos(player.position, half_view, mode)
+
+
+func _find_stage_spawn_pos(center: Vector2, half_view: Vector2, mode: String) -> Vector2:
+	for _try in ENEMY_SPAWN_ATTEMPTS:
+		var direction := Vector2.from_angle(_stage_pressure_angle(mode))
+		var expanded_view := half_view + Vector2.ONE * ENEMY_SPAWN_MARGIN
+		var edge_distance := _ray_to_view_edge(direction, expanded_view)
+		var candidate := center + direction * (
+			edge_distance + randf_range(24.0, 180.0))
+		if _stage_spawn_candidate_valid(candidate, center, half_view):
+			return candidate
+
+	# 좁은 복도나 월드 끝에서는 원하는 방향의 고리와 바닥이 만나지 않을 수 있다.
+	# 이때도 벽에 투영하지 않고, 충분한 여유가 있는 실제 바닥 후보만 사용한다.
+	var best := Vector2.INF
+	var best_score := INF
+	var target_distance := maxf(half_view.x, half_view.y) + ENEMY_SPAWN_MARGIN + 96.0
+	for _try in ENEMY_SPAWN_FALLBACK_ATTEMPTS:
+		var candidate: Vector2 = stage_layout.random_walkable(ENEMY_SPAWN_CLEARANCE)
+		if not _stage_spawn_candidate_valid(candidate, center, half_view):
+			continue
+		var score := absf(candidate.distance_to(center) - target_distance)
+		if score < best_score:
+			best_score = score
+			best = candidate
+	if best != Vector2.INF:
+		return best
+	# 극단적으로 화면이 월드 전체를 덮은 테스트 환경에서도 벽 여유만큼은 보장한다.
+	return stage_layout.random_walkable(ENEMY_SPAWN_CLEARANCE)
+
+
+func _stage_spawn_candidate_valid(
+		candidate: Vector2, center: Vector2, half_view: Vector2) -> bool:
+	if not stage_layout.is_walkable(candidate, ENEMY_SPAWN_CLEARANCE):
+		return false
+	var delta := (candidate - center).abs()
+	var expanded_view := half_view + Vector2.ONE * ENEMY_SPAWN_MARGIN
+	return delta.x > expanded_view.x or delta.y > expanded_view.y
+
+
+func _ray_to_view_edge(direction: Vector2, half_view: Vector2) -> float:
+	var x_distance := INF
+	var y_distance := INF
+	if absf(direction.x) > 0.0001:
+		x_distance = half_view.x / absf(direction.x)
+	if absf(direction.y) > 0.0001:
+		y_distance = half_view.y / absf(direction.y)
+	return minf(x_distance, y_distance)
 
 
 func _stage_pressure_angle(mode: String) -> float:
@@ -6127,18 +6184,6 @@ func _event_banner(txt: String) -> void:
 	stage_banner_t = 2.2
 	play_sfx("boss", -8.0)
 	shake_t = max(shake_t, 0.16)
-
-
-func _edge_pos(ang: float, extra := 0.0) -> Vector2:
-	var view := get_viewport_rect().size
-	var z: float = player.cam.zoom.x if player and player.cam else 1.0
-	var dist: float = max(view.x, view.y) / z * 0.58 + extra
-	var p := player.position + Vector2(cos(ang), sin(ang)) * dist
-	p.x = clamp(p.x, 10.0, WORLD.x - 10.0)
-	p.y = clamp(p.y, 10.0, WORLD.y - 10.0)
-	if stage_layout and not stage_layout.is_walkable(p, 18.0):
-		p = stage_layout.nearest_walkable(p, 18.0)
-	return p
 
 
 # RPG형 지역 위협: 몬스터를 추가 소환하지 않고 현재 적과 이후 등장하는 적을

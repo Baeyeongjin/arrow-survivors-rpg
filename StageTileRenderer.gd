@@ -25,6 +25,40 @@ const STAGE_FILL_TINTS := {
 	"void_altar": Color(0.86, 0.86, 1.02),
 	"demon_castle": Color(1.20, 1.20, 1.24),
 }
+# PixelLab에서 만든 외곽 전용 재질. 원본은 128px지만 게임에서는 64px로 한 번
+# 줄였다가 정수 2배 확대해 캐릭터·32px 바닥과 같은 굵기의 도트 클러스터를 만든다.
+const OUTER_TILE_SIZE := 128
+const OUTER_LOGICAL_SIZE := 64
+const OUTER_REGION_SIZE := 512
+const STAGE_OUTER_PACK := {
+	"graveyard": 6,
+	"hell_bridge": 6,
+	"glacier": 6,
+	"void_altar": 6,
+	"demon_castle": 6,
+}
+const STAGE_OUTER_BASE_INDEX := {
+	"graveyard": 2,
+	"hell_bridge": 5,
+	"glacier": 5,
+	"void_altar": 5,
+	"demon_castle": 5,
+}
+const STAGE_OUTER_ACCENTS := {
+	"graveyard": [0, 1, 5],
+	"hell_bridge": [0, 1, 4],
+	"glacier": [0, 3],
+	"void_altar": [0, 1, 4],
+	"demon_castle": [0, 1, 3],
+}
+# 이동 불가 외곽은 바닥보다 한 단계 어두워야 플레이어·적·경계가 먼저 읽힌다.
+const STAGE_OUTER_TINTS := {
+	"graveyard": Color(0.82, 0.82, 0.78),
+	"hell_bridge": Color(0.86, 0.76, 0.76),
+	"glacier": Color(0.58, 0.67, 0.78),
+	"void_altar": Color(0.78, 0.76, 0.88),
+	"demon_castle": Color(0.75, 0.71, 0.74),
+}
 const STAGE_DIRS := {
 	1: "graveyard",
 	2: "hell_bridge",
@@ -133,14 +167,15 @@ static func build(layout, stage_id: int, world_size: Vector2, tint := Color.WHIT
 		v.blit_rect(atlas, tile_rects[FILL_INDEX], Vector2i.ZERO)
 		fill_variants.append(v)
 
+	var outer_variants := _load_outer_variants(base, stage_dir)
 	var columns := ceili(world_size.x / float(CELL))
 	var rows := ceili(world_size.y / float(CELL))
 	var map_image := Image.create(columns * CELL, rows * CELL, false, Image.FORMAT_RGBA8)
 	# Wang lower tiles are intentionally skipped in fully blocked cells. Their tiny
 	# 32 px pattern looked like an editor grid when it covered most of the screen.
-	# A deterministic macro field gives each dungeon a readable rock/chasm layer,
-	# while transition tiles still draw the authored PixelLab cliff edge.
-	_paint_lower_field(map_image, stage_dir)
+	# Theme-specific PixelLab materials cover that field; irregular region masks keep
+	# their six variants from turning into another visible square grid.
+	_paint_lower_field(map_image, stage_dir, outer_variants)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(stage_dir)   # 스테이지마다 고정 — 매 판 같은 맵이 나온다
 	for row in rows:
@@ -167,7 +202,155 @@ static func build(layout, stage_id: int, world_size: Vector2, tint := Color.WHIT
 	return ImageTexture.create_from_image(map_image)
 
 
-static func _paint_lower_field(image: Image, stage_dir: String) -> void:
+static func _load_outer_variants(base: String, stage_dir: String) -> Array[Image]:
+	var variants: Array[Image] = []
+	for i in int(STAGE_OUTER_PACK.get(stage_dir, 0)):
+		var path := base + "outer/%02d.png" % i
+		if not ResourceLoader.exists(path):
+			continue
+		var texture := load(path) as Texture2D
+		if texture == null:
+			continue
+		var source := texture.get_image()
+		if source == null or source.is_empty():
+			continue
+		source.convert(Image.FORMAT_RGBA8)
+		# PixelLab의 128px 원본은 미세 묘사가 캐릭터보다 촘촘하다. nearest로
+		# 64→128 정수 확대해 흐림 없이 2px 단위의 굵은 도트로 통일한다.
+		source.resize(OUTER_LOGICAL_SIZE, OUTER_LOGICAL_SIZE, Image.INTERPOLATE_NEAREST)
+		source.resize(OUTER_TILE_SIZE, OUTER_TILE_SIZE, Image.INTERPOLATE_NEAREST)
+		var outer_tint: Color = STAGE_OUTER_TINTS.get(stage_dir, Color.WHITE)
+		if outer_tint != Color.WHITE:
+			_apply_tint(source, outer_tint)
+		variants.append(source)
+	return variants
+
+
+static func _paint_lower_field(
+		image: Image, stage_dir: String, variants: Array[Image]) -> void:
+	if variants.is_empty():
+		_paint_lower_fallback(image, stage_dir)
+		return
+
+	var base_index := clampi(
+		int(STAGE_OUTER_BASE_INDEX.get(stage_dir, 0)), 0, variants.size() - 1)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("outer-field-%s" % stage_dir)
+	_paint_outer_base(image, variants[base_index], rng)
+
+	# 변형을 네모 칸으로 나열하면 서로 다른 지질의 이음선이 바로 보인다. 큰 패치의
+	# 중심과 윤곽을 흔들어 뿌리·용암·빙벽·성운·석벽이 자연스럽게 섞이게 한다.
+	var half_region := int(OUTER_REGION_SIZE * 0.5)
+	for y in range(
+			-OUTER_REGION_SIZE,
+			image.get_height() + OUTER_REGION_SIZE,
+			OUTER_REGION_SIZE):
+		for x in range(
+				-OUTER_REGION_SIZE,
+				image.get_width() + OUTER_REGION_SIZE,
+				OUTER_REGION_SIZE):
+			if rng.randf() > 0.72:
+				continue
+			var center := Vector2i(
+				x + half_region + rng.randi_range(-120, 120),
+				y + half_region + rng.randi_range(-120, 120))
+			var patch_size := Vector2i(
+				rng.randi_range(150, 280),
+				rng.randi_range(120, 240))
+			var accent_indices: Array = STAGE_OUTER_ACCENTS.get(stage_dir, [])
+			var pick := base_index
+			if not accent_indices.is_empty():
+				pick = int(accent_indices[rng.randi_range(0, accent_indices.size() - 1)])
+				pick = clampi(pick, 0, variants.size() - 1)
+			_paint_jagged_texture(
+				image,
+				center,
+				patch_size,
+				variants[pick],
+				Vector2i(rng.randi_range(0, 127), rng.randi_range(0, 127)),
+				rng)
+
+
+static func _paint_outer_base(
+		image: Image, tile: Image, rng: RandomNumberGenerator) -> void:
+	# 하나의 큰 암반 무늬가 128px마다 같은 방향으로 반복되면 새 아트도 격자로 보인다.
+	# 좌우 또는 상하만 뒤집으면 이웃 타일과 거울축이 생겨 나비 무늬 벽지가 된다(실제 렌더에서
+	# 확인했다. 빙하가 가장 심했다). 점대칭인 180도 회전만 섞으면 거울축 없이 윤곽 반복만 끊긴다.
+	var orientations: Array[Image] = []
+	for rotated in 2:
+		var variant := Image.create(
+			tile.get_width(), tile.get_height(), false, Image.FORMAT_RGBA8)
+		variant.blit_rect(
+			tile,
+			Rect2i(Vector2i.ZERO, tile.get_size()),
+			Vector2i.ZERO)
+		if rotated == 1:
+			variant.flip_x()
+			variant.flip_y()
+		orientations.append(variant)
+	# 방향이 2개뿐이라 "직전과 다르게" 규칙을 두면 엄격한 교대 = 또 다른 규칙적 무늬가 된다.
+	# 그냥 5:5로 뽑는다.
+	for y in range(0, image.get_height(), OUTER_TILE_SIZE):
+		for x in range(0, image.get_width(), OUTER_TILE_SIZE):
+			var pick := rng.randi_range(0, orientations.size() - 1)
+			var copy_size := Vector2i(
+				mini(OUTER_TILE_SIZE, image.get_width() - x),
+				mini(OUTER_TILE_SIZE, image.get_height() - y))
+			image.blit_rect(
+				orientations[pick],
+				Rect2i(Vector2i.ZERO, copy_size),
+				Vector2i(x, y))
+
+
+static func _paint_jagged_texture(
+		image: Image, center: Vector2i, size: Vector2i, tile: Image,
+		texture_offset: Vector2i, rng: RandomNumberGenerator) -> void:
+	var row_height := 8
+	var half_h := maxi(row_height, int(size.y * 0.5))
+	for py in range(-half_h, half_h, row_height):
+		var edge_ratio := absf(float(py)) / float(half_h)
+		var half_width := int(
+			float(size.x) * 0.5 * sqrt(maxf(0.0, 1.0 - edge_ratio * edge_ratio)))
+		var width := maxi(8, half_width * 2 + rng.randi_range(-12, 14))
+		var left := center.x - int(width * 0.5) + rng.randi_range(-8, 8)
+		_blit_tiled_rect(
+			image,
+			tile,
+			Rect2i(
+				left,
+				center.y + py,
+				width,
+				row_height),
+			texture_offset)
+
+
+static func _blit_tiled_rect(
+		image: Image, tile: Image, rect: Rect2i, source_offset: Vector2i) -> void:
+	var clipped := rect.intersection(Rect2i(Vector2i.ZERO, image.get_size()))
+	if clipped.size.x <= 0 or clipped.size.y <= 0:
+		return
+	var tile_size := tile.get_size()
+	if tile_size.x <= 0 or tile_size.y <= 0:
+		return
+	var end_x := clipped.position.x + clipped.size.x
+	var end_y := clipped.position.y + clipped.size.y
+	var y := clipped.position.y
+	while y < end_y:
+		var source_y := posmod(y + source_offset.y, tile_size.y)
+		var copy_h := mini(end_y - y, tile_size.y - source_y)
+		var x := clipped.position.x
+		while x < end_x:
+			var source_x := posmod(x + source_offset.x, tile_size.x)
+			var copy_w := mini(end_x - x, tile_size.x - source_x)
+			image.blit_rect(
+				tile,
+				Rect2i(source_x, source_y, copy_w, copy_h),
+				Vector2i(x, y))
+			x += copy_w
+		y += copy_h
+
+
+static func _paint_lower_fallback(image: Image, stage_dir: String) -> void:
 	var palette: Dictionary = LOWER_PALETTES.get(stage_dir, LOWER_PALETTES["graveyard"])
 	var base: Color = palette["base"]
 	var deep: Color = palette["deep"]

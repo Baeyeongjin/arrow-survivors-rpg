@@ -7,6 +7,41 @@ const WORLD := StageLayout.WORLD
 const STAGE_DIRS := ["graveyard", "hell_bridge", "glacier", "void_altar", "demon_castle"]
 
 
+func _check_outer_pack(stage_id: int, failures: Array[String]) -> void:
+	var stage_dir: String = STAGE_DIRS[stage_id - 1]
+	var expected_count := int(StageTileRendererScript.STAGE_OUTER_PACK.get(stage_dir, 0))
+	var base := "res://assets/maps/%s/" % stage_dir
+	for i in expected_count:
+		var path := base + "outer/%02d.png" % i
+		if not ResourceLoader.exists(path):
+			failures.append("stage %d: missing PixelLab outer tile %s" % [stage_id, path])
+			continue
+		var texture := load(path) as Texture2D
+		if texture == null or texture.get_size() != Vector2(128, 128):
+			failures.append("stage %d: invalid 128px outer tile %s" % [stage_id, path])
+	var variants: Array[Image] = StageTileRendererScript._load_outer_variants(base, stage_dir)
+	if variants.size() != expected_count:
+		failures.append(
+			"stage %d: expected %d outer variants, loaded %d" % [
+				stage_id, expected_count, variants.size()])
+		return
+	# 렌더 단계에서 64→128 nearest 확대가 적용됐으면 모든 2×2 블록은 같은 색이다.
+	for variant_index in variants.size():
+		var image: Image = variants[variant_index]
+		for y in range(0, image.get_height(), 2):
+			for x in range(0, image.get_width(), 2):
+				var color := image.get_pixel(x, y)
+				if image.get_pixel(x + 1, y) != color \
+						or image.get_pixel(x, y + 1) != color \
+						or image.get_pixel(x + 1, y + 1) != color:
+					failures.append(
+						"stage %d: outer variant %d lost integer pixel scaling" % [
+							stage_id, variant_index])
+					return
+	print("STAGE_OUTER_PACK_OK stage=%d variants=%d logical=%d" % [
+		stage_id, variants.size(), StageTileRendererScript.OUTER_LOGICAL_SIZE])
+
+
 func _pure_lower_color_count(texture: Texture2D, layout) -> int:
 	var colors := {}
 	var image := texture.get_image()
@@ -31,6 +66,7 @@ func _pure_lower_color_count(texture: Texture2D, layout) -> int:
 func _initialize() -> void:
 	var failures: Array[String] = []
 	for stage_id in range(1, 6):
+		_check_outer_pack(stage_id, failures)
 		var layout = StageLayoutScript.make(stage_id, Color.WHITE)
 		var texture := StageTileRendererScript.build(layout, stage_id, WORLD)
 		if texture == null:
