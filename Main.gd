@@ -3978,15 +3978,17 @@ func _spawn_wave() -> void:
 	# RPG 탐험 밀도 (사장님 요청 "맵이 넓어지면 나오는 게 줄어야 한다").
 	# 몹은 플레이어 주변 링에 스폰되므로 월드를 넓혀도 화면 밀도는 자동으로 안 준다.
 	# 그래서 상한·웨이브 규모를 직접 낮춘다: 방을 하나씩 헤치고 나가는 압박이 되도록.
-	#   동시 상한 90+0.75t → 56+0.42t, 웨이브 10+t/8 → 6+t/14, 상한 84 → 40
+	# 2차 하향(사장님 요청 "확 줄이고 한 마리한 마리 강력하게"). 개체는 Enemy.setup에서
+	# 체력 x2.2 / 피해 x1.45 / 경험치 x2.4로 올라가 총량은 유지되고 교전이 길어진다.
+	#   동시 상한 90+0.75t → 28+0.22t, 웨이브 10+t/8 → 3+t/24, 웨이브 상한 84 → 16
 	var density := float(_current_wave.get("density", 1.0))
-	var cap: int = min(MAX_ENEMIES, int((56 + time_survived * 0.42) * density))
+	var cap: int = min(MAX_ENEMIES, int((28 + time_survived * 0.22) * density))
 	if boss_spawned and diff_label == "쉬움":
 		cap = int(cap * 0.6)
 	var cur := get_tree().get_nodes_in_group("enemies").size()
 	if cur >= cap:
 		return
-	var cnt: int = min(40, int((6 + int(time_survived / 14.0)) * run_pressure_mult * density))
+	var cnt: int = min(16, int((3 + int(time_survived / 24.0)) * run_pressure_mult * density))
 	cnt = min(cnt, cap - cur)
 	for i in cnt:
 		_spawn_one()
@@ -10620,7 +10622,7 @@ func _refresh_expedition_route_panel() -> void:
 		if route_index < expedition_route_icons.size():
 			expedition_route_icons[route_index].texture = Assets.tex(str(route.get("icon", "")))
 			expedition_route_previews[route_index].texture = Assets.tex(
-				"res://assets/maps/%s/preview.png" % STAGE_MAP_DIRS[target_stage - 1])
+				"res://assets/maps/%s/floor/00.png" % STAGE_MAP_DIRS[target_stage - 1])
 			expedition_route_boss_icons[route_index].texture = Assets.tex(
 				"res://assets/boss/%s.png" % str(target_data["boss"]))
 			expedition_route_name_labels[route_index].text = str(route["name"])
@@ -11662,14 +11664,16 @@ func _build_ui(s: Vector2) -> void:
 		stage_button.add_theme_color_override("font_hover_color", Color(1.0, 0.92, 0.56))
 		var stage_data: Dictionary = GameConfig.stage_info(stage_index)
 		var preview_bg := TextureRect.new()
-		var preview_floor := "res://assets/maps/%s/preview.png" % STAGE_MAP_DIRS[stage_index - 1]
+		var preview_floor := "res://assets/maps/%s/floor/00.png" % STAGE_MAP_DIRS[stage_index - 1]
 		preview_bg.texture = Assets.tex(preview_floor)
 		preview_bg.position = Vector2(5, 5) * frame_scale
 		preview_bg.size = slot.size * frame_scale - Vector2(10, 10) * frame_scale
 		preview_bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		preview_bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		preview_bg.stretch_mode = TextureRect.STRETCH_TILE
 		preview_bg.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-		# 미니맵 썸네일에 스테이지 톤을 이미 구워 넣었으므로 여기서 감광하지 않는다.
+		# 배치가 매 판 WFC로 새로 생성되므로 미니맵 썸네일은 거짓 정보다. 실제 바닥 타일을
+		# 깔고 던전 색으로 물들여 재질·색 정체성만 보여준다.
+		preview_bg.modulate = Color(stage_data["tint"])
 		preview_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		stage_button.add_child(preview_bg)
 		stage_button.move_child(preview_bg, 0)

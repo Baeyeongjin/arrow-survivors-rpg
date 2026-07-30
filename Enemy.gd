@@ -128,15 +128,18 @@ func apply_slow(amount: float, time: float) -> void:
 func setup(t: Dictionary, time: float) -> void:
 	tier = t
 	color = t["color"]
-	xp_value = t["xp"]
+	xp_value = int(round(float(t["xp"]) * 2.4))   # 수가 줄어든 만큼 개체 경험치를 올린다
 	radius = t.get("radius", 18.0)
 	# 시간 강화는 Main의 런 진행 보정과 합쳐 한 번의 완만한 곡선이 되도록 제한한다.
 	# 이전 0.45/초는 30분에 기본 HP 819를 만들어 스테이지 배수와 중복 폭증했다.
-	hp = (12.0 + time * 0.055) * float(t["hp_mult"])
+	# RPG 전환(사장님 요청 "수는 줄이고 한 마리한 마리 강력하게"): 수를 절반 이하로
+	# 줄인 만큼 개체를 단단하게 만든다. 체력 x2.2 / 접촉 피해 x1.45 / 경험치 x2.4로
+	# 총 XP·총 위협은 유지하되 한 마리를 처리하는 시간이 길어져 HP바가 의미를 갖는다.
+	hp = (12.0 + time * 0.055) * float(t["hp_mult"]) * 2.2
 	# 느린 적/빠른 적 차이를 끝까지 보존한다. 과거엔 10분 이후 대부분 상한 90에 붙었다.
 	speed = min(96.0, (26.0 + time * 0.028) * float(t["speed_mult"]))
 	# 30분 접촉 피해 기본값 약 24. 플레이어 방어·난이도 체력으로 생존 차이를 만든다.
-	touch_damage = (10.0 + time * 0.008) * float(t.get("dmg_mult", 1.0))
+	touch_damage = (10.0 + time * 0.008) * float(t.get("dmg_mult", 1.0)) * 1.45
 	behavior = t.get("behavior", "")
 	weak = t.get("weak", "")
 	resist = t.get("resist", "")
@@ -462,13 +465,17 @@ func _draw() -> void:
 	_draw_attack_warning()
 	if slow_factor < 1.0:
 		draw_circle(Vector2.ZERO, radius + 3.0, Color(0.5, 0.8, 1.0, 0.28))
-	# 엘리트 HP바 (뱀서식: 큰 개체만 표시. 잡몹은 히트플래시로만). 머리 위 금색 바.
-	if elite:
+	# HP바: RPG 전환으로 개체가 단단해졌으니(체력 x2.2) 잡몹도 남은 체력이 보여야
+	# 계속 때릴지 피할지 판단할 수 있다. 엘리트는 금색·굵게, 잡몹은 붉게·얇게 구분.
+	# 만피 잡몹은 바를 숨겨 화면이 바로 뒤덮이지 않게 한다(맞은 적만 표시).
+	var hp_ratio: float = clamp(hp / maxf(1.0, max_hp), 0.0, 1.0)
+	if elite or hp_ratio < 0.999:
 		var ebw: float = radius * 2.0
-		var eratio: float = clamp(hp / maxf(1.0, max_hp), 0.0, 1.0)
 		var eby: float = -radius * SPRITE_SCALE * 0.5 - 9.0
-		draw_rect(Rect2(-ebw / 2.0 - 1.0, eby - 1.0, ebw + 2.0, 7.0), Color(0.05, 0.04, 0.06, 0.92))
-		draw_rect(Rect2(-ebw / 2.0, eby, ebw * eratio, 5.0), Color(1.0, 0.78, 0.28))
+		var bar_h: float = 5.0 if elite else 3.0
+		draw_rect(Rect2(-ebw / 2.0 - 1.0, eby - 1.0, ebw + 2.0, bar_h + 2.0), Color(0.05, 0.04, 0.06, 0.92))
+		draw_rect(Rect2(-ebw / 2.0, eby, ebw * hp_ratio, bar_h),
+			Color(1.0, 0.78, 0.28) if elite else Color(0.92, 0.32, 0.30))
 	var tex: Texture2D = null
 	if _attacking and _frames_attack.size() > 0:
 		tex = _frames_attack[int(_atk_t * 12.0) % _frames_attack.size()]
