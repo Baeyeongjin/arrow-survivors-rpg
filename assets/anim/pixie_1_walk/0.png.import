@@ -2,12 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dq1qq6wr8pg22"
-valid=false
+uid="uid://cur0uw4cf214e"
+path="res://.godot/imported/0.png-0c7f659edab7f4e3c648a6f0b6453d2f.ctex"
+metadata={
+"vram_texture": false
+}
 
 [deps]
 
 source_file="res://assets/anim/pixie_1_walk/0.png"
+dest_files=["res://.godot/imported/0.png-0c7f659edab7f4e3c648a6f0b6453d2f.ctex"]
 
 [params]
 
