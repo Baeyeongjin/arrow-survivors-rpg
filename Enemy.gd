@@ -448,64 +448,6 @@ func shove(from: Vector2, force: float) -> void:
 		_kb = away.normalized() * force * resist
 
 
-func _draw_attack_warning() -> void:
-	var danger := Color(1.0, 0.18, 0.10)
-	if behavior == "ranged" and _shoot_windup > 0.0:
-		var aim_p := clampf(1.0 - _shoot_windup / _ranged_windup_duration(), 0.0, 1.0)
-		var aim_end := _shoot_lock * 460.0
-		draw_line(Vector2.ZERO, aim_end, Color(danger.r, danger.g, danger.b, 0.16 + aim_p * 0.30), 2.0 + aim_p * 2.0)
-		# 진행하는 밝은 마디가 발사 시점을 읽게 한다.
-		var bead := _shoot_lock * 460.0 * aim_p
-		draw_circle(bead, 3.0 + aim_p * 2.5, Color(1.0, 0.82, 0.45, 0.65 + aim_p * 0.30))
-		var aim_angle := _shoot_lock.angle()
-		draw_arc(Vector2.ZERO, radius + 8.0, aim_angle - PI * 0.45, aim_angle + PI * 0.45, 18,
-			Color(1.0, 0.55, 0.24, 0.45 + aim_p * 0.35), 2.5)
-		return
-	if behavior == "charge" and _cstate == 1:
-		var charge_p := clampf(1.0 - _ctimer / _charge_windup_duration(), 0.0, 1.0)
-		var charge_len := maxf(speed * 2.6, 340.0) * 0.4
-		var charge_end := _clock * charge_len
-		var charge_side := _clock.orthogonal() * (radius + 7.0)
-		var charge_shape := PackedVector2Array([
-			-charge_side, charge_side, charge_end + charge_side, charge_end - charge_side
-		])
-		draw_colored_polygon(charge_shape, Color(danger.r, danger.g, danger.b, 0.07 + charge_p * 0.12))
-		draw_line(-charge_side, charge_end - charge_side, Color(danger.r, danger.g, danger.b, 0.42 + charge_p * 0.38), 2.5)
-		draw_line(charge_side, charge_end + charge_side, Color(danger.r, danger.g, danger.b, 0.42 + charge_p * 0.38), 2.5)
-		draw_arc(charge_end, radius + 7.0, 0.0, TAU, 24, Color(1.0, 0.62, 0.24, 0.45 + charge_p * 0.40), 3.0)
-		return
-	if behavior != "" and behavior != "exploder" and behavior != "splitter":
-		return
-	if _melee_state != 1 and _melee_state != 2:
-		return
-	var striking := _melee_state == 2
-	var melee_p := 1.0 if striking else clampf(1.0 - _melee_t / _melee_windup_duration(), 0.0, 1.0)
-	var reach := _melee_reach()
-	var fill_alpha := 0.20 if striking else 0.045 + melee_p * 0.075
-	var edge_alpha := 0.95 if striking else 0.36 + melee_p * 0.48
-	if elite:
-		draw_circle(Vector2.ZERO, reach, Color(danger.r, danger.g, danger.b, fill_alpha))
-		var closing_radius := lerpf(reach * 1.42, reach, melee_p)
-		draw_arc(Vector2.ZERO, closing_radius, 0.0, TAU, 40,
-			Color(1.0, 0.48, 0.16, edge_alpha), 3.0 + melee_p * 2.0)
-		if melee_p > 0.62:
-			draw_arc(Vector2.ZERO, reach * 0.52, 0.0, TAU, 32,
-				Color(1.0, 0.86, 0.42, edge_alpha * 0.65), 2.5)
-	else:
-		var base := _strike_dir.angle()
-		var cone := PackedVector2Array([Vector2.ZERO])
-		for i in 13:
-			var a := base - 0.72 + 1.44 * float(i) / 12.0
-			cone.append(Vector2.from_angle(a) * reach)
-		draw_colored_polygon(cone, Color(danger.r, danger.g, danger.b, fill_alpha))
-		draw_arc(Vector2.ZERO, reach, base - 0.72, base + 0.72, 20,
-			Color(1.0, 0.48, 0.16, edge_alpha), 2.0 + melee_p * 1.8)
-		draw_line(Vector2.ZERO, Vector2.from_angle(base - 0.72) * reach,
-			Color(danger.r, danger.g, danger.b, edge_alpha * 0.60), 1.5)
-		draw_line(Vector2.ZERO, Vector2.from_angle(base + 0.72) * reach,
-			Color(danger.r, danger.g, danger.b, edge_alpha * 0.60), 1.5)
-
-
 func _draw() -> void:
 	# 죽음 연출: 잠깐 흰빛으로 팽창 → 쪼그라들며 위로 떠올라 사라짐 (뱀서식 펑)
 	if _dying:
@@ -521,7 +463,8 @@ func _draw() -> void:
 			var tint := Color(2.6, 2.6, 2.8, a) if p < 0.22 else Color(1.1, 1.0, 1.05, a)
 			draw_texture_rect(dtex, Rect2(Vector2(-w / 2.0, -w / 2.0 + yoff), Vector2(w, w)), false, tint)
 		return
-	_draw_attack_warning()
+	# 공격 예고 도형은 제거했다(사장님 "모션으로만 파악"). 22종 공격 애니가 windup
+	# 시작부터 재생되므로 예고 역할을 모션이 맡는다. 보스 패턴 전조는 Boss.gd가 따로 그린다.
 	if slow_factor < 1.0:
 		draw_circle(Vector2.ZERO, radius + 3.0, Color(0.5, 0.8, 1.0, 0.28))
 	# HP바: RPG 전환으로 개체가 단단해졌으니(체력 x2.2) 잡몹도 남은 체력이 보여야

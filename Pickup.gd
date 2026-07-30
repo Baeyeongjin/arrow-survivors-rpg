@@ -1,6 +1,6 @@
 class_name Pickup
 extends Node2D
-# 맵에 숨겨진 아이템: 상자/하트/자석/폭탄
+# 맵에 숨겨진 아이템: 상자/하트/기력 물약/통닭/장비
 
 var kind := "chest"
 var radius := 11.0   # 젬(Gem.GEM_PX)과 겉보기 크기를 맞춤 — 바닥 아이템끼리 통일
@@ -101,26 +101,9 @@ func _draw() -> void:
 				var hip := o + Vector2(sgn * 5.0, -3.0)
 				draw_line(hip, hip + Vector2(sgn * 5.0, -7.0), meat, 4.0)
 				draw_circle(hip + Vector2(sgn * 5.5, -8.0), 2.8, Color(0.96, 0.92, 0.82))
-		"magnet":
-			draw_arc(o, 9, PI, TAU, 16, Color(0.7, 0.5, 1.0), 5.0)
-			draw_rect(Rect2(o + Vector2(-9, -2), Vector2(4, 8)), Color(0.7, 0.5, 1.0))
-			draw_rect(Rect2(o + Vector2(5, -2), Vector2(4, 8)), Color(0.7, 0.5, 1.0))
 		"bomb":
 			draw_circle(o, 11, Color(0.1, 0.1, 0.12))
 			draw_line(o + Vector2(0, -11), o + Vector2(5, -16), Color(1, 0.7, 0.2), 2.0)
-		"rosary":
-			# 황금 십자가 + 구슬
-			var gold := Color(1.0, 0.9, 0.45)
-			draw_line(o + Vector2(0, -12), o + Vector2(0, 10), gold, 3.5)
-			draw_line(o + Vector2(-7, -4), o + Vector2(7, -4), gold, 3.5)
-			draw_circle(o + Vector2(0, 13), 3.0, gold)
-		"clock":
-			# 오롤로기온: 시안 시계 (테두리 + 바늘)
-			var cy := Color(0.6, 0.9, 1.0)
-			draw_arc(o, 11, 0.0, TAU, 20, cy, 2.5)
-			draw_line(o, o + Vector2(0, -8), cy, 2.0)
-			draw_line(o, o + Vector2(6, 2), cy, 2.0)
-			draw_circle(o, 2.0, cy)
 		_:
 			# chest
 			draw_rect(Rect2(o + Vector2(-12, -8), Vector2(24, 16)), Color(0.55, 0.35, 0.15))
@@ -137,13 +120,9 @@ func _glow_color() -> Color:
 			return Color(1, 0.3, 0.4)
 		"chicken":
 			return Color(1.0, 0.6, 0.35)
-		"magnet":
-			return Color(0.7, 0.5, 1.0)
+		"potion":
+			return Color(0.70, 0.48, 1.0)
 		"bomb":
 			return Color(1, 0.6, 0.2)
-		"rosary":
-			return Color(1.0, 0.95, 0.6)
-		"clock":
-			return Color(0.6, 0.9, 1.0)
 		_:
 			return Color(1, 0.85, 0.3)

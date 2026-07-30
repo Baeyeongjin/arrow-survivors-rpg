@@ -1990,7 +1990,7 @@ func _autoshot() -> void:
 			g.value = [1, 5, 12, 30][i]
 			g.position = base + Vector2(i * 46.0, 0)
 			add_child(g)
-		var kinds := ["heart", "magnet", "clock", "rosary", "chest", "chicken"]
+		var kinds := ["heart", "potion", "chest", "chicken"]
 		for i in kinds.size():
 			var p := Pickup.new()
 			p.kind = kinds[i]
@@ -4611,15 +4611,12 @@ func _scatter_breakables(n: int) -> void:
 func _random_floor_item() -> String:
 	# 은두야 제거 후 남은 4종에 그 몫(14%)을 원래 비율대로 재분배
 	# (heart 40 / magnet 24 / clock 15 / rosary 7 → 합 86을 100으로 정규화)
-	var roll := randf()
-	if roll < 0.465:
-		return "heart"     # 회복 (흔함)
-	elif roll < 0.744:
-		return "magnet"    # 자석
-	elif roll < 0.919:
-		return "clock"     # 시간정지
-	else:
-		return "rosary"    # 화면 전멸 (드묾)
+	# RPG 정리(사장님 결정): 바닥 아이템은 "자원 보충" 2종만 남긴다.
+	# 로저리(화면 전멸)와 시계(4초 전체 정지)는 우연히 위기를 무효화해, 사거리 제한과
+	# 몬스터 상향으로 만든 압박을 확률로 지웠다. 자석 버프 픽업은 빼되 자석 범위 자체는
+	# 자석돌 패시브·영혼 등불 유물·메타 성장(pickup_radius)이 계속 담당한다.
+	#   하트 = 체력 자원 / 기력 물약 = 스킬 자원
+	return "heart" if randf() < 0.60 else "potion"
 
 
 func _spawn_pickup_random() -> void:
@@ -4663,41 +4660,14 @@ func on_pickup(kind: String) -> void:
 			hfx.max_life = 0.5
 			add_child(hfx)
 			_event_banner("[회복] 통닭 — 체력 완전 회복")
-		"magnet":
-			# 전맵 즉시 흡수 → 6초간 흡수 범위 대폭 확대 버프
-			player.magnet_t = 6.0
-		"clock":
-			# 오롤로기온: 모든 적 4초 시간정지 (완전 둔화) + 시안 플래시
-			_flash(Color(0.5, 0.85, 1.0, 0.6))
-			shake_t = max(shake_t, 0.2)
-			play_sfx("levelup", -8.0)
-			var cfx := Effect.new()
-			cfx.kind = "ring"
-			cfx.position = player.position
-			cfx.rad = 900.0
-			cfx.col = Color(0.6, 0.9, 1.0)
-			cfx.life = 0.5
-			cfx.max_life = 0.5
-			add_child(cfx)
-			for e in get_tree().get_nodes_in_group("enemies"):
-				if is_instance_valid(e) and e.has_method("apply_slow"):
-					e.apply_slow(1.0, 4.0)   # 100% 둔화 = 정지
-		"rosary":
-			# 화면의 모든 적 전멸 (뱀서 로자리)
-			_flash(Color(1.0, 1.0, 0.95, 0.7))
-			shake_t = max(shake_t, 0.35)
-			play_sfx("levelup", -4.0)
-			var rfx := Effect.new()
-			rfx.kind = "ring"
-			rfx.position = player.position
-			rfx.rad = 1000.0
-			rfx.col = Color(1.0, 0.95, 0.7)
-			rfx.life = 0.6
-			rfx.max_life = 0.6
-			add_child(rfx)
-			for e in get_tree().get_nodes_in_group("enemies"):
-				if is_instance_valid(e):
-					e.take_damage(99999.0)
+		"potion":
+			# 기력 물약: E 무기 스킬 쿨다운을 즉시 비운다. 우연히 위기를 지우는 대신
+			# "아껴뒀다 쓰는 자원"이라 위기 해제의 주체가 플레이어 조작으로 남는다.
+			skill_e_cd = 0.0
+			_flash(Color(0.62, 0.42, 0.92, 0.34))
+			play_sfx("levelup", -9.0)
+			_spawn_proc_fx("ring", player.position, 96.0, Color(0.72, 0.50, 1.0), 0.42)
+			_event_banner("[기력] 물약 — 무기 스킬 재사용 준비 완료")
 		_:
 			# chest: 회복 + 골드 → 진화 조건 충족 무기 있으면 진화, 없으면 보너스 카드
 			player.hp = min(player.max_hp, player.hp + 15.0)
