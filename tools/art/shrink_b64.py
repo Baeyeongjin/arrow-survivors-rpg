@@ -6,13 +6,14 @@ import io
 import sys
 from PIL import Image
 
-LIMIT = 1440   # corvius 1432는 통과했고 ~1800은 잘렸다. 그 사이에서 보수적으로 잡는다.
+# 1400자대는 불안정하다(1432 통과 / 1388·1424 잘림). 1100자 이하는 안정적으로 통과했다.
+LIMIT = 1100
 
 
 def shrink(path: str) -> str:
     src = Image.open(path).convert("RGBA")
     alpha = src.split()[3]
-    for colors in (32, 24, 16, 12, 8):
+    for colors in (32, 24, 16, 12, 8, 6, 4, 3):
         # 알파를 뺀 RGB만 팔레트화하고, 알파는 이진 마스크로 되돌린다.
         rgb = src.convert("RGB").quantize(colors=colors, method=Image.MEDIANCUT)
         out = rgb.convert("RGBA")
