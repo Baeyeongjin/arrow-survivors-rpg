@@ -549,6 +549,7 @@ var xp_to_next := 10
 var pending_levelups := 0
 
 var layout_seed_override := 0   # 0=스테이지 고정 배치(캡처·테스트), 그 외=이번 층 랜덤 시드
+var room_wake_timer := 0.0      # 방 배치 몹 각성 검사 주기
 var spawn_timer := 1.0
 var pickup_timer := 10.0
 var breakable_timer := 6.0   # 파괴 오브젝트 주기 스폰
@@ -2107,7 +2108,15 @@ func _process(delta: float) -> void:
 		var wave_density: float = maxf(0.5, float(_current_wave.get("density", 1.0)))
 		var density_pace: float = lerpf(1.0, wave_density, 0.45)
 		spawn_timer = max(0.14, max(0.16, 0.45 - time_survived * 0.0008) / density_pace) * diff_spawn * boss_ease
-		_spawn_wave()
+		# 방 배치형 던전에서는 상시 스폰을 끈다. 방을 비웠는데 허공에서 계속 걸어나오면
+		# "정리했다"는 감각이 사라지기 때문. 압박은 목표 점령 중과 보스전에만 붙인다.
+		if _ambient_spawn_allowed():
+			_spawn_wave()
+	# 방에 미리 배치한 몹을 플레이어가 접근할 때 깨운다.
+	room_wake_timer -= delta
+	if room_wake_timer <= 0.0:
+		room_wake_timer = 0.25
+		_wake_nearby_room_enemies()
 
 	# 주기적으로 새 아이템 스폰 (뱀서식: 필드 아이템은 드물게)
 	pickup_timer -= delta
@@ -3994,6 +4003,67 @@ func _spawn_wave() -> void:
 		_spawn_one()
 
 
+# ── 방 배치형 스폰 ──────────────────────────────────────────────────────
+# 층을 만들 때 방마다 몹을 미리 깔아두고(hold=true) 플레이어가 접근하면 깨운다.
+# 처치한 방은 다시 채우지 않으므로 "이 방은 정리했다"가 성립한다.
+# 상시 스폰(뱀서식)은 끄고, 목표 점령 중과 보스전에만 압박용으로 되살린다.
+const ROOM_WAKE_RADIUS := 560.0
+const ROOM_ENEMY_MIN := 3
+const ROOM_ENEMY_MAX := 6
+const ROOM_ELITE_CHANCE := 0.14
+
+
+# 상시 스폰을 허용할 구간인가. 던전 밖(심연·캠페인)에서는 기존 뱀서 규칙을 유지한다.
+func _ambient_spawn_allowed() -> bool:
+	if map_stage <= 0:
+		return true
+	if boss_spawned:
+		return true   # 보스전은 호드 압박 유지
+	# 목표(봉인비·균열·화로)가 살아 있는 동안만 추가 스폰 — 점령이 곧 위험이 된다.
+	return not get_tree().get_nodes_in_group("grave_objectives").is_empty() \
+		or not get_tree().get_nodes_in_group("hell_objectives").is_empty() \
+		or not get_tree().get_nodes_in_group("glacier_objectives").is_empty()
+
+
+# 층 시작 시 방마다 몹을 배치한다. 시작 방은 비워 둬 첫 숨을 돌릴 수 있게 한다.
+func _populate_rooms() -> void:
+	if stage_layout == null or map_stage <= 0:
+		return
+	for i in stage_layout.rooms.size():
+		var room: Rect2 = stage_layout.rooms[i]
+		if room.has_point(stage_layout.landmark_position):
+			continue   # 시작 방
+		var count := randi_range(ROOM_ENEMY_MIN, ROOM_ENEMY_MAX)
+		for _n in count:
+			var spot := _random_point_in_room(room)
+			if spot == Vector2.INF:
+				continue
+			_make_enemy(spot, randf() < ROOM_ELITE_CHANCE, _themed_tier(), 0.0, true)
+
+
+func _random_point_in_room(room: Rect2) -> Vector2:
+	for _try in 10:
+		var candidate := Vector2(
+			randf_range(room.position.x + 40.0, room.end.x - 40.0),
+			randf_range(room.position.y + 40.0, room.end.y - 40.0))
+		if stage_layout.is_walkable(candidate, 18.0):
+			return candidate
+	return Vector2.INF
+
+
+# 접근한 방의 몹만 깨운다. 먼 방의 몹은 계속 고정이라 CPU도 아낀다.
+func _wake_nearby_room_enemies() -> void:
+	if player == null or state != State.PLAYING:
+		return
+	var wake_sq := ROOM_WAKE_RADIUS * ROOM_WAKE_RADIUS
+	for node in get_tree().get_nodes_in_group("enemies"):
+		var e := node as Enemy
+		if e == null or not e.hold:
+			continue
+		if e.position.distance_squared_to(player.position) <= wake_sq:
+			e.hold = false
+
+
 func _clear_easy_boss_arena() -> void:
 	if diff_label != "쉬움" or player == null:
 		return
@@ -5571,6 +5641,7 @@ func _transition_to_expedition_floor(target_stage: int) -> void:
 	_scatter_pickups(int(3 + 5 * diff_loot))
 	var stage_breakables := int(GameConfig.stage_spawn_profile(map_stage).get("breakables", 4))
 	_scatter_breakables(stage_breakables)
+	_populate_rooms()   # 방 배치형: 새 층의 방마다 몹을 미리 깔아둔다
 	_gen_decorations()
 	if stage_label:
 		stage_label.text = "[%d/%d층]  %s\n%s" % [
@@ -8608,6 +8679,7 @@ func _start_game(d: Dictionary) -> void:
 	if map_stage > 0:
 		stage_breakables = int(GameConfig.stage_spawn_profile(map_stage).get("breakables", stage_breakables))
 	_scatter_breakables(stage_breakables)   # stage-dependent initial placement
+	_populate_rooms()   # 방 배치형: 1층의 방마다 몹을 미리 깔아둔다
 	if stage_label and map_stage > 0:
 		stage_label.text = "[1/%d층]  %s 원정 시작" % [
 			EXPEDITION_FLOORS, str(GameConfig.stage_info(map_stage)["name"])]
