@@ -147,11 +147,17 @@ func setup(t: Dictionary, time: float) -> void:
 	# 스프라이트 경로는 tier가 정해지면 바뀌지 않는다. _draw에서 매 프레임 문자열을
 	# 만들면 300마리 × 60fps = 초당 수만 번의 할당이 되므로 여기서 한 번만 해석한다.
 	var key := str(t.get("key", ""))
-	_frames_attack = Assets.frames("res://assets/anim/%s_attack" % key)
-	_frames_walk = Assets.frames("res://assets/anim/%s_walk" % key)
-	_frames_walk_n = Assets.frames("res://assets/anim/%s_walk_n" % key)
-	_frames_walk_e = Assets.frames("res://assets/anim/%s_walk_e" % key)
-	_sprite_tex = Assets.tex(str(t.get("sprite", "")))
+	# 애니 폴더는 key가 아니라 스프라이트 파일명으로 찾는다. 정예·중간보스 티어 6종
+	# (ember_stalker/hell_enforcer/grave_warden/tomb_knight/frost_sentry/icewall_golem)은
+	# 고유 key를 쓰지만 스프라이트는 base 몹과 같으므로, 같은 프레임 폴더를 복제하지 않고
+	# 그대로 재사용한다. 일반 몹은 key == 스프라이트 파일명이라 동작이 바뀌지 않는다.
+	var sprite := str(t.get("sprite", ""))
+	var akey := key if sprite.is_empty() else sprite.get_file().get_basename()
+	_frames_attack = Assets.frames("res://assets/anim/%s_attack" % akey)
+	_frames_walk = Assets.frames("res://assets/anim/%s_walk" % akey)
+	_frames_walk_n = Assets.frames("res://assets/anim/%s_walk_n" % akey)
+	_frames_walk_e = Assets.frames("res://assets/anim/%s_walk_e" % akey)
+	_sprite_tex = Assets.tex(sprite)
 	if _sprite_tex == null:
 		_sprite_tex = Assets.tex("res://assets/enemies/%s.png" % key)
 
