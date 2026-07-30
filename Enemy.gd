@@ -99,8 +99,13 @@ func _melee_recovery_duration() -> float:
 	return 0.82 if elite else 0.52
 
 
+# 피해 범위는 눈에 보이는 스프라이트를 기준으로 잡는다.
+# 예전에는 radius + 30(정예 50)이라 반경 18 기준 48px까지 닿았는데, 스프라이트 반폭은
+# radius * SPRITE_SCALE / 2 = 22px뿐이었다. 보이는 몸의 2배가 넘는 곳까지 맞았고,
+# 예고 이펙트(_draw_attack_warning)까지 제거된 뒤로는 그 범위를 읽을 방법도 없었다.
+# 이제 스프라이트 반폭에 무기 길이만 더한다.
 func _melee_reach() -> float:
-	return radius + (50.0 if elite else 30.0)
+	return radius * SPRITE_SCALE * 0.5 + (18.0 if elite else 10.0)
 
 
 func _ranged_windup_duration() -> float:

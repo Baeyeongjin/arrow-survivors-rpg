@@ -145,7 +145,12 @@ const WMUZZLE := {
 	"chain_bolt": [Color(0.7, 0.85, 1.0), "burst"],
 	"frost_ring": [Color(0.7, 0.9, 1.0), "spin"],
 }
-const MAX_WEAPONS := 3   # M2 무기 숙련: 주무기 1 + 보조 2 (뱀서식 6수집 → 집중형으로 축소)
+# 주무기 1 + 보조 1. 뱀서식 6수집 → 3 → 2로 좁혀 왔다.
+# 2로 내린 것은 취향이 아니라 레벨 곡선 개편의 필요조건이다. 한 런의 레벨이 약 85회에서
+# 35회로 줄어 레벨업 카드 총량도 함께 줄었는데, 무기 3개가 그걸 나눠 가지면 무기당
+# 약 5.8레벨에 그쳐 만렙(MAX_WLEVEL 8)에 못 닿는다. 그러면 진화(×1.45)가 영영 안 열린다.
+# 2개면 무기당 약 8.75레벨이라 진화가 다시 사거리 안으로 들어온다.
+const MAX_WEAPONS := 2
 const MAX_PASSIVES := 4   # M2: 패시브 슬롯 상한 (빌드 수렴)
 const MAX_WLEVEL := 8   # 뱀서식: 무기 만렙 Lv8
 const MAX_PLEVEL := 5
@@ -6061,8 +6066,15 @@ const DEATH_FX := {
 	"frost_sentry": "fx_death_ice", "icewall_golem": "fx_death_ice",
 	"rift_stalker": "fx_death_soul", "abyss_oracle": "fx_death_soul",
 }
-func _death_fx_for(key: String) -> String:
-	return DEATH_FX.get(key, "fx_death_blood")
+# 사망 이펙트 통일(사장님 요청). 4타입(소울/피/재/얼음)이 서로 크게 다르지 않은데
+# 몹마다 갈려서 화면만 산만했다. 하나로 모은다.
+# 위 DEATH_FX 표는 지우지 않고 남겨 둔다. 나중에 속성별 연출을 되살리고 싶으면
+# 아래 한 줄만 되돌리면 되고, 그때 표를 다시 만들 필요가 없다.
+const DEATH_FX_UNIFIED := "fx_death_blood"
+
+
+func _death_fx_for(_key: String) -> String:
+	return DEATH_FX_UNIFIED
 
 
 func on_enemy_killed(e: Enemy) -> void:
@@ -6638,10 +6650,18 @@ func _gain_xp(amount: int) -> void:
 # 현재 레벨에서 다음 레벨까지 필요한 XP.
 # Lv25에서 943까지 뛰던 2차식 대신 뱀서식 선형 성장 + Lv20 이후 완만한 보정을 사용한다.
 func _xp_requirement(current_level: int) -> int:
-	var late_level: int = maxi(0, current_level - 20)
-	# 레벨업 속도 하향(사장님 요청, 3차): 요구 XP 2.5배 -> 3.6배. 위협 효과의 XP 이중 적용도 제거.
-	# 곱만 키우면 후반이 더 늘어지므로 후반 보정(late_level) 지수는 그대로 둔다.
-	return int((8 + current_level * 5 + int(pow(float(late_level), 1.35) * 0.65)) * 3.6)
+	# 4차 개편 — 이번엔 '레벨당 요구량'이 아니라 '레벨 횟수'를 줄인다.
+	#
+	# 1~3차는 계수만 2.5배 → 3.6배로 키웠는데 체감이 안 바뀌었다. tools/balance/PowerCurve.gd로
+	# 재보니 이유가 나왔다. 무기 화력은 6분이면 4.89배에서 상한에 닿아 멈추고, 그 뒤 성장은
+	# 전부 damage_mult가 낸다. 그런데 damage_mult는 레벨업마다 감소수익 없이 더해지기만 한다.
+	# 즉 총 파워는 '레벨 횟수'에 선형으로 비례하는데, 기존 곡선은 16분에 약 85레벨을 준다.
+	# 균형점(적 HP 배수를 따라잡는 데 필요한 damage_mult)은 같은 시점에 4.81배인데
+	# 실제로는 그걸 훌쩍 넘겨 쌓인다.
+	#
+	# 그래서 같은 총 XP(약 87k)로 약 35레벨만 나오게 2차 곡선으로 바꾼다.
+	# 레벨 횟수가 줄어든 만큼 회당 보상은 키운다(리밋 브레이크 6%→10%).
+	return int(45 + 6.0 * pow(float(current_level), 2.0))
 
 
 func _start_levelup() -> void:
@@ -8760,8 +8780,11 @@ func _card_options() -> Array:
 # 리밋 브레이크 카드 풀 (중복 회피). 모든 성장 소진 후 레벨업이 낭비되지 않게.
 func _limit_break_card(used: Dictionary) -> Dictionary:
 	var pool := [
-		{"title": "[리밋] 힘", "desc": "공격력 +6%", "icon": "res://assets/items/icon_spinach.png",
-			"act": func() -> void: player.damage_mult += 0.06},
+		# 레벨 횟수가 약 85 → 35로 줄었으므로 회당 보상을 키운다(6% → 10%).
+		# 이 카드는 성장이 다 소진된 뒤 무한 반복되는 유일한 항목이라, 총량은
+		# 레벨 횟수에 그대로 비례한다. 횟수가 준 만큼 총 인플레는 여전히 내려간다.
+		{"title": "[리밋] 힘", "desc": "공격력 +10%", "icon": "res://assets/items/icon_spinach.png",
+			"act": func() -> void: player.damage_mult += 0.10},
 		{"title": "[리밋] 신속", "desc": "쿨다운 -4%", "icon": "res://assets/items/icon_tome.png",
 			"act": func() -> void: player.cooldown_mult = max(0.3, player.cooldown_mult * 0.96)},
 		{"title": "[리밋] 확장", "desc": "효과 범위 +8%", "icon": "res://assets/items/icon_candela.png",
@@ -8779,9 +8802,9 @@ func _limit_break_card(used: Dictionary) -> Dictionary:
 			c["r"] = "rare"
 			return c
 	# 다 쓰면 힘 반복
-	return {"r": "rare", "title": "[리밋] 힘", "desc": "공격력 +6%",
+	return {"r": "rare", "title": "[리밋] 힘", "desc": "공격력 +10%",
 		"icon": "res://assets/items/icon_spinach.png",
-		"act": func() -> void: player.damage_mult += 0.06}
+		"act": func() -> void: player.damage_mult += 0.10}
 
 
 func _passive_defs() -> Dictionary:
@@ -11802,10 +11825,17 @@ func _build_ui(s: Vector2) -> void:
 	stage_label = Label.new()
 	stage_label.visible = false
 	stage_label.position = Vector2(0, 300)
-	stage_label.size = Vector2(s.x, 60)
+	# 2줄짜리 층 배너(_show_floor_banner)가 잘리지 않을 높이.
+	stage_label.size = Vector2(s.x, 76)
 	stage_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	stage_label.add_theme_font_size_override("font_size", 42)
+	stage_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	# 30 = UiTypography.DEFAULT_SIZE(15)의 정확히 2배.
+	# 42는 2.8배라 픽셀 폰트 획 두께가 칸마다 어긋나 뭉개져 보였다.
+	stage_label.add_theme_font_size_override("font_size", 30)
 	stage_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+	# 어두운 맵 위에서 글자만 떠 보이지 않게 외곽선을 준다.
+	stage_label.add_theme_color_override("font_outline_color", Color(0.04, 0.03, 0.02))
+	stage_label.add_theme_constant_override("outline_size", 6)
 	hud.add_child(stage_label)
 
 	# 성능 카운터 (우상단, 부하 테스트용)
@@ -14022,14 +14052,105 @@ func _draw() -> void:
 					draw_circle(bpos, 6.0, Color(0.85, 0.95, 1.0))
 					draw_line(bpos + Vector2(0, 8), bpos + Vector2(0, -10), Color(0.8, 0.9, 1.0), 3.0)
 
-	# 나침반: 화면 밖 보스 방향만 표시 (아이템 위치 화살표는 제거 — 추후 '노란 표식' 유물로만 공개)
+	# 미션 네비게이터: 화면 밖 목표 방향을 알린다.
+	# 미니맵을 없애고(90c92f9) 맵을 3840으로 키운 뒤(76c88bc) 한 화면에 보이는 범위가
+	# 전체 넓이의 1/45라, 봉인비·화로 같은 층 목표를 눈으로 찾기 어려워졌다.
+	# 보스뿐 아니라 미완료 목표와 중간보스도 같이 가리킨다.
+	# (아이템 화살표는 여전히 제외 — '노란 표식' 유물로만 공개하는 기존 설계를 지킨다.)
 	if state == State.PLAYING:
-		var half := view * 0.5
+		# view는 뷰포트 픽셀이라 줌으로 나눠야 실제로 보이는 월드 범위가 된다.
+		# 이걸 빼먹으면(예전 코드) 보스가 화면을 벗어나고도 한참 뒤에야 화살표가 떴다.
+		var nav_zoom: float = player.cam.zoom.x if player.cam else 1.0
+		var half := view * 0.5 / nav_zoom
 		var edge: float = min(half.x, half.y) - 34.0
-		if boss and is_instance_valid(boss):
-			var tb: Vector2 = boss.position - player.position
-			if abs(tb.x) >= half.x or abs(tb.y) >= half.y:
-				_draw_compass_arrow(player.position + tb.normalized() * edge, tb.angle(), Color(1.0, 0.25, 0.25))
+		for marker in _navigator_targets():
+			var to_target: Vector2 = marker["pos"] - player.position
+			if absf(to_target.x) < half.x and absf(to_target.y) < half.y:
+				continue   # 화면 안에 있으면 화살표가 오히려 방해된다
+			if to_target.length_squared() < 1.0:
+				continue
+			var dir_n := to_target.normalized()
+			var at := player.position + dir_n * edge
+			_draw_compass_arrow(at, dir_n.angle(), marker["color"])
+			# 거리 표기. 32px = 타일 1칸을 1m로 읽는다.
+			var meters := int(round(to_target.length() / 32.0))
+			var font := UiTypography.font()
+			var text := "%dm" % meters
+			var fsize := 13
+			var tw := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, fsize).x
+			var tpos := at + dir_n * 20.0 - Vector2(tw * 0.5, -5.0)
+			draw_string_outline(font, tpos, text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, fsize, 4,
+				Color(0.02, 0.02, 0.03, 0.9))
+			draw_string(font, tpos, text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, fsize, marker["color"])
+
+
+# 던전별 목표 노드 그룹. 다섯 던전이 같은 규칙으로 그룹 이름을 붙여 둬서 그대로 쓴다.
+const NAV_OBJECTIVE_GROUPS := {
+	GRAVE_STAGE: "grave_objectives", HELL_STAGE: "hell_objectives",
+	GLACIER_STAGE: "glacier_objectives", VOID_STAGE: "void_objectives",
+	CASTLE_STAGE: "castle_objectives",
+}
+# 완료 판정 이름이 노드마다 다르다(봉인비 is_completed, 화로 is_lit, 균열 is_sealed,
+# 닻 is_stabilized, 성문 is_opened). 공통 인터페이스가 없어 이름으로 찾는다.
+const NAV_DONE_METHODS := ["is_completed", "is_lit", "is_sealed", "is_stabilized", "is_opened"]
+
+
+func _nav_objective_done(node: Node) -> bool:
+	for method_name in NAV_DONE_METHODS:
+		if node.has_method(method_name):
+			return bool(node.call(method_name))
+	return false
+
+
+func _nav_midboss_alive() -> bool:
+	match map_stage:
+		GRAVE_STAGE: return grave_midboss_alive
+		HELL_STAGE: return hell_midboss_alive
+		GLACIER_STAGE: return glacier_midboss_alive
+		VOID_STAGE: return void_midboss_alive
+		CASTLE_STAGE: return castle_midboss_alive
+	return false
+
+
+# 지금 향해야 할 곳 하나만 고른다. 여러 개를 동시에 그리면 화면 가장자리가 화살표로
+# 지저분해지고, 무엇이 먼저인지도 흐려진다.
+func _navigator_targets() -> Array:
+	if player == null:
+		return []
+	# 최종보스가 나오면 그 외에는 볼 것이 없다.
+	if boss and is_instance_valid(boss):
+		return [{"pos": boss.position, "color": Color(1.0, 0.25, 0.25)}]
+
+	var group := str(NAV_OBJECTIVE_GROUPS.get(map_stage, ""))
+	if group != "":
+		var nearest: Node2D = null
+		var best := INF
+		for node in get_tree().get_nodes_in_group(group):
+			if not is_instance_valid(node) or _nav_objective_done(node):
+				continue
+			var d: float = player.position.distance_squared_to(node.position)
+			if d < best:
+				best = d
+				nearest = node
+		if nearest:
+			return [{"pos": nearest.position, "color": Color(1.0, 0.82, 0.35)}]
+
+	# 목표를 다 끝냈는데 중간보스가 살아 있으면 최종 관문이 잠겨 있다. 그쪽을 가리킨다.
+	# 중간보스 노드 참조를 따로 들고 있지 않으므로 살아 있는 정예 중 가장 가까운 것을 쓴다.
+	if _nav_midboss_alive():
+		var elite_target: Node2D = null
+		var elite_best := INF
+		for node in get_tree().get_nodes_in_group("enemies"):
+			var e := node as Enemy
+			if e == null or not is_instance_valid(e) or not e.elite:
+				continue
+			var ed: float = player.position.distance_squared_to(e.position)
+			if ed < elite_best:
+				elite_best = ed
+				elite_target = e
+		if elite_target:
+			return [{"pos": elite_target.position, "color": Color(1.0, 0.55, 0.20)}]
+	return []
 
 
 func _draw_compass_arrow(pos: Vector2, ang: float, col: Color) -> void:

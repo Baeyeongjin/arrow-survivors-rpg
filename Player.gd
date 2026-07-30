@@ -293,6 +293,14 @@ func _draw() -> void:
 		tex = Assets.tex(_stage_data.get("sprite", ""))
 	# 캐스팅 플로리시: 발사 직후 0.15초 팝(반동+늘어남). attack 프레임 유무와 무관하게 적용.
 	var cast: float = clamp((_attack_t - 0.30) / 0.15, 0.0, 1.0)
+	# 피격 플래시. 예전에는 캐릭터 둘레에 하얀 링을 그려 알렸는데, 위 257번 줄에서
+	# 헤일로를 걷어낸 것과 같은 이유로("캐릭터 주변에 원이 떠 보였음") 링을 없앴다.
+	# hurt 애니메이션 자산이 없으므로 스프라이트를 붉게 물들여 대신한다.
+	var hurt_flash: float = clampf(_hurt_t / 0.3, 0.0, 1.0)
+	var body_tint := Color.WHITE
+	if hurt_flash > 0.0:
+		body_tint = Color(1.0, 1.0 - 0.6 * hurt_flash, 1.0 - 0.6 * hurt_flash)
+
 	if tex:
 		var w := r * 2.6
 		var sx := 1.0 if _dir == "w" else -1.0   # 스프라이트 기본 '왼쪽 향함': 서쪽은 그대로, 동쪽만 반전
@@ -300,12 +308,12 @@ func _draw() -> void:
 		var popx := sx * (1.0 - 0.05 * cast)
 		var popy := 1.0 + 0.10 * cast                   # 살짝 곧추섬
 		draw_set_transform(recoil, 0.0, Vector2(popx, popy))
-		draw_texture_rect(tex, Rect2(Vector2(-w / 2.0, -w / 2.0), Vector2(w, w)), false)
+		draw_texture_rect(tex, Rect2(Vector2(-w / 2.0, -w / 2.0), Vector2(w, w)), false, body_tint)
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	else:
 		var col: Color = _stage_data["color"]
-		draw_circle(Vector2.ZERO, r, col)
-		draw_circle(Vector2.ZERO, r * 0.6, col.lightened(0.35))
+		draw_circle(Vector2.ZERO, r, col * body_tint)
+		draw_circle(Vector2.ZERO, r * 0.6, (col * body_tint).lightened(0.35))
 
 	# 캐스팅 섬광: 발사 방향(손끝)에 밝은 스파크 — 무기를 쏘는 순간의 시각 신호
 	if cast > 0.0:
@@ -326,10 +334,10 @@ func _draw() -> void:
 		draw_rect(Rect2(Vector2(-bw / 2.0 - 1.0, by - 1.0), Vector2(bw + 2.0, bh + 2.0)), Color(0, 0, 0, 0.8))
 		draw_rect(Rect2(Vector2(-bw / 2.0, by), Vector2(bw * f, bh)), Color(0.88, 0.18, 0.20))
 
-	# 피격 무적 표시
-	if invuln > 0.0:
-		var invuln_col := Color(0.45, 0.9, 1.0, 0.9) if dodge_t > 0.0 else Color(1, 1, 1, 0.7)
-		draw_arc(Vector2.ZERO, r + 5.0, 0.0, TAU, 24, invuln_col, 2.0)
+	# 회피 무적만 링으로 알린다. 회피는 플레이어가 직접 쓴 기술이라 남은 무적을
+	# 읽을 수 있어야 하기 때문이다. 피격 무적은 위의 붉은 플래시로 대신한다.
+	if dodge_t > 0.0 and invuln > 0.0:
+		draw_arc(Vector2.ZERO, r + 5.0, 0.0, TAU, 24, Color(0.45, 0.9, 1.0, 0.9), 2.0)
 	# 자석 버프 표시 (흡수 범위 링)
 	if magnet_t > 0.0:
 		draw_arc(Vector2.ZERO, current_pickup_radius(), 0.0, TAU, 48, Color(0.7, 0.5, 1.0, 0.35), 2.0)

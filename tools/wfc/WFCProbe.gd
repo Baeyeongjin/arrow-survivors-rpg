@@ -16,8 +16,10 @@ const OverlappingScript = preload("res://tools/wfc/WFCOverlapping.gd")
 const CornerWangScript = preload("res://tools/wfc/WFCCornerWang.gd")
 
 const CELL := 32                      # StageTileRenderer.CELL 과 동일
-const SRC_GRID := 88                  # ceil(2800 / 32) — 현재 맵
-const DST_GRID := 123                 # ceil(3920 / 32) — 1순위 확대 목표(1.4배)
+# 격자 크기는 StageLayout.WORLD에서 유도한다. 예전에는 88(=2800/32)로 박아두었는데
+# WORLD가 3840으로 커진 뒤에도 좌상단 88x88만 재고 있었다. 상수로 두면 또 어긋난다.
+var SRC_GRID := 0
+var DST_GRID := 0
 const OUT_DIR := "user://wfc_probe"
 const STAGE_NAMES := {1: "묘지", 2: "지옥", 3: "빙하", 4: "공허", 5: "마왕성"}
 
@@ -34,9 +36,12 @@ func _initialize() -> void:
 			mode = arg.split("=")[1]
 	DirAccess.make_dir_recursive_absolute(OUT_DIR)
 
+	SRC_GRID = ceili(StageLayoutScript.WORLD.x / float(CELL))
+	DST_GRID = SRC_GRID
+
 	print("=".repeat(72))
 	print("WFC 실사용 가능성 실측  (mode=%s)" % mode)
-	print("격자: 현재 %dx%d (WORLD 2800) → 목표 %dx%d (WORLD 3920)" % [SRC_GRID, SRC_GRID, DST_GRID, DST_GRID])
+	print("격자 %dx%d (StageLayout.WORLD %d)" % [SRC_GRID, SRC_GRID, int(StageLayoutScript.WORLD.x)])
 	print("=".repeat(72))
 
 	if mode == "all" or mode == "profile":

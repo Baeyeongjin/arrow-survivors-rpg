@@ -215,7 +215,10 @@ static func pick_enemy_tier(level: int, stage: int = 1) -> Dictionary:
 	for t in enemy_tiers():
 		if stage >= int(t.get("min_stage", 1)):
 			pool.append(t)
-	var top: int = clamp(int((level - 1) / 3.0), 0, pool.size() - 1)
+	# 2레벨마다 한 티어. 예전 3레벨 기준은 티어 13종을 레벨 37에서 소진했는데,
+	# 레벨 곡선 개편(_xp_requirement 4차)으로 한 런의 최대 레벨이 약 35가 되면서
+	# 최상위 티어가 아예 안 나오게 됐다. 레벨 25쯤 소진되도록 맞춘다.
+	var top: int = clamp(int((level - 1) / 2.0), 0, pool.size() - 1)
 	# 고스테이지 전용 몬스터는 스테이지가 열리면 바로 등장 가능
 	if stage >= 4:
 		top = pool.size() - 1
@@ -408,14 +411,16 @@ static func stage_spawn_profile(stage: int) -> Dictionary:
 # --- 주인공 진화 단계 (레벨 / 3 → 0~3단계) ---
 # (구세대 hero_stages() 테이블은 캐릭터별 char_stages로 대체되어 제거 — 인덱스 함수만 사용)
 static func hero_stage_for_level(level: int) -> int:
-	# 진화 시점: Lv10 / 30 / 50 / 75 → 1 / 2 / 3 / 4단계 (0=기본)
-	if level >= 75:
+	# 진화 시점: Lv5 / 13 / 21 / 29 → 1 / 2 / 3 / 4단계 (0=기본)
+	# 예전 기준은 10/30/50/75였는데, 레벨 곡선 개편으로 한 런의 최대 레벨이 약 35가
+	# 되면서 3·4단계에 영영 닿지 못하게 됐다. 같은 진행 비율로 당긴다.
+	if level >= 29:
 		return 4
-	if level >= 50:
+	if level >= 21:
 		return 3
-	if level >= 30:
+	if level >= 13:
 		return 2
-	if level >= 10:
+	if level >= 5:
 		return 1
 	return 0
 
