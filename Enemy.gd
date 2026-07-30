@@ -21,6 +21,12 @@ var resist := ""     # 저항 속성 (이 속성으로 맞으면 ×0.6)
 # 둔화 상태
 var slow_factor := 1.0
 var slow_timer := 0.0
+# 지역 위협 상태. 체력 자체는 바꾸지 않고 공격·속도·받는 피해만 잠시 조정한다.
+var threat_timer := 0.0
+var threat_name := ""
+var threat_damage_taken_mult := 1.0
+var _threat_base_speed := 0.0
+var _threat_base_touch_damage := 0.0
 var _anim_t := 0.0
 var _flash_t := 0.0
 var _atk_t := 0.0
@@ -34,8 +40,8 @@ var _dir := "s"          # 바라보는 4방향 s/n/e/w
 var _kb_cd := 0.0        # 넉백/멈칫 재적용 쿨다운 (지속타 잠김 방지)
 var _dmg_accum := 0.0    # 지속피해(장판·오라·회전검) 누적 → 주기적으로 합산 숫자 표시
 var _dmg_flush := 0.0    # 누적피해 표시 타이머
-var despawn_t := 0.0     # >0이면 이 시간 뒤 자동 소멸 (뱀서식 정적 포위 원 이벤트 등)
-var hold := false        # true면 추격 안 하고 제자리 고정 (정적 원진)
+var despawn_t := 0.0     # >0이면 이 시간 뒤 자동 소멸 (개발 전투 프리뷰용)
+var hold := false        # true면 플레이어가 방에 접근할 때까지 대기
 # 행동 타입 (#27): "" 기본추격 / ranged 사수 / charge 돌진 / exploder 자폭 / splitter 분열
 var behavior := ""
 var _shoot_cd := 1.2     # 사수 발사 쿨다운
@@ -125,6 +131,43 @@ func apply_slow(amount: float, time: float) -> void:
 	slow_factor = min(slow_factor, 1.0 - amount)
 	slow_timer = max(slow_timer, time)
 
+
+func apply_threat_buff(definition: Dictionary, duration_override: float = -1.0) -> void:
+	if _dying:
+		return
+	# 새 위협이 겹쳐도 배수가 누적되지 않도록 원래 능력치부터 복구한다.
+	if threat_timer > 0.0:
+		clear_threat_buff()
+	_threat_base_speed = speed
+	_threat_base_touch_damage = touch_damage
+	speed *= maxf(0.1, float(definition.get("speed_mult", 1.0)))
+	touch_damage *= maxf(0.1, float(definition.get("attack_mult", 1.0)))
+	threat_damage_taken_mult = maxf(0.05, float(definition.get("damage_taken_mult", 1.0)))
+	threat_timer = (duration_override if duration_override >= 0.0
+		else float(definition.get("duration", 0.0)))
+	threat_name = str(definition.get("name", "몬스터 강화"))
+	queue_redraw()
+
+
+func clear_threat_buff() -> void:
+	if threat_timer <= 0.0 and _threat_base_speed <= 0.0:
+		return
+	if _threat_base_speed > 0.0:
+		speed = _threat_base_speed
+	if _threat_base_touch_damage > 0.0:
+		touch_damage = _threat_base_touch_damage
+	threat_timer = 0.0
+	threat_name = ""
+	threat_damage_taken_mult = 1.0
+	_threat_base_speed = 0.0
+	_threat_base_touch_damage = 0.0
+	queue_redraw()
+
+
+func is_threatened() -> bool:
+	return threat_timer > 0.0
+
+
 func setup(t: Dictionary, time: float) -> void:
 	tier = t
 	color = t["color"]
@@ -172,7 +215,11 @@ func _process(delta: float) -> void:
 			return
 		queue_redraw()
 		return
-	# 소멸 타이머 (정적 포위 원 이벤트 등): 시간 지나면 스르륵 사라짐
+	if threat_timer > 0.0:
+		threat_timer -= delta
+		if threat_timer <= 0.0:
+			clear_threat_buff()
+	# 소멸 타이머: 개발 전투 프리뷰가 끝나면 테스트 몬스터를 정리한다.
 	if despawn_t > 0.0:
 		despawn_t -= delta
 		if despawn_t <= 0.0 and not _dying:
@@ -352,6 +399,7 @@ func take_damage(d: float, crit: bool = false, dot: bool = false, element: Strin
 		elif elem == resist:
 			d *= 0.6
 			hit_kind = "resist"
+	d *= threat_damage_taken_mult
 	var actual_damage := minf(maxf(0.0, hp), maxf(0.0, d))
 	if m and m.has_method("record_damage_dealt"):
 		m.record_damage_dealt(actual_damage)
@@ -503,8 +551,10 @@ func _draw() -> void:
 		tex = _sprite_tex
 	if tex:
 		var w := radius * SPRITE_SCALE
-		# 엘리트: 링 대신 황금빛 색조로 구분 (크기도 1.5배)
-		var tint := Color(1.3, 1.08, 0.5) if elite else Color(1, 1, 1)
+		# 지역 위협은 겹치는 원형 표식 대신 몸 전체를 붉게 물들인다.
+		# 피격 플래시는 self_modulate에서 별도로 처리하므로 순간 타격감도 유지된다.
+		var tint := (Color(4.0, 0.14, 0.12) if threat_timer > 0.0
+			else (Color(1.3, 1.08, 0.5) if elite else Color(1, 1, 1)))
 		# 스프라이트 기본이 '왼쪽 향함'이므로: 왼쪽 볼 땐 그대로(1), 오른쪽 볼 땐 반전(-1)
 		var sx := 1.0 if _face_left else -1.0
 		# 걷기 흔들림(bob) + 미세 기우뚱(waddle): 단일 걷기 프레임에 생동감. 공격/멈칫 중엔 정지.

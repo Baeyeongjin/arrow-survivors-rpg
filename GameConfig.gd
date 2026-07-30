@@ -10,44 +10,76 @@ extends RefCounted
 # 30분 생존 웨이브 표.
 # primary/secondary: 해당 분의 적 조합, mix: secondary 비율,
 # density: 동시 상한·웨이브 수 보정, elite: 자연 엘리트 확률,
-# event: -1=없음, 0=원진, 1=호드, 2=협공, 3=벽, 4=포위, 5=정예.
+# threat: -1=없음, 0~5=일시적인 몬스터 강화 종류.
 const WAVE_SCHEDULE := [
-	# 0~5분: 던전 — 약한 적의 속도 차이와 기본 호드 학습
-	{"primary":"slime",       "secondary":"goblin",       "mix":0.12, "density":0.62, "elite":0.010, "event":-1},
-	{"primary":"slime",       "secondary":"bat",          "mix":0.18, "density":0.70, "elite":0.012, "event":1},
-	{"primary":"goblin",      "secondary":"slime",        "mix":0.25, "density":0.77, "elite":0.015, "event":0},
-	{"primary":"skeleton",    "secondary":"goblin",       "mix":0.22, "density":0.83, "elite":0.018, "event":-1},
-	{"primary":"zombie",      "secondary":"bat",          "mix":0.25, "density":0.90, "elite":0.022, "event":2},
-	{"primary":"bat",         "secondary":"skeleton",     "mix":0.30, "density":0.97, "elite":0.026, "event":3},
+	# 0~5분: 던전 — 약한 적의 속도 차이와 기본 전투 학습
+	{"primary":"slime",       "secondary":"goblin",       "mix":0.12, "density":0.62, "elite":0.010, "threat":-1},
+	{"primary":"slime",       "secondary":"bat",          "mix":0.18, "density":0.70, "elite":0.012, "threat":1},
+	{"primary":"goblin",      "secondary":"slime",        "mix":0.25, "density":0.77, "elite":0.015, "threat":0},
+	{"primary":"skeleton",    "secondary":"goblin",       "mix":0.22, "density":0.83, "elite":0.018, "threat":-1},
+	{"primary":"zombie",      "secondary":"bat",          "mix":0.25, "density":0.90, "elite":0.022, "threat":2},
+	{"primary":"bat",         "secondary":"skeleton",     "mix":0.30, "density":0.97, "elite":0.026, "threat":3},
 	# 6~11분: 지옥 — 단단한 적 사이에 빠른 화염 몬스터 혼합
-	{"primary":"skeleton",    "secondary":"fire_imp",     "mix":0.18, "density":0.88, "elite":0.025, "event":1},
-	{"primary":"fire_imp",    "secondary":"skeleton",     "mix":0.28, "density":0.94, "elite":0.030, "event":4},
-	{"primary":"orc",         "secondary":"fire_imp",     "mix":0.24, "density":1.00, "elite":0.034, "event":-1},
-	{"primary":"hellhound",   "secondary":"orc",          "mix":0.25, "density":1.05, "elite":0.038, "event":3},
-	{"primary":"demon",       "secondary":"fire_imp",     "mix":0.30, "density":1.09, "elite":0.042, "event":2},
-	{"primary":"hellhound",   "secondary":"demon",        "mix":0.35, "density":1.13, "elite":0.046, "event":5},
+	{"primary":"skeleton",    "secondary":"fire_imp",     "mix":0.18, "density":0.88, "elite":0.025, "threat":1},
+	{"primary":"fire_imp",    "secondary":"skeleton",     "mix":0.28, "density":0.94, "elite":0.030, "threat":4},
+	{"primary":"orc",         "secondary":"fire_imp",     "mix":0.24, "density":1.00, "elite":0.034, "threat":-1},
+	{"primary":"hellhound",   "secondary":"orc",          "mix":0.25, "density":1.05, "elite":0.038, "threat":3},
+	{"primary":"demon",       "secondary":"fire_imp",     "mix":0.30, "density":1.09, "elite":0.042, "threat":2},
+	{"primary":"hellhound",   "secondary":"demon",        "mix":0.35, "density":1.13, "elite":0.046, "threat":5},
 	# 12~17분: 빙하 — 느린 탱커와 빠른 위습의 대비
-	{"primary":"mushroom",    "secondary":"ice_wisp",     "mix":0.18, "density":0.96, "elite":0.038, "event":0},
-	{"primary":"ice_wisp",    "secondary":"bat",          "mix":0.25, "density":1.02, "elite":0.042, "event":-1},
-	{"primary":"frost_golem", "secondary":"ice_wisp",     "mix":0.24, "density":1.07, "elite":0.047, "event":1},
-	{"primary":"spider",      "secondary":"mushroom",     "mix":0.28, "density":1.11, "elite":0.052, "event":3},
-	{"primary":"ice_wisp",    "secondary":"frost_golem",  "mix":0.30, "density":1.15, "elite":0.056, "event":4},
-	{"primary":"frost_golem", "secondary":"spider",       "mix":0.34, "density":1.19, "elite":0.060, "event":5},
+	{"primary":"mushroom",    "secondary":"ice_wisp",     "mix":0.18, "density":0.96, "elite":0.038, "threat":0},
+	{"primary":"ice_wisp",    "secondary":"bat",          "mix":0.25, "density":1.02, "elite":0.042, "threat":-1},
+	{"primary":"frost_golem", "secondary":"ice_wisp",     "mix":0.24, "density":1.07, "elite":0.047, "threat":1},
+	{"primary":"spider",      "secondary":"mushroom",     "mix":0.28, "density":1.11, "elite":0.052, "threat":3},
+	{"primary":"ice_wisp",    "secondary":"frost_golem",  "mix":0.30, "density":1.15, "elite":0.056, "threat":4},
+	{"primary":"frost_golem", "secondary":"spider",       "mix":0.34, "density":1.19, "elite":0.060, "threat":5},
 	# 18~23분: 공허 — 빠르고 단단한 적을 높은 혼합률로 압박
-	{"primary":"spider",      "secondary":"gargoyle",      "mix":0.20, "density":1.03, "elite":0.048, "event":2},
-	{"primary":"gargoyle",    "secondary":"fire_imp",     "mix":0.26, "density":1.09, "elite":0.054, "event":-1},
-	{"primary":"void_wraith", "secondary":"spider",       "mix":0.28, "density":1.14, "elite":0.060, "event":0},
-	{"primary":"demon",       "secondary":"void_wraith",  "mix":0.30, "density":1.19, "elite":0.066, "event":3},
-	{"primary":"void_wraith", "secondary":"gargoyle",     "mix":0.34, "density":1.24, "elite":0.072, "event":4},
-	{"primary":"gargoyle",    "secondary":"demon",        "mix":0.38, "density":1.29, "elite":0.078, "event":5},
+	{"primary":"spider",      "secondary":"gargoyle",      "mix":0.20, "density":1.03, "elite":0.048, "threat":2},
+	{"primary":"gargoyle",    "secondary":"fire_imp",     "mix":0.26, "density":1.09, "elite":0.054, "threat":-1},
+	{"primary":"void_wraith", "secondary":"spider",       "mix":0.28, "density":1.14, "elite":0.060, "threat":0},
+	{"primary":"demon",       "secondary":"void_wraith",  "mix":0.30, "density":1.19, "elite":0.066, "threat":3},
+	{"primary":"void_wraith", "secondary":"gargoyle",     "mix":0.34, "density":1.24, "elite":0.072, "threat":4},
+	{"primary":"gargoyle",    "secondary":"demon",        "mix":0.38, "density":1.29, "elite":0.078, "threat":5},
 	# 24~29분: 마왕성 — 최종 빌드 검증, 체력벽과 고속 적 동시 등장
-	{"primary":"hellhound",   "secondary":"wraith_knight","mix":0.22, "density":1.10, "elite":0.060, "event":1},
-	{"primary":"wraith_knight","secondary":"demon",       "mix":0.28, "density":1.16, "elite":0.068, "event":-1},
-	{"primary":"dark_knight", "secondary":"hellhound",    "mix":0.28, "density":1.22, "elite":0.076, "event":2},
-	{"primary":"demon",       "secondary":"dark_knight",  "mix":0.34, "density":1.27, "elite":0.084, "event":3},
-	{"primary":"gargoyle",    "secondary":"wraith_knight","mix":0.38, "density":1.32, "elite":0.092, "event":4},
-	{"primary":"dark_knight", "secondary":"gargoyle",     "mix":0.42, "density":1.36, "elite":0.100, "event":5},
+	{"primary":"hellhound",   "secondary":"wraith_knight","mix":0.22, "density":1.10, "elite":0.060, "threat":1},
+	{"primary":"wraith_knight","secondary":"demon",       "mix":0.28, "density":1.16, "elite":0.068, "threat":-1},
+	{"primary":"dark_knight", "secondary":"hellhound",    "mix":0.28, "density":1.22, "elite":0.076, "threat":2},
+	{"primary":"demon",       "secondary":"dark_knight",  "mix":0.34, "density":1.27, "elite":0.084, "threat":3},
+	{"primary":"gargoyle",    "secondary":"wraith_knight","mix":0.38, "density":1.32, "elite":0.092, "threat":4},
+	{"primary":"dark_knight", "secondary":"gargoyle",     "mix":0.42, "density":1.36, "elite":0.100, "threat":5},
 ]
+
+
+# RPG형 지역 위협. 별도 몬스터를 쏟아내지 않고 전투 중인 몬스터와 이후 등장할
+# 몬스터를 잠시 강화한다. duration이 짧아 회피·집중 공격으로 넘길 수 있어야 한다.
+const MONSTER_THREAT_EVENTS := [
+	{"name":"강철 피부", "duration":12.0, "attack_mult":1.00, "speed_mult":1.00,
+		"damage_taken_mult":0.72, "desc":"받는 피해 -28%", "color":Color(0.52, 0.72, 0.92)},
+	{"name":"광포화", "duration":12.0, "attack_mult":1.28, "speed_mult":1.00,
+		"damage_taken_mult":1.00, "desc":"공격력 +28%", "color":Color(1.00, 0.32, 0.20)},
+	{"name":"사냥 본능", "duration":12.0, "attack_mult":1.10, "speed_mult":1.20,
+		"damage_taken_mult":1.00, "desc":"이동 속도 +20% · 공격력 +10%", "color":Color(1.00, 0.72, 0.24)},
+	{"name":"전투 고양", "duration":13.0, "attack_mult":1.18, "speed_mult":1.13,
+		"damage_taken_mult":1.00, "desc":"공격력 +18% · 이동 속도 +13%", "color":Color(0.96, 0.40, 0.34)},
+	{"name":"마력 장막", "duration":13.0, "attack_mult":1.12, "speed_mult":1.00,
+		"damage_taken_mult":0.80, "desc":"받는 피해 -20% · 공격력 +12%", "color":Color(0.64, 0.42, 0.96)},
+	{"name":"정예의 기세", "duration":14.0, "attack_mult":1.22, "speed_mult":1.10,
+		"damage_taken_mult":0.85, "desc":"공격력 +22% · 이동 속도 +10%", "color":Color(1.00, 0.62, 0.18)},
+]
+
+const STAGE_THREAT_AURAS := [
+	"전장의 기운", "던전의 기운", "업화의 기운",
+	"빙설의 기운", "공허의 기운", "마왕의 기운",
+]
+
+
+static func monster_threat(threat_index: int, stage: int = 0) -> Dictionary:
+	var index := posmod(threat_index, MONSTER_THREAT_EVENTS.size())
+	var threat: Dictionary = MONSTER_THREAT_EVENTS[index].duplicate(true)
+	var aura: String = str(STAGE_THREAT_AURAS[clampi(stage, 0, STAGE_THREAT_AURAS.size() - 1)])
+	threat["id"] = index
+	threat["display_name"] = "%s · %s" % [aura, str(threat["name"])]
+	return threat
 
 
 static func wave_for_minute(minute: int, selected_stage: int = 0) -> Dictionary:
@@ -282,14 +314,14 @@ static func void_midboss_tier() -> Dictionary:
 	}
 
 
-# Stage identity is expressed through readable pressure patterns, not hidden stats.
+# 맵별 진입 방향과 지역 위협 순환으로 스테이지 정체성을 만든다.
 static func stage_spawn_profile(stage: int) -> Dictionary:
 	var profiles := [
-		{"mode": "cross", "events": [1, 2, 4, 0], "breakables": 4},
-		{"mode": "bridge", "events": [1, 3, 2, 1], "breakables": 4},
-		{"mode": "wide", "events": [4, 0, 1, 4], "breakables": 3},
-		{"mode": "tower", "events": [0, 4, 5, 0], "breakables": 3},
-		{"mode": "castle", "events": [3, 2, 5, 3], "breakables": 4},
+		{"mode": "cross", "threats": [1, 2, 0, 1], "breakables": 4},
+		{"mode": "bridge", "threats": [1, 3, 2, 4], "breakables": 4},
+		{"mode": "wide", "threats": [0, 2, 4, 0], "breakables": 3},
+		{"mode": "tower", "threats": [4, 2, 5, 4], "breakables": 3},
+		{"mode": "castle", "threats": [3, 5, 4, 5], "breakables": 4},
 	]
 	return profiles[(maxi(1, stage) - 1) % profiles.size()]
 

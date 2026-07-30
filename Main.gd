@@ -590,7 +590,10 @@ var stage_layout # 독립 맵의 이동 가능 영역·고정 아이템 좌표
 var stage_map_texture: Texture2D # PixelLab Wang tiles assembled from stage_layout
 var next_boss_time := BOSS_TIME
 var last_boss_stage := 0     # 스테이지당 보스 1회 보장
-var _event_idx := 0          # 이벤트 종류 순환 인덱스
+var _threat_idx := 0         # 지역별 몬스터 강화 순환 인덱스
+var _monster_threat_t := 0.0
+var _monster_threat_def: Dictionary = {}
+var _monster_threat_kills := 0
 var featured_enemy := ""     # 이번 웨이브 주력 몬스터 key (테마 웨이브)
 var _wave_minute := -1       # 분 단위 웨이브 진행 인덱스
 var _current_wave: Dictionary = {} # GameConfig의 현재 분 웨이브 데이터
@@ -2012,8 +2015,8 @@ func _autoshot() -> void:
 			get_tree().quit()
 			return
 
-	# --mobs : 플레이어 주위에 몹을 깔고 캡처 (크기 점검용)
-	if "--mobs" in args:
+	# --mobs / --threat-preview : 몬스터 크기와 지역 위협 붉은 색조·HUD를 실제 렌더로 점검한다.
+	if "--mobs" in args or "--threat-preview" in args:
 		if state == State.PAUSED:
 			_toggle_pause()
 		if stage_label:
@@ -2023,10 +2026,18 @@ func _autoshot() -> void:
 			var ang := TAU * i / 24.0
 			var preview_distance := 76.0 if i == 0 else randf_range(70.0, 240.0)
 			_make_enemy(player.position + Vector2.from_angle(ang) * preview_distance, i == 0)
+		if "--threat-preview" in args:
+			_start_monster_threat(5)
+			_update_ui()
 		# 근거리 적의 예고 동작이 끝나기 전에 찍어 크기와 공격 가독성을 함께 검수한다.
-		await get_tree().create_timer(0.2, true, false, true).timeout
+		await get_tree().create_timer(0.3, true, false, true).timeout
 		var imm := get_viewport().get_texture().get_image()
 		imm.save_png("user://autoshot.png")
+		if "--threat-preview" in args:
+			print("THREAT_PREVIEW active=%s enemies=%d" % [
+				not _monster_threat_def.is_empty(),
+				get_tree().get_nodes_in_group("enemies").size(),
+			])
 		print("AUTOSHOT SAVED: ", ProjectSettings.globalize_path("user://autoshot.png"))
 		get_tree().quit()
 		return
@@ -2196,15 +2207,16 @@ func _process(delta: float) -> void:
 				else:
 					_spawn_dungeon_boss()
 
-	# 분 단위 웨이브 표: 적 조합·밀도·엘리트·특수 이벤트를 함께 교체한다.
+	# 분 단위 웨이브 표: 적 조합·밀도·엘리트·지역 위협을 함께 교체한다.
 	var current_minute := int(dungeon_elapsed / 60.0) if map_stage > 0 else int(time_survived / 60.0)
 	if current_minute != _wave_minute or featured_enemy == "":
 		_wave_minute = current_minute
 		_current_wave = GameConfig.wave_for_minute(current_minute, map_stage)
 		featured_enemy = str(_current_wave.get("primary", "slime"))
-		var scheduled_event := int(_current_wave.get("event", -1))
-		if scheduled_event >= 0 and not boss_spawned and current_minute > 0:
-			_spawn_event(scheduled_event)
+		var scheduled_threat := int(_current_wave.get("threat", -1))
+		if scheduled_threat >= 0 and not boss_spawned and current_minute > 0:
+			_start_monster_threat(scheduled_threat)
+	_update_monster_threat(delta)
 
 	# 스테이지 배너 타이머
 	if stage_banner_t > 0.0:
@@ -4259,9 +4271,11 @@ func _themed_tier(force_featured := false) -> Dictionary:
 	return GameConfig.tier_by_key(key)
 
 
-# 지정 위치에 적 1마리 생성 (시간강화 + 엘리트 처리). 이벤트/웨이브 공용.
-# despawn>0 이면 그 시간 뒤 자동 소멸, hold=true면 제자리 고정 (정적 포위 원 등).
-func _make_enemy(pos: Vector2, force_elite := false, tier_override = null, despawn := 0.0, hold := false) -> Enemy:
+# 지정 위치에 적 1마리 생성 (시간강화 + 엘리트 + 활성 지역 위협 처리).
+# despawn>0은 개발 전투 프리뷰용, hold=true면 방에 접근할 때까지 대기한다.
+# 중간보스는 수제 전투 수치가 흔들리지 않도록 threat_eligible=false로 생성한다.
+func _make_enemy(pos: Vector2, force_elite := false, tier_override = null,
+		despawn := 0.0, hold := false, threat_eligible := true) -> Enemy:
 	var e := Enemy.new()
 	var tier: Dictionary = tier_override if tier_override != null else GameConfig.pick_enemy_tier(level, stage_num)
 	e.position = pos
@@ -4284,6 +4298,8 @@ func _make_enemy(pos: Vector2, force_elite := false, tier_override = null, despa
 	if hold:
 		e.hold = true
 	e.max_hp = e.hp   # 모든 강화(시간·엘리트) 적용 후 최종 hp를 HP바 기준으로 캡처
+	if threat_eligible:
+		_apply_active_monster_threat(e)
 	add_child(e)
 	return e
 
@@ -4645,7 +4661,7 @@ func _spawn_hell_midboss() -> Enemy:
 	var spawn_pos := player.position + Vector2.LEFT * 360.0 if player else WORLD * 0.5
 	if stage_layout:
 		spawn_pos = stage_layout.nearest_walkable(spawn_pos, 44.0)
-	var enforcer := _make_enemy(spawn_pos, true, GameConfig.hell_midboss_tier())
+	var enforcer := _make_enemy(spawn_pos, true, GameConfig.hell_midboss_tier(), 0.0, false, false)
 	enforcer.midboss = true
 	enforcer.hp *= 2.4
 	enforcer.max_hp = enforcer.hp
@@ -4790,7 +4806,7 @@ func _spawn_grave_midboss() -> Enemy:
 	var spawn_pos := player.position + Vector2.LEFT * 360.0 if player else WORLD * 0.5
 	if stage_layout:
 		spawn_pos = stage_layout.nearest_walkable(spawn_pos, 44.0)
-	var knight := _make_enemy(spawn_pos, true, GameConfig.graveyard_midboss_tier())
+	var knight := _make_enemy(spawn_pos, true, GameConfig.graveyard_midboss_tier(), 0.0, false, false)
 	knight.midboss = true
 	knight.hp *= 2.3
 	knight.max_hp = knight.hp
@@ -4979,7 +4995,7 @@ func _spawn_glacier_midboss() -> Enemy:
 	var spawn_pos := player.position + Vector2.LEFT * 360.0 if player else WORLD * 0.5
 	if stage_layout:
 		spawn_pos = stage_layout.nearest_walkable(spawn_pos, 46.0)
-	var golem := _make_enemy(spawn_pos, true, GameConfig.glacier_midboss_tier())
+	var golem := _make_enemy(spawn_pos, true, GameConfig.glacier_midboss_tier(), 0.0, false, false)
 	golem.midboss = true
 	golem.hp *= 2.5
 	golem.max_hp = golem.hp
@@ -5164,7 +5180,7 @@ func _spawn_void_midboss() -> Enemy:
 	var spawn_pos := player.position + Vector2.LEFT * 360.0 if player else WORLD * 0.5
 	if stage_layout:
 		spawn_pos = stage_layout.nearest_walkable(spawn_pos, 46.0)
-	var oracle := _make_enemy(spawn_pos, true, GameConfig.void_midboss_tier())
+	var oracle := _make_enemy(spawn_pos, true, GameConfig.void_midboss_tier(), 0.0, false, false)
 	oracle.midboss = true
 	oracle.hp *= 2.6
 	oracle.max_hp = oracle.hp
@@ -5658,6 +5674,8 @@ func _death_fx_for(key: String) -> String:
 
 func on_enemy_killed(e: Enemy) -> void:
 	kills += 1
+	if e.is_threatened() and _monster_threat_t > 0.0:
+		_monster_threat_kills += 1
 	# 궁극기 게이지 충전 (엘리트는 크게). 처치 = 게이지 → "쌓아서 터뜨리는" 능동 루프.
 	ult_gauge = minf(1.0, ult_gauge + (0.05 if e.elite else 0.008))
 	_refresh_ult_bar()
@@ -5728,6 +5746,8 @@ func on_enemy_killed(e: Enemy) -> void:
 					child.radius *= 0.62
 					child.xp_value = max(1, int(e.xp_value / 3))
 					child.is_split = true
+					child.max_hp = child.hp
+					_apply_active_monster_threat(child)
 					add_child(child)
 	_spawn_gem(e.position, e.xp_value)
 	# 골드 드랍. 뱀서식: 보물상자는 보스 전용 → 엘리트는 골드·젬만 확정, 상자 없음.
@@ -5975,6 +5995,7 @@ func _reset_hell_floor_state() -> void:
 
 
 func _transition_to_expedition_floor(target_stage: int) -> void:
+	_reset_monster_threat(true)
 	_clear_floor_runtime()
 	boss = null
 	boss_spawned = false
@@ -6120,95 +6141,83 @@ func _edge_pos(ang: float, extra := 0.0) -> Vector2:
 	return p
 
 
-# 분당 이벤트 스파이크: 종류를 순환하며 리듬감 있는 웨이브 (뱀서식)
-func _spawn_event(scheduled_type: int = -1) -> void:
-	var event_type := scheduled_type if scheduled_type >= 0 else _event_idx % 6
-	# Bosses remain simple chasers.  Only normal wave formations vary by map.
+# RPG형 지역 위협: 몬스터를 추가 소환하지 않고 현재 적과 이후 등장하는 적을
+# 짧게 강화한다. 플레이어는 전조를 보고 안전하게 버티거나 처치 보상을 노릴 수 있다.
+func _start_monster_threat(scheduled_type: int = -1) -> void:
+	var threat_type := scheduled_type if scheduled_type >= 0 else _threat_idx % GameConfig.MONSTER_THREAT_EVENTS.size()
 	if map_stage > 0:
-		var cycle: Array = GameConfig.stage_spawn_profile(map_stage).get("events", [])
+		var cycle: Array = GameConfig.stage_spawn_profile(map_stage).get("threats", [])
 		if not cycle.is_empty():
-			event_type = int(cycle[_event_idx % cycle.size()])
-	match event_type:
-		0: _event_static_ring()
-		1: _spawn_horde()
-		2: _event_pincer()
-		3: _event_wall()
-		4: _event_encircle()
-		5: _event_elite_pack()
-	_event_idx += 1
+			threat_type = int(cycle[_threat_idx % cycle.size()])
+	_monster_threat_def = GameConfig.monster_threat(threat_type, map_stage)
+	_monster_threat_t = float(_monster_threat_def.get("duration", 12.0))
+	_monster_threat_kills = 0
+	for node in get_tree().get_nodes_in_group("enemies"):
+		var enemy := node as Enemy
+		if enemy and not enemy.midboss:
+			enemy.apply_threat_buff(_monster_threat_def, _monster_threat_t)
+	var threat_color: Color = _monster_threat_def.get("color", Color(1.0, 0.42, 0.22))
+	_event_banner("[위협] %s — 몬스터 강화 %d초" % [
+		str(_monster_threat_def.get("display_name", "몬스터 강화")),
+		int(ceil(_monster_threat_t)),
+	])
+	_flash(Color(threat_color.r, threat_color.g, threat_color.b, 0.24))
+	_threat_idx += 1
 
 
-# 벽 돌격: 한쪽 변 전체에서 긴 줄(벽)로 밀려온다 (VS 시그니처 물결 웨이브)
-func _event_wall() -> void:
-	var tt := _themed_tier(true)
-	var side := randf() * TAU                       # 몰려올 방향
-	var perp := Vector2.from_angle(side).orthogonal()
-	var view := get_viewport_rect().size
-	var half: float = max(view.x, view.y) * 0.7
-	var n: int = min(_spawn_budget(), 26 + stage_num * 7)
-	for i in n:
-		var t := (i / float(max(1, n - 1)) - 0.5) * 2.0   # -1..1
-		var base := _edge_pos(side, randf_range(20.0, 120.0))
-		_make_enemy(base + perp * t * half, false, tt)
-	_event_banner("[위험] %s 벽이 밀려온다!" % tt.get("name", ""))
+func _apply_active_monster_threat(enemy: Enemy) -> void:
+	if (enemy == null or enemy.midboss or _monster_threat_t <= 0.0
+			or _monster_threat_def.is_empty()):
+		return
+	enemy.apply_threat_buff(_monster_threat_def, _monster_threat_t)
 
 
-# 대규모 호드: 한 방향에서 떼로 몰려오는 무리
-func _spawn_horde() -> void:
-	var tt := _themed_tier(true)
-	var base_ang := randf() * TAU
-	var n: int = min(_spawn_budget(), 20 + stage_num * 6)
-	for i in n:
-		var ang := base_ang + randf_range(-0.65, 0.65)
-		_make_enemy(_edge_pos(ang, randf_range(60.0, 280.0)), false, tt)
-	_event_banner("[위험] %s 무리 출현!" % tt.get("name", "대규모"))
+func _update_monster_threat(delta: float) -> void:
+	if _monster_threat_t <= 0.0:
+		return
+	_monster_threat_t = maxf(0.0, _monster_threat_t - delta)
+	if _monster_threat_t > 0.0:
+		return
+	var resolved_name := str(_monster_threat_def.get("name", "몬스터 강화"))
+	var resolved_kills := _monster_threat_kills
+	var reward := mini(8, resolved_kills)
+	_clear_monster_threat_from_enemies()
+	_monster_threat_def = {}
+	_monster_threat_kills = 0
+	if reward > 0:
+		run_gold += reward
+		_event_banner("[극복] %s 종료 · 강화 적 %d마리 · %d G" % [
+			resolved_name, resolved_kills, reward])
+	else:
+		_event_banner("[위협 해제] %s 종료" % resolved_name)
 
 
-# 포위망: 사방 링으로 둘러싸고 조여옴
-func _event_encircle() -> void:
-	var tt := _themed_tier(true)
-	var n: int = min(_spawn_budget(), 44 + stage_num * 8)
-	for i in n:
-		var ang := TAU * i / float(max(1, n)) + randf_range(-0.05, 0.05)
-		_make_enemy(_edge_pos(ang, randf_range(20.0, 90.0)), false, tt)
-	_event_banner("[위험] %s 포위망!" % tt.get("name", ""))
+func _clear_monster_threat_from_enemies() -> void:
+	if not is_inside_tree():
+		return
+	for node in get_tree().get_nodes_in_group("enemies"):
+		var enemy := node as Enemy
+		if enemy:
+			enemy.clear_threat_buff()
 
 
-# 정적 포위 원 (뱀서식): 플레이어 주위 고정 반경에 촘촘한 원으로 나타나 천천히 조여오다
-# 일정 시간 뒤 스르륵 소멸. 틈으로 빠져나가는 컨트롤을 요구.
-func _event_static_ring() -> void:
-	var tt := _themed_tier(true)
-	var n: int = min(_spawn_budget(), 40 + stage_num * 6)
-	var rad := 360.0 + stage_num * 12.0
-	var base := randf() * TAU
-	for i in n:
-		var ang := base + TAU * i / float(max(1, n))
-		var pos := player.position + Vector2(cos(ang), sin(ang)) * rad
-		pos.x = clamp(pos.x, 40.0, WORLD.x - 40.0)
-		pos.y = clamp(pos.y, 40.0, WORLD.y - 40.0)
-		_make_enemy(pos, false, tt, 13.0, true)   # 13초 뒤 소멸 + 제자리 고정(안 움직임)
-	_event_banner("[위험] %s 원진(圓陣) — 틈으로 빠져나가라" % tt.get("name", ""))
+func _reset_monster_threat(reset_cycle: bool = false) -> void:
+	_clear_monster_threat_from_enemies()
+	_monster_threat_t = 0.0
+	_monster_threat_def = {}
+	_monster_threat_kills = 0
+	if reset_cycle:
+		_threat_idx = 0
 
 
-# 양방향 협공: 반대쪽 두 벽
-func _event_pincer() -> void:
-	var tt := _themed_tier(true)
-	var base := randf() * TAU
-	var per: int = min(_spawn_budget() / 2, 16 + stage_num * 4)
-	for side in [base, base + PI]:
-		for i in per:
-			_make_enemy(_edge_pos(side + randf_range(-0.5, 0.5), randf_range(60.0, 240.0)), false, tt)
-	_event_banner("[위험] %s 양방향 협공!" % tt.get("name", ""))
-
-
-# 정예 무리: 엘리트 여럿이 한 방향에서 (미니보스 순간)
-func _event_elite_pack() -> void:
-	var tt := _themed_tier(true)
-	var ang := randf() * TAU
-	var cnt: int = min(_spawn_budget(), 3 + stage_num)
-	for i in cnt:
-		_make_enemy(_edge_pos(ang + randf_range(-0.4, 0.4), randf_range(40.0, 160.0)), true, tt)
-	_event_banner("[위험] 정예 %s 무리!" % tt.get("name", ""))
+func _monster_threat_hud_text() -> String:
+	if _monster_threat_t <= 0.0 or _monster_threat_def.is_empty():
+		return ""
+	return "[위협] %s %d초 · %s" % [
+		str(_monster_threat_def.get("name", "몬스터 강화")),
+		int(ceil(_monster_threat_t)),
+		str(_monster_threat_def.get("desc", "")),
+	]
 
 
 func _gain_xp(amount: int) -> void:
@@ -9041,6 +9050,7 @@ func _start_game(d: Dictionary) -> void:
 	last_run_telemetry = {}
 	run_history_summary = {}
 	run_bosses = 0
+	_reset_monster_threat(true)
 	_wave_minute = -1
 	_current_wave = {}
 	featured_enemy = ""
@@ -13165,12 +13175,16 @@ func _update_ui() -> void:
 		phase = "[보스전]"
 	elif abyss_mode:
 		phase = "심연 %d층" % stage_num
+	var threat_hud := _monster_threat_hud_text()
+	if threat_hud != "":
+		phase += ("  ·  " if phase != "" else "") + threat_hud
 	var landmark_hint := _nearest_landmark_hint()
-	if landmark_hint != "":
+	if landmark_hint != "" and threat_hud == "":
 		phase += ("  ·  " if phase != "" else "") + landmark_hint
 	skill_label.text = phase
 	skill_label.add_theme_color_override("font_color",
-		Color(1.0, 0.4, 0.4) if boss_spawned else Color(0.8, 0.65, 1.0))
+		Color(1.0, 0.4, 0.4) if boss_spawned else (
+			Color(1.0, 0.70, 0.28) if threat_hud != "" else Color(0.8, 0.65, 1.0)))
 	var map_name := "캠페인" if map_stage == 0 else str(GameConfig.stage_info(map_stage)["name"])
 	var fragment_count := _total_boss_fragments(run_boss_fragments)
 	info_label.text = "%s · 위험도 %d · [%s]\n처치 %d · 총 %02d:%02d\n골드 %d%s" % [
