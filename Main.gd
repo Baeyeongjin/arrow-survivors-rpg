@@ -7012,8 +7012,21 @@ func _pick3(opts: Array) -> Array:
 		var ce: Dictionary = legends[randi() % legends.size()]
 		picks.append(ce)
 		copy.erase(ce)
+	# 빈 슬롯이 있으면 신규 스킬 1장 보장. 예전엔 보유 강화·패시브만 보장이라
+	# 신규 스킬은 남는 세 번째 칸에서 운으로만 떴고, 4칸 채우는 데 운이 너무 많이 들었다.
+	# 슬롯이 다 차면 신규는 [교체] 카드가 되므로 보장을 끈다 — 매 레벨 교체를
+	# 들이밀면 애써 키운 스킬을 버리라고 조르는 꼴이 된다.
+	if picks.size() < 3 and _free_skill_slot() != "":
+		var new_skill_opts: Array = []
+		for o in copy:
+			if str(o.get("t", "")) == "sk" and bool(o.get("new", false)):
+				new_skill_opts.append(o)
+		if not new_skill_opts.is_empty():
+			var ns: Dictionary = _weighted_choice(new_skill_opts)
+			picks.append(ns)
+			copy.erase(ns)
 	# 넓은 카드 풀에서도 플레이어가 선택한 빌드를 집중 성장시킬 수 있도록
-	# 보유 무기 강화 1장을 선택지에 보장한다. 선택 자체는 여전히 플레이어 몫이다.
+	# 보유 스킬 강화 1장을 선택지에 보장한다. 선택 자체는 여전히 플레이어 몫이다.
 	if picks.size() < 3:
 		var owned_weapon_opts: Array = []
 		for o in copy:
