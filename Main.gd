@@ -156,42 +156,67 @@ const MAX_WLEVEL := 8   # 뱀서식: 무기 만렙 Lv8
 const MAX_PLEVEL := 5
 const EVO_START_TIME := 600.0 # 일반 런 진화 상자는 10:00 이후부터 활성화
 const FREE_WEAPON_SLOTS := 1   # M2 무기 숙련: 주무기 외 신규무기는 25% 확률로만 제시 (주무기 집중)
-# M2 무기 숙련 분기: 주무기가 숙련 4·6단계에 도달하면 전투 스타일 갈림길 2회.
-# Lv4=공격 형태(집중형 단일 vs 확산형 다발), Lv6=극공(더 센 공격) vs 생존(체력·방어·재생).
-# 한쪽을 고르면 다른 쪽은 잠긴다(빌드 정체성). 아키타입(sword/axe/staff/dagger/spear)별 flavored.
-# 이 2회 갈림길이 주무기 레벨링의 반복 수치 카드를 대체한다(레벨업 = 스탯 스팸이 아니라 분기 선택).
-# ponytail: 효과는 player 가산 스탯 수준의 MVP. 무기별 실제 발사 패턴 변경은 M3 세로 슬라이스에서.
-const MASTERY_FORK_LEVELS := [4, 6]
+# 숙련 갈림길: 전투 스타일을 2회 갈라 고른다. 한쪽을 고르면 반대쪽은 잠긴다.
+# 예전엔 주무기 레벨로 열렸지만 무기가 스탯으로 내려가면서 그 축이 사라졌다.
+# 이제 캐릭터 원소가 정체성이므로 원소별로 갈림길을 두고 플레이어 레벨로 연다.
+#   Lv5  = 공격 형태 (집중형 단일 vs 확산형 다발)
+#   Lv12 = 극공 (더 센 공격) vs 생존 (체력·방어·재생)
+# 한 런이 약 35레벨이라 5와 12는 초반·중반에 한 번씩 걸린다.
+const MASTERY_FORK_LEVELS := [5, 12]
 const MASTERY_FORK := {
-	"sword": [
-		{"a": {"name": "관통 숙련", "desc": "위력 +25% · 치명 +8%", "eff": {"dmg": 0.25, "crit": 0.08}},
-		 "b": {"name": "광풍 숙련", "desc": "효과 범위 +30% · 추가 발사 +1", "eff": {"area": 0.30, "amount": 1}}},
-		{"a": {"name": "처형 숙련", "desc": "위력 +30% · 치명 +10%", "eff": {"dmg": 0.30, "crit": 0.10}},
-		 "b": {"name": "불굴 숙련", "desc": "최대체력 +40 · 방어 +2", "eff": {"hp": 40.0, "armor": 2.0}}},
+	"fire": [
+		{"a": {"name": "작열 숙련", "desc": "위력 +25% · 치명 +8%", "eff": {"dmg": 0.25, "crit": 0.08}},
+		 "b": {"name": "불길 숙련", "desc": "효과 범위 +30% · 추가 발사 +1", "eff": {"area": 0.30, "amount": 1}}},
+		{"a": {"name": "폭염 숙련", "desc": "위력 +30% · 쿨감 +7%", "eff": {"dmg": 0.30, "haste": 0.07}},
+		 "b": {"name": "잿불 숙련", "desc": "최대체력 +40 · 재생 +1.5/초", "eff": {"hp": 40.0, "regen": 1.5}}},
 	],
-	"axe": [
-		{"a": {"name": "분쇄 숙련", "desc": "위력 +30% · 쿨감 +6%", "eff": {"dmg": 0.30, "haste": 0.06}},
-		 "b": {"name": "지진 숙련", "desc": "효과 범위 +35% · 추가 발사 +1", "eff": {"area": 0.35, "amount": 1}}},
-		{"a": {"name": "파멸 숙련", "desc": "위력 +35% · 치명 +8%", "eff": {"dmg": 0.35, "crit": 0.08}},
-		 "b": {"name": "거암 숙련", "desc": "최대체력 +50 · 방어 +2", "eff": {"hp": 50.0, "armor": 2.0}}},
+	"ice": [
+		{"a": {"name": "빙결 숙련", "desc": "위력 +25% · 치명 +10%", "eff": {"dmg": 0.25, "crit": 0.10}},
+		 "b": {"name": "서리 숙련", "desc": "효과 범위 +30% · 추가 발사 +1", "eff": {"area": 0.30, "amount": 1}}},
+		{"a": {"name": "절대영도 숙련", "desc": "위력 +30% · 쿨감 +7%", "eff": {"dmg": 0.30, "haste": 0.07}},
+		 "b": {"name": "빙갑 숙련", "desc": "최대체력 +40 · 방어 +2", "eff": {"hp": 40.0, "armor": 2.0}}},
 	],
-	"staff": [
-		{"a": {"name": "정밀 숙련", "desc": "위력 +25% · 치명 +10%", "eff": {"dmg": 0.25, "crit": 0.10}},
-		 "b": {"name": "폭풍 숙련", "desc": "추가 발사 +1 · 범위 +15%", "eff": {"amount": 1, "area": 0.15}}},
+	"dark": [
+		{"a": {"name": "잠식 숙련", "desc": "위력 +28% · 치명 +8%", "eff": {"dmg": 0.28, "crit": 0.08}},
+		 "b": {"name": "심연 숙련", "desc": "효과 범위 +30% · 추가 발사 +1", "eff": {"area": 0.30, "amount": 1}}},
+		{"a": {"name": "파멸 숙련", "desc": "위력 +32% · 쿨감 +6%", "eff": {"dmg": 0.32, "haste": 0.06}},
+		 "b": {"name": "흡혈 숙련", "desc": "최대체력 +45 · 재생 +2/초", "eff": {"hp": 45.0, "regen": 2.0}}},
+	],
+	"holy": [
+		{"a": {"name": "심판 숙련", "desc": "위력 +25% · 치명 +10%", "eff": {"dmg": 0.25, "crit": 0.10}},
+		 "b": {"name": "광휘 숙련", "desc": "효과 범위 +32% · 추가 발사 +1", "eff": {"area": 0.32, "amount": 1}}},
 		{"a": {"name": "천벌 숙련", "desc": "위력 +30% · 쿨감 +8%", "eff": {"dmg": 0.30, "haste": 0.08}},
-		 "b": {"name": "수호 숙련", "desc": "최대체력 +35 · 재생 +1.5/초", "eff": {"hp": 35.0, "regen": 1.5}}},
+		 "b": {"name": "가호 숙련", "desc": "최대체력 +35 · 재생 +2/초", "eff": {"hp": 35.0, "regen": 2.0}}},
 	],
-	"dagger": [
-		{"a": {"name": "암살 숙련", "desc": "치명 +14% · 위력 +15%", "eff": {"crit": 0.14, "dmg": 0.15}},
-		 "b": {"name": "난무 숙련", "desc": "추가 발사 +1 · 쿨감 +6%", "eff": {"amount": 1, "haste": 0.06}}},
-		{"a": {"name": "급소 숙련", "desc": "치명 +16% · 위력 +18%", "eff": {"crit": 0.16, "dmg": 0.18}},
-		 "b": {"name": "잔영 숙련", "desc": "최대체력 +30 · 재생 +1.5/초", "eff": {"hp": 30.0, "regen": 1.5}}},
+	"water": [
+		{"a": {"name": "격류 숙련", "desc": "위력 +25% · 치명 +8%", "eff": {"dmg": 0.25, "crit": 0.08}},
+		 "b": {"name": "범람 숙련", "desc": "효과 범위 +32% · 추가 발사 +1", "eff": {"area": 0.32, "amount": 1}}},
+		{"a": {"name": "해일 숙련", "desc": "위력 +30% · 쿨감 +7%", "eff": {"dmg": 0.30, "haste": 0.07}},
+		 "b": {"name": "조수 숙련", "desc": "최대체력 +40 · 방어 +2", "eff": {"hp": 40.0, "armor": 2.0}}},
 	],
-	"spear": [
-		{"a": {"name": "관통 숙련", "desc": "위력 +28% · 치명 +6%", "eff": {"dmg": 0.28, "crit": 0.06}},
-		 "b": {"name": "질풍 숙련", "desc": "쿨감 +9% · 범위 +12%", "eff": {"haste": 0.09, "area": 0.12}}},
-		{"a": {"name": "돌파 숙련", "desc": "위력 +32% · 추가 발사 +1", "eff": {"dmg": 0.32, "amount": 1}},
-		 "b": {"name": "철벽 숙련", "desc": "최대체력 +45 · 방어 +2", "eff": {"hp": 45.0, "armor": 2.0}}},
+	"wind": [
+		{"a": {"name": "질풍 숙련", "desc": "위력 +24% · 치명 +12%", "eff": {"dmg": 0.24, "crit": 0.12}},
+		 "b": {"name": "돌풍 숙련", "desc": "효과 범위 +28% · 추가 발사 +1", "eff": {"area": 0.28, "amount": 1}}},
+		{"a": {"name": "폭풍 숙련", "desc": "위력 +28% · 쿨감 +9%", "eff": {"dmg": 0.28, "haste": 0.09}},
+		 "b": {"name": "기류 숙련", "desc": "최대체력 +30 · 재생 +2/초", "eff": {"hp": 30.0, "regen": 2.0}}},
+	],
+	"earth": [
+		{"a": {"name": "분쇄 숙련", "desc": "위력 +30% · 치명 +6%", "eff": {"dmg": 0.30, "crit": 0.06}},
+		 "b": {"name": "지진 숙련", "desc": "효과 범위 +35% · 추가 발사 +1", "eff": {"area": 0.35, "amount": 1}}},
+		{"a": {"name": "융기 숙련", "desc": "위력 +34% · 쿨감 +6%", "eff": {"dmg": 0.34, "haste": 0.06}},
+		 "b": {"name": "거암 숙련", "desc": "최대체력 +50 · 방어 +3", "eff": {"hp": 50.0, "armor": 3.0}}},
+	],
+	"elec": [
+		{"a": {"name": "방전 숙련", "desc": "위력 +26% · 치명 +10%", "eff": {"dmg": 0.26, "crit": 0.10}},
+		 "b": {"name": "연쇄 숙련", "desc": "효과 범위 +30% · 추가 발사 +1", "eff": {"area": 0.30, "amount": 1}}},
+		{"a": {"name": "뇌격 숙련", "desc": "위력 +30% · 쿨감 +9%", "eff": {"dmg": 0.30, "haste": 0.09}},
+		 "b": {"name": "자기장 숙련", "desc": "최대체력 +35 · 방어 +2", "eff": {"hp": 35.0, "armor": 2.0}}},
+	],
+	"phys": [
+		{"a": {"name": "처형 숙련", "desc": "위력 +28% · 치명 +10%", "eff": {"dmg": 0.28, "crit": 0.10}},
+		 "b": {"name": "난무 숙련", "desc": "효과 범위 +28% · 추가 발사 +1", "eff": {"area": 0.28, "amount": 1}}},
+		{"a": {"name": "급소 숙련", "desc": "위력 +32% · 쿨감 +7%", "eff": {"dmg": 0.32, "haste": 0.07}},
+		 "b": {"name": "불굴 숙련", "desc": "최대체력 +45 · 방어 +3", "eff": {"hp": 45.0, "armor": 3.0}}},
 	],
 }
 const BOSS_TIME := 180.0        # 첫 보스 3분 (1분→3분: 초반에 빌드 쌓을 여유)
@@ -2256,7 +2281,7 @@ func _process(delta: float) -> void:
 			player.armor = maxf(0.0, player.armor - 4.0)   # 보호 스킬 종료
 	# 누르고 있으면 계속 나간다. 클릭 연타를 강요하지 않는다.
 	if basic_cd <= 0.0 and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
-		var basic := skill_def(SkillDefs.basic_archetype())
+		var basic := skill_def(_basic_archetype())
 		if not basic.is_empty() and _execute_skill(basic):
 			basic_cd = float(basic["cd"]) * player.cooldown_mult
 
@@ -2850,15 +2875,16 @@ func _fx_element() -> String:
 # 형태로 이펙트를 부른다. 무기는 형태만 고르고 실제 아트는 캐릭터 원소가 결정한다.
 # heavy=true는 궁극기·보스 패턴처럼 "큰 거다"를 알려야 할 때만.
 func spawn_fx_form(form: String, pos: Vector2, size_px: float = 72.0, rot: float = 0.0,
-		fps: float = 16.0, stretch: Vector2 = Vector2.ONE, heavy: bool = false) -> void:
+		fps: float = 16.0, stretch: Vector2 = Vector2.ONE, heavy: bool = false,
+		alpha: float = 1.0) -> void:
 	var name := FxMatrix.resolve(form, _fx_element(), heavy)
 	if name == "":
 		return
-	spawn_fx(name, pos, size_px, rot, fps, stretch)
+	spawn_fx(name, pos, size_px, rot, fps, stretch, alpha)
 
 
 func spawn_fx(dir_name: String, pos: Vector2, size_px: float = 72.0, rot: float = 0.0,
-		fps: float = 16.0, stretch: Vector2 = Vector2.ONE) -> void:
+		fps: float = 16.0, stretch: Vector2 = Vector2.ONE, alpha: float = 1.0) -> void:
 	if fx_level == 0:
 		return
 	# 센티널 "bolt": 프레임 아트 대신 코드 지그재그 낙뢰.
@@ -2879,6 +2905,8 @@ func spawn_fx(dir_name: String, pos: Vector2, size_px: float = 72.0, rot: float 
 	# 진화 무기 발사 중이면 이펙트를 시그니처 색으로 물들임 (진화가 한눈에 보이게)
 	if _evo_spawn and _evo_kind != "":
 		fx.modulate = _evo_tint(_evo_kind)
+	if alpha < 1.0:
+		fx.modulate.a = alpha
 	add_child(fx)
 
 
@@ -6926,10 +6954,6 @@ func _populate_levelup() -> void:
 		picks = [fork[0], fork[1], _fork_filler_card()]
 	else:
 		picks = _pick3(_card_options())
-		# M2 숙련 최종 노드: 주무기 만렙이면 진화 카드를 확정 노출(1번 슬롯).
-		var evo := _pending_primary_evolution()
-		if not evo.is_empty():
-			picks[0] = evo
 	_cur_picks = picks
 	var top_rarity := ""   # 이번 판 카드 중 최고 등급 (등장 연출용)
 	for i in 3:
@@ -7258,14 +7282,10 @@ func _choose_card(c: Dictionary) -> void:
 		get_tree().paused = false
 	_update_ui()
 func _pending_mastery_fork() -> Array:
-	if primary_weapon == "":
-		return []
-	var arch := _weapon_active_archetype(primary_weapon)
-	var forks: Array = MASTERY_FORK.get(arch, [])
-	var lv := int(weapons.get(primary_weapon, 0))
+	var forks: Array = MASTERY_FORK.get(_player_element(), [])
 	for i in forks.size():
 		var flevel: int = MASTERY_FORK_LEVELS[i]
-		if lv != flevel - 1 or mastery_picks.has(flevel):
+		if level < flevel or mastery_picks.has(flevel):
 			continue
 		var fork: Dictionary = forks[i]
 		var out: Array = []
@@ -7275,29 +7295,26 @@ func _pending_mastery_fork() -> Array:
 			var bk: String = bkey
 			out.append({"r": "epic", "t": "fork", "new": true,
 				"title": "[숙련] %s" % str(b["name"]),
-				"desc": "%s — %s 숙련 분기 (1회 선택, 반대편 잠김)" % [str(b["desc"]), WNAMES.get(primary_weapon, primary_weapon)],
-				"icon": WICON.get(primary_weapon, ""),
+				"desc": "%s — 1회 선택, 반대편 잠김" % str(b["desc"]),
+				"icon": _element_icon(),
 				"act": func() -> void: _take_mastery_branch(fl, bk)})
 		return out
 	return []
 
 
-# 숙련 갈림길 화면의 3번째 필러: 주무기 강화가 아닌 일반 옵션 하나(없으면 리밋 브레이크).
+# 숙련 갈림길 화면의 3번째 필러: 일반 옵션 하나(없으면 리밋 브레이크).
 func _fork_filler_card() -> Dictionary:
-	for o in _pick3(_card_options()):
-		if str(o.get("key", "")) != primary_weapon:
-			return o
-	return _limit_break_card({})
+	var pool := _pick3(_card_options())
+	return pool[0] if not pool.is_empty() else _limit_break_card({})
 
 
-# 숙련 분기 확정: 효과(가산 스탯) 적용 + 해당 갈림길 잠금 + 주무기를 그 숙련 단계로 진행.
+# 숙련 분기 확정: 효과(가산 스탯) 적용 + 해당 갈림길 잠금.
 func _take_mastery_branch(flevel: int, bkey: String) -> void:
 	if mastery_picks.has(flevel):
 		return   # 중복 적용 방지(카드 등급 보너스 재호출 등)
 	mastery_picks[flevel] = bkey
-	var arch := _weapon_active_archetype(primary_weapon)
 	var idx := MASTERY_FORK_LEVELS.find(flevel)
-	var forks: Array = MASTERY_FORK.get(arch, [])
+	var forks: Array = MASTERY_FORK.get(_player_element(), [])
 	if idx < 0 or idx >= forks.size():
 		return
 	var eff: Dictionary = (forks[idx][bkey] as Dictionary).get("eff", {})
@@ -7314,42 +7331,12 @@ func _take_mastery_branch(flevel: int, bkey: String) -> void:
 			player.hp += add
 		player.regen += float(eff.get("regen", 0.0))
 		player.armor += float(eff.get("armor", 0.0))
-	# 숙련 단계 진행: 주무기를 갈림길 레벨로 올린다(정상 진행 유지).
-	if int(weapons.get(primary_weapon, 0)) < flevel:
-		weapons[primary_weapon] = flevel
 
 
-# M2 숙련 최종 노드: 주무기가 만렙(Lv8)이고 아직 진화 안 했으면 진화 카드를 반환({}=없음).
-# 뱀서식 보스상자·10:00·재료 패시브 게이트를 우회 — 진화 = 숙련 완성의 확정 보상.
-func _pending_primary_evolution() -> Dictionary:
-	if primary_weapon == "" or not EVO_RECIPE.has(primary_weapon):
-		return {}
-	if int(weapons.get(primary_weapon, 0)) < MAX_WLEVEL or evolved.get(primary_weapon, false):
-		return {}
-	var pk: String = primary_weapon
-	var ev: Dictionary = EVO_RECIPE[primary_weapon]
-	return {"r": "legendary", "t": "evo", "new": true,
-		"title": "[진화] %s" % str(ev["name"]),
-		"desc": "%s 숙련 완성 — 최종 무기로 진화" % WNAMES.get(primary_weapon, primary_weapon),
-		"icon": str(ev.get("icon", WICON.get(primary_weapon, ""))),
-		"act": func() -> void: _evolve_primary(pk)}
-
-
-# 주무기 진화 확정(카드 선택). 진화 상태 변경은 _evolve 재사용, 연출은 상자 진화와 동일.
-func _evolve_primary(kind: String) -> void:
-	if evolved.get(kind, false):
-		return
-	_evolve(kind)
-	if stage_label:
-		stage_label.text = "[진화] %s!" % EVO_RECIPE[kind]["name"]
-		stage_label.visible = true
-	stage_banner_t = 2.6
-	play_sfx("levelup", -4.0)
-	shake_t = max(shake_t, 0.2)
-	if player:
-		spawn_fx_form("ward", player.position, 132.0)
-	_grant_ach("legend_weapon")
-	_flash(Color(1.0, 1.0, 0.95, 0.62))   # 진화 화이트 플래시
+# 숙련 카드의 대표 아이콘: 이 캐릭터 기본 공격 이펙트의 한 프레임.
+# 원소마다 색이 달라 카드만 봐도 "내 계열"이 읽힌다.
+func _element_icon() -> String:
+	return _skill_icon_path(_basic_archetype())
 
 
 func _card_options() -> Array:
@@ -7371,26 +7358,39 @@ func _card_options() -> Array:
 		var def := SkillDefs.build(arch, element, maxi(1, level + 1))
 		if def.is_empty():
 			continue
-		var icon := "res://assets/anim/%s/0.png" % str(def.get("fx", ""))
+		var icon := _skill_icon_path(arch)
 		if level > 0:
 			opts.append({"r": "rare", "t": "sk", "key": arch, "owned": true,
 				"title": "%s Lv%d" % [str(def["name"]), level + 1],
 				"desc": "피해 +22%% · 쿨다운 -6%%", "icon": icon,
 				"act": func() -> void: learn_skill(arch)})
 		else:
-			# 슬롯이 다 찼는데 새 스킬을 배우면 장착이 안 돼 아무것도 못 한다.
-			# 빈 슬롯이 있을 때만 신규 스킬을 제시한다.
-			var has_free := false
-			for slot in SkillDefs.SLOT_KEYS:
-				if str(skill_slots.get(slot, "")) == "":
-					has_free = true
-					break
-			if not has_free:
+			# 슬롯 4칸이 다 차면 새 스킬은 "무엇을 버릴지"가 진짜 선택이 된다.
+			# 예전엔 그냥 카드를 안 냈는데, 그러면 남은 스킬을 영영 못 배운다.
+			# 가장 덜 키운 슬롯을 교체 대상으로 붙이고 잃는 것을 카드에 적는다.
+			var target := _free_skill_slot()
+			var losing := ""
+			if target == "":
+				target = _weakest_skill_slot()
+				losing = str(skill_slots.get(target, ""))
+			if target == "":
 				continue
-			opts.append({"r": "epic", "t": "sk", "key": arch, "new": true,
-				"title": "[신규 스킬] " + str(def["name"]),
-				"desc": str(def["desc"]), "icon": icon,
-				"act": func() -> void: learn_skill(arch)})
+			var dst: String = target
+			var slot_label := str(SkillDefs.SLOT_LABEL.get(dst, dst.to_upper()))
+			if losing == "":
+				opts.append({"r": "epic", "t": "sk", "key": arch, "new": true,
+					"title": "[신규 스킬] " + str(def["name"]),
+					"desc": "%s\n%s 칸에 장착" % [str(def["desc"]), slot_label],
+					"icon": icon,
+					"act": func() -> void: learn_skill(arch, dst)})
+			else:
+				var old_def := skill_def(losing)
+				opts.append({"r": "epic", "t": "sk", "key": arch, "new": true,
+					"title": "[교체] " + str(def["name"]),
+					"desc": "%s\n%s: %s Lv%d 를 버린다" % [str(def["desc"]), slot_label,
+						str(old_def.get("name", losing)), int(skill_levels.get(losing, 1))],
+					"icon": icon,
+					"act": func() -> void: learn_skill(arch, dst)})
 
 	# 3) 패시브 아이템 레벨업 / 신규
 	var pdefs := _passive_defs()
@@ -8108,7 +8108,7 @@ func _start_game(d: Dictionary) -> void:
 	mastery_picks = {}   # M2: 이번 런 숙련 갈림길 미선택 상태로 초기화
 	# 스킬 초기화. 기본 공격은 처음부터 Lv1로 가지고 시작하고 슬롯을 쓰지 않는다.
 	# 나머지 7종은 레벨업 카드로 배운다.
-	skill_levels = {SkillDefs.basic_archetype(): 1}
+	skill_levels = {_basic_archetype(): 1}
 	skill_slots = {"q": "", "e": "", "r": "", "f": ""}
 	skill_cds = {"q": 0.0, "e": 0.0, "r": 0.0, "f": 0.0}
 	basic_cd = 0.0
@@ -8534,10 +8534,7 @@ func _refresh_skill_hud() -> void:
 		names.append("%s %s" % [label, nm])
 		# 아이콘은 그 스킬이 실제로 쓰는 이펙트의 첫 프레임이다. 별도 아이콘 아트를
 		# 만들지 않아도 슬롯과 화면에 터지는 것이 같은 그림이라 바로 연결된다.
-		var icon: Texture2D = null
-		var fx := str(def.get("fx", ""))
-		if fx != "":
-			icon = Assets.tex("res://assets/anim/%s/2.png" % fx)
+		var icon: Texture2D = Assets.tex(_skill_icon_path(archetype))
 		entries.append({
 			"key": label, "name": nm, "icon": icon,
 			"cd": float(skill_cds.get(slot, 0.0)),
@@ -8783,6 +8780,18 @@ func _player_element() -> String:
 
 
 # 이 캐릭터의 스킬 정의. 레벨은 배운 만큼.
+# 이 캐릭터의 기본 공격(좌클릭). 근접 캐릭터는 swing, 원거리는 bolt다.
+func _basic_archetype() -> String:
+	return SkillDefs.basic_archetype(_player_element())
+
+
+# 스킬 아이콘 = 그 스킬이 실제로 쓰는 이펙트의 한 프레임. 슬롯과 화면이 같은 그림이 된다.
+func _skill_icon_path(archetype: String) -> String:
+	var d := skill_def(archetype)
+	var fx := str(d.get("fx", ""))
+	return "" if fx == "" else "res://assets/anim/%s/2.png" % fx
+
+
 func skill_def(archetype: String) -> Dictionary:
 	if archetype == "":
 		return {}
@@ -8794,8 +8803,32 @@ func has_skill(archetype: String) -> bool:
 	return skill_levels.has(archetype)
 
 
+# 비어 있는 첫 슬롯 키. 없으면 "".
+func _free_skill_slot() -> String:
+	for slot in SkillDefs.SLOT_KEYS:
+		if str(skill_slots.get(slot, "")) == "":
+			return str(slot)
+	return ""
+
+
+# 가장 덜 키운 슬롯 = 교체해도 가장 덜 아까운 칸. 전부 비어 있으면 "".
+func _weakest_skill_slot() -> String:
+	var best := ""
+	var best_lv := 999
+	for slot in SkillDefs.SLOT_KEYS:
+		var arch := str(skill_slots.get(slot, ""))
+		if arch == "":
+			continue
+		var lv := int(skill_levels.get(arch, 1))
+		if lv < best_lv:
+			best_lv = lv
+			best = str(slot)
+	return best
+
+
 # 스킬을 배우거나 한 단계 올린다. 레벨업 카드가 부른다.
-func learn_skill(archetype: String) -> void:
+# slot을 주면 그 칸에 강제로 넣는다(교체 카드). 비우면 빈 칸을 찾아 장착한다.
+func learn_skill(archetype: String, slot: String = "") -> void:
 	if not SkillDefs.ARCHETYPES.has(archetype):
 		return
 	if skill_levels.has(archetype):
@@ -8803,11 +8836,15 @@ func learn_skill(archetype: String) -> void:
 			int(skill_levels[archetype]) + 1)
 	else:
 		skill_levels[archetype] = 1
-		# 빈 슬롯이 있으면 바로 장착한다. 4칸이 다 차면 교체는 사장님 몫(인벤토리)이다.
-		for slot in SkillDefs.SLOT_KEYS:
-			if str(skill_slots.get(slot, "")) == "":
-				skill_slots[slot] = archetype
-				break
+		var dst := slot if slot != "" else _free_skill_slot()
+		if dst != "":
+			var replaced := str(skill_slots.get(dst, ""))
+			if replaced != "":
+				# 버린 스킬은 레벨까지 지운다. 안 지우면 나중에 다시 배울 때
+				# 예전 레벨이 공짜로 딸려 와 교체가 손실이 아니게 된다.
+				skill_levels.erase(replaced)
+			skill_slots[dst] = archetype
+			skill_cds[dst] = 0.0
 	_refresh_skill_hud()
 
 
@@ -8845,7 +8882,11 @@ func _skill_target(def: Dictionary) -> Vector2:
 func _execute_skill(def: Dictionary) -> bool:
 	var element := str(def["element"])
 	var effect := str(def["effect"])
-	var damage := float(def["dmg"]) * player.damage_mult * 26.0
+	# 캐릭터의 근접·원거리 배수를 스킬 피해에 건다. 예전엔 무기 피해에만 걸려 있어서
+	# 무기를 걷어낸 뒤로 이 스탯이 캐릭터 선택창에만 표시되고 실제로는 아무 일도
+	# 안 하고 있었다. 판정 사거리로 갈라서(140px 이하 = 근접) 한 줄로 되살린다.
+	var style_mult := char_melee if SkillDefs.is_melee(str(def["archetype"])) else char_ranged
+	var damage := float(def["dmg"]) * player.damage_mult * style_mult * 26.0
 	var aim := player.aim_dir()
 	var target := _skill_target(def)
 	var source := telemetry_push_damage_source("skill:%s" % str(def["archetype"]))
@@ -8854,7 +8895,7 @@ func _execute_skill(def: Dictionary) -> bool:
 	match str(def["archetype"]):
 		"bolt":
 			_skill_bolt(def, aim, damage, effect)
-		"slash":
+		"swing", "slash":
 			_skill_slash(def, aim, damage, effect)
 		"burst":
 			_skill_burst(def, target, damage, effect)
@@ -8876,11 +8917,14 @@ func _execute_skill(def: Dictionary) -> bool:
 
 
 func _skill_bolt(def: Dictionary, aim: Vector2, damage: float, effect: String) -> void:
+	# 총구. 탄이 몸 한가운데서 튀어나오고 캐스트 이펙트가 몸을 덮고 있어서
+	# 연출이 겉돌았다(사장님 지적). 발사도 섬광도 조준 방향 앞에서 일어나게 옮긴다.
+	var muzzle := player.position + aim * 26.0
 	var shots := 1 + player.amount
 	for i in shots:
 		var spread := 0.0 if shots == 1 else (float(i) - float(shots - 1) * 0.5) * 0.12
 		var a := Arrow.new()
-		a.position = player.position
+		a.position = muzzle
 		a.velocity = aim.rotated(spread) * 560.0
 		a.damage = damage
 		a.radius = float(def.get("radius", 11.0))
@@ -8894,7 +8938,9 @@ func _skill_bolt(def: Dictionary, aim: Vector2, damage: float, effect: String) -
 			a.slow_amount = 0.35
 			a.slow_time = 2.5
 		add_child(a)
-	spawn_fx_form("cast", player.position, 52.0, aim.angle())
+	# 총구 섬광은 작게. 52px는 캐릭터를 통째로 가렸다 — 탄 자체가 이미 연출이라
+	# 여기서 필요한 건 "여기서 나갔다"는 표시뿐이다.
+	spawn_fx_form("cast", muzzle, 30.0, aim.angle())
 	play_sfx("shoot", -14.0, 0.08)
 
 
@@ -8911,7 +8957,12 @@ func _skill_slash(def: Dictionary, aim: Vector2, damage: float, effect: String) 
 			continue
 		_hit_with_effect(e, damage, effect, aim)
 	_break_near(player.position + aim * reach * 0.5, reach * 0.7, damage)
-	spawn_fx_form("slash", player.position + aim * reach * 0.45, reach * 1.3, aim.angle())
+	# 기본 공격(0.5초 간격)은 스킬과 같은 크기로 그리면 흰 스미어가 화면에 상주한다.
+	# 판정 크기만큼만, 절반 투명도로. 스킬 베기(3.2초 쿨)는 그대로 크게 남긴다.
+	var basic := str(def.get("slot", "")) == "basic"
+	spawn_fx_form("slash", player.position + aim * reach * (0.55 if basic else 0.45),
+		reach * (0.8 if basic else 1.3), aim.angle(), 16.0, Vector2.ONE, false,
+		0.5 if basic else 1.0)
 	play_sfx("hit", -12.0, 0.1)
 
 

@@ -19,6 +19,14 @@ const ARCHETYPES := {
 		"cd": 0.42, "dmg": 1.0, "range": 300.0, "radius": 11.0,
 		"desc": "커서 방향으로 관통 투사체를 쏜다",
 	},
+	# 근접 기본 공격. 원거리형과 같은 탄을 쏘는 게 어색하다는 지적(사장님)에 맞춰
+	# 근접 캐릭터는 투사체 대신 눈앞을 벤다. form이 slash라 이펙트도 탄이 아닌 베기다.
+	# bolt보다 느리고(0.52) 세지만(1.5) 사거리가 1/3이라 붙어야 한다 — 그게 근접의 값이다.
+	"swing": {
+		"name": "휘두르기", "form": "slash", "slot": "basic",
+		"cd": 0.52, "dmg": 1.5, "range": 104.0, "radius": 0.0, "arc": 2.1,
+		"desc": "눈앞을 짧게 휘둘러 벤다",
+	},
 	"slash": {
 		"name": "베기", "form": "slash", "slot": "skill",
 		"cd": 3.2, "dmg": 2.4, "range": 132.0, "radius": 0.0, "arc": 1.5,
@@ -69,6 +77,15 @@ const ELEMENT_TRAITS := {
 	"earth": {"name": "대지", "effect": "stun",    "desc": "0.7초 기절"},
 	"elec":  {"name": "전기", "effect": "chain",   "desc": "주변 2명에게 연쇄"},
 	"phys":  {"name": "물리", "effect": "execute", "desc": "치명 +20% · 처형 피해"},
+}
+
+# 기본 공격은 원소(=캐릭터)마다 근접·원거리로 갈린다. GameConfig의 melee/ranged
+# 배수가 높은 쪽을 그대로 따랐다 — 모르덱(1.3/0.65)·구스타보(1.35/0.7)·세라피나(1.0/0.9)가
+# 근접, 나머지 6명이 원거리다. 스탯과 손맛이 어긋나면 캐릭터를 고를 이유가 없다.
+const BASIC_BY_ELEMENT := {
+	"phys": "swing", "earth": "swing", "holy": "swing",
+	"fire": "bolt", "ice": "bolt", "dark": "bolt", "water": "bolt",
+	"wind": "bolt", "elec": "bolt",
 }
 
 # 캐릭터 9명 = 원소 9종 1:1. 이펙트도 스킬도 캐릭터를 따라간다.
@@ -125,6 +142,7 @@ static func build(archetype: String, element: String, level: int = 1) -> Diction
 
 
 # 캐릭터가 배울 수 있는 스킬 전체(기본 공격 제외). 레벨업 카드가 여기서 뽑는다.
+# 기본 공격은 전부(bolt·swing) 빠진다 — 자기 것은 처음부터 갖고 있고 남의 것은 못 배운다.
 static func learnable(element: String) -> Array:
 	var out: Array = []
 	for key in ARCHETYPES:
@@ -134,9 +152,13 @@ static func learnable(element: String) -> Array:
 	return out
 
 
-# 기본 공격 아키타입 키.
-static func basic_archetype() -> String:
-	for key in ARCHETYPES:
-		if str((ARCHETYPES[key] as Dictionary).get("slot", "")) == "basic":
-			return str(key)
-	return "bolt"
+# 이 원소(=캐릭터)의 기본 공격 아키타입.
+static func basic_archetype(element: String = "") -> String:
+	return str(BASIC_BY_ELEMENT.get(element, "bolt"))
+
+
+# 자기 중심·근접 판정인가. 캐릭터의 근접·원거리 피해 배수를 어느 쪽에 걸지 가른다.
+static func is_melee(archetype: String) -> bool:
+	if not ARCHETYPES.has(archetype):
+		return false
+	return float((ARCHETYPES[archetype] as Dictionary).get("range", 0.0)) <= 140.0
