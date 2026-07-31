@@ -444,6 +444,26 @@ static func stage_power(stage: int) -> float:
 
 
 # --- 플레이어 캐릭터 ---
+# 캐릭터가 든 무기 그림. 순수 장식이다 — 무기 시스템은 제거됐고 전투에 아무 영향이 없다.
+# 캐릭터 dict의 weapon 필드도 이제 이 그림을 고르는 용도로만 남았다.
+# 파일명에 밑줄이 없는 것들이 있어(icon_poisoncloud) 키를 따로 적는다.
+const CHAR_WEAPON_ICON := {
+	"poison_cloud": "res://assets/items/icon_poisoncloud.png",
+	"cleave":       "res://assets/items/icon_slash.png",
+	"aura":         "res://assets/items/icon_aura.png",
+	"fireball":     "res://assets/items/icon_fireball.png",
+	"spread_shot":  "res://assets/items/icon_shotgun.png",
+	"bone_spiral":  "res://assets/items/icon_bonespiral.png",
+	"moonlight":    "res://assets/items/icon_moonlight.png",
+	"ice_lance":    "res://assets/items/icon_icelance.png",
+	"axe":          "res://assets/items/icon_axe.png",
+}
+
+
+static func char_weapon_icon(character: Dictionary) -> String:
+	return str(CHAR_WEAPON_ICON.get(str(character.get("weapon", "")), ""))
+
+
 static func characters() -> Array:
 	# melee/ranged: 해당 계열 무기 피해 배수 (특화 빌드 유도)
 	# range: 투사체 사거리/범위 배수, cd: 공격 속도(낮을수록 빠름)
@@ -469,13 +489,6 @@ static func characters() -> Array:
 			"melee": 1.0, "ranged": 0.9,
 			"trait": "성스러운 가호", "trait_desc": "성십자 항상 장착 · 5레벨마다 경험치 +4% (최대 +40%)",
 			"growth": {"stat": "xp", "per": 5, "amt": 0.04, "max": 10}},
-		{"key": "valentino", "name": "발렌티노", "weapon": "blood_sword",
-			"unlock": "win_gustavo", "unlock_desc": "구스타보로 승리",
-			"desc": "뱀파이어 백작 · 근접\n흡혈검 · 치명",
-			"hp": 1.0, "speed": 1.0, "cd": 0.95, "range": 0.95,
-			"melee": 1.2, "ranged": 0.85,
-			"trait": "흡혈귀", "trait_desc": "10레벨마다 치명타 +5% (최대 +25%)",
-			"growth": {"stat": "crit", "per": 10, "amt": 0.05, "max": 5}},
 		{"key": "pixie", "name": "픽시", "weapon": "fireball",
 			"unlock": "survivor", "unlock_desc": "한 판에서 15분 생존",
 			"desc": "꼬마 마녀 · 유리대포\n화염구 · 고화력 저체력",
@@ -508,19 +521,12 @@ static func characters() -> Array:
 			"trait": "배회", "trait_desc": "5레벨마다 이동속도 +2% (최대 +20%)",
 			"growth": {"stat": "speed", "per": 5, "amt": 0.02, "max": 10}},
 		{"key": "isolde", "name": "이졸데", "weapon": "ice_lance",
-			"unlock": "combo_master", "unlock_desc": "유니온 무기 1개 완성",
+			"unlock": "combo_master", "unlock_desc": "한 판에서 스킬 4칸을 모두 채움",
 			"desc": "얼음 관에서 깨어난 서리 마녀 · 냉기 캐스터\n얼음창 · 혹한의 결계",
 			"hp": 0.9, "speed": 0.95, "cd": 0.95, "range": 1.1,
 			"melee": 0.8, "ranged": 1.15,
 			"trait": "혹한", "trait_desc": "10레벨마다 방어력 +1 (최대 +5)",
 			"growth": {"stat": "armor", "per": 10, "amt": 1.0, "max": 5}},
-		{"key": "grimble", "name": "그림블", "weapon": "chain_bolt",
-			"unlock": "legend_weapon", "unlock_desc": "무기 1개 진화",
-			"desc": "늪에서 기어나온 부두술사 · 뇌전 캐스터\n연쇄뇌전 · 저주받은 공물",
-			"hp": 0.9, "speed": 0.98, "cd": 0.93, "range": 1.05,
-			"melee": 0.75, "ranged": 1.15,
-			"trait": "저주받은 공물", "trait_desc": "5레벨마다 골드 획득 +5% (최대 +50%)",
-			"growth": {"stat": "greed", "per": 5, "amt": 0.05, "max": 10}},
 		{"key": "mordek", "name": "모르덱", "weapon": "axe",
 			"unlock": "boss_slayer", "unlock_desc": "한 판에서 보스 4마리 처치",
 			"desc": "두건 쓴 거구의 처형인 · 도끼 탱커\n전투도끼 · 사슬 갈고리",
@@ -537,10 +543,10 @@ static func char_stages(ckey: String) -> Array:
 		Color(0.7, 0.5, 1.0, 0.28), Color(1.0, 0.8, 0.2, 0.34),
 		Color(1.0, 0.95, 0.7, 0.42)]
 	var cols := {"corvius": Color(0.45, 0.75, 0.55), "gustavo": Color(0.80, 0.35, 0.35),
-		"serafina": Color(1.0, 0.9, 0.6), "valentino": Color(0.70, 0.20, 0.30),
+		"serafina": Color(1.0, 0.9, 0.6),
 		"pixie": Color(0.75, 0.45, 0.95), "django": Color(0.85, 0.40, 0.25),
 		"bolt": Color(0.85, 0.85, 0.78), "morgana": Color(0.6, 0.85, 1.0),
-		"isolde": Color(0.55, 0.78, 0.98), "grimble": Color(0.58, 0.72, 0.40),
+		"isolde": Color(0.55, 0.78, 0.98),
 		"mordek": Color(0.62, 0.60, 0.64)}
 	var arr: Array = []
 	for i in 5:

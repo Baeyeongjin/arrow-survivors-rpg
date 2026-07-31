@@ -8,7 +8,9 @@ extends RefCounted
 const PATH := "user://meta.cfg"
 const CURRENT_VERSION := 2
 const DEFAULT_CHARS := ["corvius", "gustavo", "serafina"]
-const LEGACY_CHARS := ["corvius", "gustavo", "serafina", "valentino", "pixie", "django", "bolt", "morgana"]
+# 구버전 세이브 복구용. 로스터에서 빠진 캐릭터(발렌티노)는 여기서도 빠져야
+# 해금 목록에 유령 키가 남지 않는다.
+const LEGACY_CHARS := ["corvius", "gustavo", "serafina", "pixie", "django", "bolt", "morgana"]
 
 
 static func initial_chars_for_save(had_save: bool, saved_version: int) -> Array:

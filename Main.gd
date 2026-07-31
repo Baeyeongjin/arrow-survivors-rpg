@@ -189,13 +189,11 @@ const ACHIEVEMENTS := [
 	{"key": "win_corvius",  "name": "역병의 승리",     "desc": "코르비우스로 승리",             "gold": 80},
 	{"key": "win_gustavo",  "name": "정육점의 승리",   "desc": "구스타보로 승리",               "gold": 80},
 	{"key": "win_serafina", "name": "타락한 가호",     "desc": "세라피나로 승리",               "gold": 80},
-	{"key": "win_valentino","name": "피의 백작",       "desc": "발렌티노로 승리",               "gold": 80},
 	{"key": "win_pixie",    "name": "꼬마 대마녀",     "desc": "픽시로 승리",                   "gold": 80},
 	{"key": "win_django",   "name": "노상강도의 전설", "desc": "바르톨로로 승리",               "gold": 80},
 	{"key": "win_bolt",     "name": "납골당의 주인",   "desc": "오사리오로 승리",               "gold": 80},
 	{"key": "win_morgana",  "name": "월광의 해방",     "desc": "모르가나로 승리",               "gold": 80},
 	{"key": "win_isolde",   "name": "겨울의 승리",     "desc": "이졸데로 승리",                 "gold": 80},
-	{"key": "win_grimble",  "name": "늪의 승리",       "desc": "그림블로 승리",                 "gold": 80},
 	{"key": "win_mordek",   "name": "처형 집행",       "desc": "모르덱으로 승리",               "gold": 80},
 ]
 # 업적 달성 시 다음 런부터 자동 적용되는 영구 유물. 별도 슬롯을 차지하지 않는다.
@@ -1582,13 +1580,13 @@ func _autoshot() -> void:
 		_apply_unlocked_relic_effects()
 		var relic_effect_ok := (is_equal_approx(run_pressure_mult, 1.12)
 			and is_equal_approx(xp_mult, 1.12) and is_equal_approx(greed_mult, 1.12))
-		var passed := (_is_char_unlocked(GameConfig.characters()[4])
-			and _is_char_unlocked(GameConfig.characters()[6])
+		var passed := (_is_char_unlocked(_char_by_key("pixie"))
+			and _is_char_unlocked(_char_by_key("bolt"))
 			and _has_relic("yellow_sign") and _has_relic("milky_map")
 			and unlocked_names.size() == 4
 			and relic_effect_ok
 			and Meta.initial_chars_for_save(false, 0).size() == 3
-			and Meta.initial_chars_for_save(true, 0).size() == 8)
+			and Meta.initial_chars_for_save(true, 0).size() == 7)
 		print("PROGRESSION_TEST %s chars=%s relics=%s new=%s" % ["PASS" if passed else "FAIL", meta["unlocked_chars"], meta["unlocked_relics"], unlocked_names])
 		if not passed:
 			push_error("Meta progression regression test failed")
@@ -7827,19 +7825,18 @@ func _refresh_ult_bar() -> void:
 # 캐릭터별 고유 스킬: ult=궁극기 아키타입, element=스킬 3종의 속성(색·상성).
 # GameConfig를 안 건드리고 여기 한 곳에서 분기 (character key 기준).
 const CHAR_SKILLS := {
-	# 원소 재배정(사장님 결정: 이펙트는 캐릭터 기준). 예전에는 dark 4명·phys 3명·ice 2명으로
-	# 편중돼 11명 중 절반이 같은 색으로 싸웠다. VFX 팩의 9원소에 흩어 캐릭터마다 다른 색·형태를
-	# 갖게 했다. 전투 상성은 fire/ice/dark/holy만 쓰므로 신규 4원소는 상성상 중립이다.
+	# 캐릭터 9명 = 원소 9종 1:1 (SkillDefs.CHAR_ELEMENT와 같은 표를 봐야 한다).
+	# 11명이던 시절엔 발렌티노가 모르덱의 물리를, 그림블이 코르비우스의 어둠을 겹쳐 썼다.
+	# 원소가 곧 이펙트·스킬·상성이라 겹치면 두 캐릭터가 사실상 같은 캐릭터가 된다.
+	# 전투 상성은 fire/ice/dark/holy만 쓰므로 신규 4원소는 상성상 중립이다.
 	"corvius":   {"ult": "blast",    "element": "dark"},   # 역병의사 — 어둠
 	"gustavo":   {"ult": "reap",     "element": "earth"},  # 정육점 탱커 — 대지
 	"serafina":  {"ult": "judgment", "element": "holy"},   # 수녀 — 신성
-	"valentino": {"ult": "reap",     "element": "phys"},   # 뱀파이어 — 물리(피의 베기)
 	"pixie":     {"ult": "meteor",   "element": "fire"},   # 마녀 — 화염
 	"django":    {"ult": "blast",    "element": "wind"},   # 노상강도 — 바람(속사)
 	"bolt":      {"ult": "blast",    "element": "elec"},   # 해골 — 전기
 	"morgana":   {"ult": "blizzard", "element": "water"},  # 유령 — 물
 	"isolde":    {"ult": "blizzard", "element": "ice"},    # 서리 마녀 — 냉기
-	"grimble":   {"ult": "blast",    "element": "dark"},   # 부두술사 — 어둠
 	"mordek":    {"ult": "reap",     "element": "phys"},   # 처형인 — 물리
 }
 const ULT_NAME := {"blast": "비전 폭발", "meteor": "운석비", "blizzard": "빙결 결계", "judgment": "신성 심판", "reap": "암흑 수확"}
@@ -8733,7 +8730,7 @@ func _preview_char(c: Dictionary) -> void:
 			pt = Assets.tex("res://assets/hero/%s_1.png" % c["key"])
 		char_det_spr.texture = pt
 	if char_det_wicon:
-		char_det_wicon.texture = Assets.tex(_char_element_icon(str(c.get("key", ""))))
+		char_det_wicon.texture = Assets.tex(GameConfig.char_weapon_icon(c))
 	if char_det_desc:
 		var t: String = str(c.get("desc", ""))
 		var tr: Dictionary = SkillDefs.ELEMENT_TRAITS.get(SkillDefs.element_of(str(c.get("key", ""))), {})
@@ -8862,6 +8859,14 @@ func _ach_by_key(key: String) -> Dictionary:
 	for a in ACHIEVEMENTS:
 		if a["key"] == key:
 			return a
+	return {}
+
+
+# 키로 캐릭터 찾기. 인덱스로 집으면 로스터가 바뀔 때마다 조용히 다른 캐릭터를 가리킨다.
+func _char_by_key(key: String) -> Dictionary:
+	for c in GameConfig.characters():
+		if str(c.get("key", "")) == key:
+			return c
 	return {}
 
 
@@ -10413,7 +10418,7 @@ func _build_ui(s: Vector2) -> void:
 	char_det_wicon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	char_weapon_box.add_child(char_det_wicon)
 	var char_weapon_caption := Label.new()
-	char_weapon_caption.text = "원소"
+	char_weapon_caption.text = "시작 무기"
 	char_weapon_caption.position = Vector2(4, 76)
 	char_weapon_caption.size = Vector2(88, 24)
 	char_weapon_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -10485,9 +10490,10 @@ func _build_ui(s: Vector2) -> void:
 			spr.modulate = Color(0.04, 0.04, 0.055, 0.95)
 		cb.add_child(spr)
 
-		# 원소 아이콘 (타일 우하단)
+		# 시작 무기 아이콘 (타일 우하단 — 뱀서와 동일). 장식이지만 실루엣만으로
+		# "저 캐릭터는 도끼구나"가 읽혀 고르는 재미가 산다.
 		var wi := TextureRect.new()
-		wi.texture = Assets.tex(_char_element_icon(str(c.get("key", ""))))
+		wi.texture = Assets.tex(GameConfig.char_weapon_icon(c))
 		wi.position = Vector2(tw - 36.0, th - 36.0)
 		wi.size = Vector2(28.0, 28.0)
 		wi.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
