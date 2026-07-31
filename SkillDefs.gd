@@ -44,15 +44,17 @@ const ARCHETYPES := {
 		"cd": 6.5, "dmg": 2.2, "range": 0.0, "radius": 142.0,
 		"desc": "자기 주위로 터뜨려 밀어낸다",
 	},
+	# 대형 스킬 2종. 캐릭터 궁극기(마우스 우클릭 · 게이지 소모)와는 별개로, 긴 쿨다운을
+	# 대가로 한 방이 큰 Q/E/R/F 스킬이다. 궁극기는 게이지가 자원이고 이쪽은 쿨다운이다.
 	"ruin": {
-		"name": "파멸", "form": "impact", "slot": "ult", "heavy": true,
+		"name": "파멸", "form": "impact", "slot": "heavy", "heavy": true,
 		"cd": 24.0, "dmg": 6.5, "range": 320.0, "radius": 176.0,
-		"desc": "궁극기 — 커서 위치에 대형 폭발",
+		"desc": "커서 위치에 대형 폭발 (긴 쿨다운)",
 	},
 	"aegis": {
-		"name": "결계", "form": "zone", "slot": "ult", "heavy": true,
+		"name": "결계", "form": "zone", "slot": "heavy", "heavy": true,
 		"cd": 28.0, "dmg": 1.6, "range": 260.0, "radius": 192.0, "duration": 7.0,
-		"desc": "궁극기 — 넓은 지속 결계를 펼친다",
+		"desc": "넓은 지속 결계를 펼친다 (긴 쿨다운)",
 	},
 }
 
