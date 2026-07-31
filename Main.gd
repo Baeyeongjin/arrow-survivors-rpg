@@ -579,9 +579,6 @@ var diff_label := ""
 # UI
 var hp_bar: ProgressBar
 var xp_bar: ProgressBar
-var ult_bar: ProgressBar        # 궁극기 충전 게이지 (하단 중앙)
-var ult_bar_label: Label        # "Q 궁극기" / "READY!"
-var ult_gauge := 0.0            # 0~1, 처치로 충전 → Q로 발동
 var skill_hud_label: Label      # 스킬 이름 줄 (아이콘 아래)
 var skill_bar: SkillBar         # Q/E/R/F 아이콘 + 쿨다운 슬롯바
 # 장비 시스템 (Phase 3): 3슬롯 + 등급별 랜덤 어픽스
@@ -4196,9 +4193,9 @@ func on_enemy_killed(e: Enemy) -> void:
 	kills += 1
 	if e.is_threatened() and _monster_threat_t > 0.0:
 		_monster_threat_kills += 1
-	# 궁극기 게이지 충전 (엘리트는 크게). 처치 = 게이지 → "쌓아서 터뜨리는" 능동 루프.
-	ult_gauge = minf(1.0, ult_gauge + (0.05 if e.elite else 0.008))
-	_refresh_ult_bar()
+	# 정예 처치는 스킬 쿨을 짧게 되돌려 준다 (궁극기 게이지를 대체하는 처치 보상).
+	if e.elite:
+		_reduce_skill_cds(0.8)
 	_maybe_drop_gear(e.position, e.elite)   # 장비 드롭 (엘리트 확정급, 일반 저확률)
 	# 왕좌 지휘관을 처치하면 마왕 보호막 게이트가 한 칸 열린다.
 	if str(e.tier.get("key", "")) == "throne_guard" \
@@ -5059,11 +5056,9 @@ func _roll_castle_gear(force_epic: bool = false, slot_override: String = "") -> 
 	return item
 
 
-# 혼령의 메아리: 정예 처치 시 E 재사용 단축 + 궁극기 게이지 소량 충전.
+# 혼령의 메아리: 정예 처치 시 스킬 재사용 단축 (궁극기 제거 후 쿨감으로 통합).
 func _grave_echo_on_elite() -> void:
-	_reduce_skill_cds(1.5)
-	ult_gauge = minf(1.0, ult_gauge + 0.05)
-	_refresh_ult_bar()
+	_reduce_skill_cds(2.0)
 
 
 # 수의의 가호: 층마다 처음 치명 피해를 1 HP로 버티고 짧은 무적. 발동 시 true.
@@ -7418,7 +7413,6 @@ func _start_game(d: Dictionary) -> void:
 	cheated = false
 	cheat_invincible = false
 	run_gold = 0
-	ult_gauge = 0.0
 	player.dodge_t = 0.0
 	player.dodge_cd = 0.0
 	player.invuln = 0.0
@@ -7438,7 +7432,6 @@ func _start_game(d: Dictionary) -> void:
 	if inventory_panel:
 		inventory_panel.visible = false
 	_apply_equipment()   # 이월된 로드아웃 어픽스를 player에 반영 (HUD도 내부 갱신)
-	_refresh_ult_bar()
 	_refresh_skill_hud()
 	run_damage_dealt = 0.0
 	run_damage_taken = 0.0
@@ -7927,49 +7920,10 @@ func _nearest_primed_dist() -> float:
 	return best
 
 
-# 궁극 게이지 바 갱신 (가볍게 — 처치마다 호출)
-func _refresh_ult_bar() -> void:
-	if ult_bar == null:
-		return
-	ult_bar.value = ult_gauge
-	if ult_bar_label:
-		var un := str(ULT_NAME.get(_char_ult(), "궁극기"))
-		# Q는 이제 스킬 슬롯이다. 궁극기는 마우스 우클릭으로 옮겼다.
-		if ult_gauge >= 1.0:
-			ult_bar_label.text = "우클릭  %s  READY" % un
-			ult_bar_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.5))
-		else:
-			ult_bar_label.text = "우클릭  %s  %d%%" % [un, int(ult_gauge * 100.0)]
-			ult_bar_label.add_theme_color_override("font_color", Color(0.85, 0.8, 0.95))
-
-
-# E 스킬샷: 마우스 방향으로 강력한 관통 빔 (히트스캔 코리도어). RPG식 조준 스킬.
-# 캐릭터별 고유 스킬: ult=궁극기 아키타입, element=스킬 3종의 속성(색·상성).
-# GameConfig를 안 건드리고 여기 한 곳에서 분기 (character key 기준).
-const CHAR_SKILLS := {
-	# 캐릭터 9명 = 원소 9종 1:1 (SkillDefs.CHAR_ELEMENT와 같은 표를 봐야 한다).
-	# 11명이던 시절엔 발렌티노가 모르덱의 물리를, 그림블이 코르비우스의 어둠을 겹쳐 썼다.
-	# 원소가 곧 이펙트·스킬·상성이라 겹치면 두 캐릭터가 사실상 같은 캐릭터가 된다.
-	# 전투 상성은 fire/ice/dark/holy만 쓰므로 신규 4원소는 상성상 중립이다.
-	"corvius":   {"ult": "blast",    "element": "dark"},   # 역병의사 — 어둠
-	"gustavo":   {"ult": "reap",     "element": "earth"},  # 정육점 탱커 — 대지
-	"serafina":  {"ult": "judgment", "element": "holy"},   # 수녀 — 신성
-	"pixie":     {"ult": "meteor",   "element": "fire"},   # 마녀 — 화염
-	"django":    {"ult": "blast",    "element": "wind"},   # 노상강도 — 바람(속사)
-	"bolt":      {"ult": "blast",    "element": "elec"},   # 해골 — 전기
-	"morgana":   {"ult": "blizzard", "element": "water"},  # 유령 — 물
-	"isolde":    {"ult": "blizzard", "element": "ice"},    # 서리 마녀 — 냉기
-	"mordek":    {"ult": "reap",     "element": "phys"},   # 처형인 — 물리
-}
-const ULT_NAME := {"blast": "비전 폭발", "meteor": "운석비", "blizzard": "빙결 결계", "judgment": "신성 심판", "reap": "암흑 수확"}
-
-
-func _char_ult() -> String:
-	return str((CHAR_SKILLS.get(str(sel_char.get("key", "")), {}) as Dictionary).get("ult", "blast"))
-
-
+# 캐릭터 원소. 표는 SkillDefs.CHAR_ELEMENT 하나만 쓴다 — 예전엔 CHAR_SKILLS 에
+# 같은 배정이 중복돼 있어 한쪽만 고치면 이펙트와 스킬이 어긋났다.
 func _char_skill_element() -> String:
-	return str((CHAR_SKILLS.get(str(sel_char.get("key", "")), {}) as Dictionary).get("element", "phys"))
+	return SkillDefs.element_of(str(sel_char.get("key", "")))
 func _skill_aim_direction() -> Vector2:
 	if player == null:
 		return Vector2.RIGHT
@@ -7992,118 +7946,11 @@ func _damage_active_target(target, damage: float, element: String, crit: bool = 
 		target.take_damage(damage, crit, element)
 	else:
 		target.take_damage(damage, crit, false, element)
-func _fire_ultimate() -> void:
-	if state != State.PLAYING or player == null:
-		return
-	ult_gauge = 0.0
-	# 캐릭터별 고유 궁극기. 시간이 지날수록 강해짐(후반 탱커 정리).
-	var base: float = 80.0 * player.damage_mult * (1.0 + time_survived / 240.0)
-	var elem := _char_skill_element()
-	var col: Color = ELEMENT_COL.get(elem, Color(0.82, 0.45, 1.0))
-	var previous_damage_source := telemetry_push_damage_source("ultimate")
-	match _char_ult():
-		"meteor": _ult_meteor(base, elem, col)
-		"blizzard": _ult_blizzard(base, elem, col)
-		"judgment": _ult_judgment(base, elem, col)
-		"reap": _ult_reap(base, elem, col)
-		_: _ult_blast(base, elem, col)
-	telemetry_restore_damage_source(previous_damage_source)
-	play_sfx("ult", -4.0)
-	_refresh_ult_bar()
-
-
 func _damage_dungeon_objectives(center: Vector2, radius: float, damage: float,
 		crit: bool, element: String) -> void:
 	for objective in _combat_objectives():
 		if is_instance_valid(objective) and center.distance_to(objective.position) <= radius + objective.radius:
 			objective.take_damage(damage, crit, false, element)
-
-
-# 비전 폭발: 화면 전역 균등 대형 폭발 (기본형).
-func _ult_blast(base: float, elem: String, col: Color) -> void:
-	for e in get_tree().get_nodes_in_group("enemies"):
-		if is_instance_valid(e):
-			e.take_damage(base, true, false, elem)
-			e.shove(player.position, 260.0)
-	if boss and is_instance_valid(boss):
-		boss.take_damage(base * 4.0, true, elem)
-	_damage_dungeon_objectives(player.position, 9999.0, base * 2.0, true, elem)
-	_flash(Color(col.r, col.g, col.b, 0.6))
-	shake_t = maxf(shake_t, 0.4)
-	_slowmo(0.4, 260)
-	_spawn_proc_fx("ring", player.position, 540.0, col, 0.6)
-	_spawn_proc_fx("burst", player.position, 240.0, col.lightened(0.35), 0.5)
-
-
-# 운석비: 랜덤 지점에 다중 폭발. 겹치는 곳은 큰 피해 (픽시 유리대포).
-func _ult_meteor(base: float, elem: String, col: Color) -> void:
-	var targets := get_tree().get_nodes_in_group("enemies")
-	for i in 10:
-		var pos: Vector2 = player.position + Vector2(randf_range(-320, 320), randf_range(-320, 320))
-		if targets.size() > 0:
-			var t = targets[randi() % targets.size()]
-			if is_instance_valid(t):
-				pos = t.position
-		var rad := 120.0
-		for e in get_tree().get_nodes_in_group("enemies"):
-			if is_instance_valid(e) and pos.distance_to(e.position) <= rad:
-				e.take_damage(base * 1.4, true, false, elem)
-		if boss and is_instance_valid(boss) and pos.distance_to(boss.position) <= rad:
-			boss.take_damage(base * 1.4, true, elem)
-		_damage_dungeon_objectives(pos, rad, base * 1.4, true, elem)
-		_spawn_proc_fx("burst", pos, rad, col, 0.4)
-	_flash(Color(col.r, col.g, col.b, 0.4))
-	shake_t = maxf(shake_t, 0.36)
-
-
-# 빙결 결계: 전역 냉기 피해 + 강한 둔화 (이졸데·모르가나 컨트롤형).
-func _ult_blizzard(base: float, elem: String, col: Color) -> void:
-	for e in get_tree().get_nodes_in_group("enemies"):
-		if is_instance_valid(e):
-			e.take_damage(base * 0.8, true, false, elem)
-			e.apply_slow(0.7, 4.0)
-	if boss and is_instance_valid(boss):
-		boss.take_damage(base * 3.0, true, elem)
-	_damage_dungeon_objectives(player.position, 9999.0, base * 1.5, true, elem)
-	_flash(Color(col.r, col.g, col.b, 0.42))
-	shake_t = maxf(shake_t, 0.3)
-	_spawn_proc_fx("ring", player.position, 660.0, col, 0.7)
-	_spawn_proc_fx("burst", player.position, 260.0, col.lightened(0.4), 0.5)
-
-
-# 신성 심판: 전역 피해 + 자기 회복 (세라피나 서포터).
-func _ult_judgment(base: float, elem: String, col: Color) -> void:
-	for e in get_tree().get_nodes_in_group("enemies"):
-		if is_instance_valid(e):
-			e.take_damage(base * 1.1, true, false, elem)
-			e.shove(player.position, 200.0)
-	if boss and is_instance_valid(boss):
-		boss.take_damage(base * 3.5, true, elem)
-	_damage_dungeon_objectives(player.position, 9999.0, base * 1.6, true, elem)
-	player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.3)   # 심판의 가호: 30% 회복
-	_flash(Color(col.r, col.g, col.b, 0.55))
-	shake_t = maxf(shake_t, 0.34)
-	_spawn_proc_fx("ring", player.position, 560.0, col, 0.6)
-	_spawn_proc_fx("burst", player.position, 220.0, Color(1.0, 1.0, 0.82), 0.55)
-
-
-# 암흑 수확: 전역 피해 + 흡혈 (구스타보·발렌티노·모르덱 근접 탱커/뱀파이어).
-func _ult_reap(base: float, elem: String, col: Color) -> void:
-	var dealt := 0.0
-	for e in get_tree().get_nodes_in_group("enemies"):
-		if is_instance_valid(e):
-			dealt += minf(maxf(0.0, e.hp), base * 1.2)
-			e.take_damage(base * 1.2, true, false, elem)
-			e.shove(player.position, 240.0)
-	if boss and is_instance_valid(boss):
-		boss.take_damage(base * 4.0, true, elem)
-	_damage_dungeon_objectives(player.position, 9999.0, base * 1.8, true, elem)
-	player.hp = minf(player.max_hp, player.hp + dealt * 0.15)   # 수확 흡혈: 가한 피해의 15% 회복
-	_flash(Color(col.r, col.g, col.b, 0.58))
-	shake_t = maxf(shake_t, 0.4)
-	_slowmo(0.4, 260)
-	_spawn_proc_fx("ring", player.position, 540.0, col, 0.6)
-	_spawn_proc_fx("burst", player.position, 240.0, col.lightened(0.3), 0.5)
 
 
 # ─── 스킬 시스템 (마우스 조준 + Q/E/R/F) ──────────────────────────────
@@ -8680,10 +8527,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	# 손이 겹치지 않고, WASD를 잡은 왼손도 자유롭다.
 	if event is InputEventMouseButton and event.pressed \
 			and event.button_index == MOUSE_BUTTON_RIGHT:
-		if state == State.PLAYING and ult_gauge >= 1.0:
-			_fire_ultimate()
-			get_viewport().set_input_as_handled()
-			return
+		# 우클릭 궁극기 제거 (사장님 결정). 기본 우클릭 동작이 새지 않게 입력만
+		# 소비하고, 자리는 여유 입력으로 남겨 둔다.
+		get_viewport().set_input_as_handled()
+		return
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_SPACE:
 		if state == State.PLAYING and player and player.try_dodge():
 			play_sfx("dash", -10.0, 0.08)
@@ -9990,27 +9837,8 @@ func _build_ui(s: Vector2) -> void:
 	xp_bar.size = Vector2(s.x, xh)
 	hud.add_child(xp_bar)
 
-	# 궁극기 게이지 (하단 중앙 어빌리티 바 — RPG식 능동 스킬)
-	ult_bar = ProgressBar.new()
-	ult_bar.show_percentage = false
-	ult_bar.max_value = 1.0
-	ult_bar.value = 0.0
-	ult_bar.add_theme_stylebox_override("background", _bar_bg())
-	ult_bar.add_theme_stylebox_override("fill", _fill_box(Color(0.72, 0.42, 1.0)))
-	ult_bar.size = Vector2(300, 18)
-	ult_bar.position = Vector2(s.x / 2.0 - 150, s.y - 34)
-	hud.add_child(ult_bar)
-	ult_bar_label = Label.new()
-	ult_bar_label.position = Vector2(s.x / 2.0 - 150, s.y - 34)
-	ult_bar_label.size = Vector2(300, 18)
-	ult_bar_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	ult_bar_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	ult_bar_label.add_theme_font_size_override("font_size", 12)
-	ult_bar_label.add_theme_constant_override("outline_size", 3)
-	ult_bar_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
-	ult_bar_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hud.add_child(ult_bar_label)
-	# Q/E/R/F 스킬바 (궁극 바 위). 아이콘 + 쿨다운 덮개 + 남은 초를 함께 보여 준다.
+	# Q/E/R/F 스킬바 (하단 중앙). 아이콘 + 쿨다운 덮개 + 남은 초를 함께 보여 준다.
+	# (궁극기 게이지 바가 이 아래 있었는데 궁극기와 함께 제거 — 사장님 결정)
 	skill_bar = SkillBar.new()
 	skill_bar.size = Vector2(SkillBar.SLOT * 5.0 + SkillBar.GAP * 4.0, SkillBar.SLOT)
 	skill_bar.position = Vector2(s.x / 2.0 - skill_bar.size.x * 0.5, s.y - 108)
@@ -10449,7 +10277,7 @@ func _build_ui(s: Vector2) -> void:
 	pause_panel.add_child(pause_map_rect)
 
 	var pause_controls := Label.new()
-	pause_controls.text = "[ 조작 ]\nWASD / 방향키  이동 · 마우스  조준\n좌클릭  기본 공격 · 우클릭  궁극기\nQ E R F  스킬 · Space  회피 · I  인벤토리"
+	pause_controls.text = "[ 조작 ]\nWASD / 방향키  이동 · 마우스  조준\n좌클릭  기본 공격 · Q E R F  스킬\nSpace  회피 · I  인벤토리"
 	pause_controls.position = Vector2(s.x / 2.0 + 40, 452)
 	pause_controls.size = Vector2(290, 104)
 	pause_controls.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
