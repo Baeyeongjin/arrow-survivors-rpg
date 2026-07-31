@@ -6574,8 +6574,9 @@ func _pause_skill_slot(slot: String) -> void:
 		tr.texture = Assets.tex(_skill_icon_path(arch))
 		var sd := skill_def(arch)
 		var slv := int(skill_levels.get(arch, 1))
-		tr.tooltip_text = "[%s] %s Lv%d\n%s\n\n클릭 두 번으로 자리 교환" % [
-			label, str(sd.get("name", arch)), slv, str(sd.get("desc", ""))]
+		tr.tooltip_text = "[%s] %s Lv%d\n%s\n%s\n\n클릭 두 번으로 자리 교환" % [
+			label, str(sd.get("name", arch)), slv, str(sd.get("desc", "")),
+			str(sd.get("upgrade", ""))]
 	else:
 		tr.tooltip_text = "[%s] 빈 칸 — 레벨업 카드로 스킬을 배우세요" % label
 	if slot == _skill_swap_sel:
@@ -6836,9 +6837,16 @@ func _card_options() -> Array:
 			continue
 		var icon := _skill_icon_path(arch)
 		if level > 0:
-			opts.append({"r": "rare", "t": "sk", "key": arch, "owned": true,
+			# 다음 레벨이 숙련이면 숫자 대신 무엇이 바뀌는지를 보여 준다.
+			# "피해 +22%"만 적혀 있으면 한 스킬에 몰아줄 이유가 안 보인다.
+			var mastery_next: bool = level + 1 == SkillDefs.MASTERY_LEVEL \
+				and str(SkillDefs.UPGRADE.get(arch, "")) != ""
+			var gain := "[숙련] %s" % str(SkillDefs.UPGRADE[arch]) if mastery_next \
+				else "피해 +22%% · 쿨다운 -6%%"
+			opts.append({"r": "epic" if mastery_next else "rare",
+				"t": "sk", "key": arch, "owned": true,
 				"title": "%s Lv%d" % [str(def["name"]), level + 1],
-				"desc": "피해 +22%% · 쿨다운 -6%%", "icon": icon,
+				"desc": gain, "icon": icon,
 				"act": func() -> void: learn_skill(arch)})
 		else:
 			# 슬롯 4칸이 다 차면 새 스킬은 "무엇을 버릴지"가 진짜 선택이 된다.
@@ -8197,6 +8205,12 @@ func learn_skill(archetype: String, slot: String = "") -> void:
 	if skill_levels.has(archetype):
 		skill_levels[archetype] = mini(SkillDefs.MAX_SKILL_LEVEL,
 			int(skill_levels[archetype]) + 1)
+		if int(skill_levels[archetype]) == SkillDefs.MASTERY_LEVEL:
+			# 규칙이 바뀐 순간을 알린다. 카드에서 골랐어도 전투로 돌아오면 잊는다.
+			_event_banner("[숙련] %s — %s" % [
+				str(skill_def(archetype).get("name", archetype)),
+				str(SkillDefs.UPGRADE.get(archetype, ""))])
+			play_sfx("ult", -8.0)
 	else:
 		skill_levels[archetype] = 1
 		_record_skill_seen(archetype)
@@ -8308,6 +8322,11 @@ func _skill_bolt(def: Dictionary, aim: Vector2, damage: float, effect: String) -
 		a.damage = damage
 		a.radius = float(def.get("radius", 11.0))
 		a.pierce = 1 + (2 if effect == "pierce" else 0)
+		if bool(def.get("mastered", false)):
+			# 숙련: 뚫고 다음 적을 쫓는다. 관통만 늘리면 빗나간 탄은 그냥 사라지는데,
+			# 유도가 붙으면 난전에서 탄 한 발이 계속 일한다.
+			a.pierce += 2
+			a.homing = maxf(a.homing, 2.6)
 		a.life = float(def["range"]) / 560.0 * 1.35
 		a.anim_dir = FxMatrix.resolve_path("bolt", str(def["element"]))
 		# 명중 이펙트는 일부러 안 붙인다. 초당 두세 번 맞히는 기본 공격에 폭발
@@ -8328,7 +8347,12 @@ func _skill_bolt(def: Dictionary, aim: Vector2, damage: float, effect: String) -
 
 func _skill_slash(def: Dictionary, aim: Vector2, damage: float, effect: String) -> void:
 	var reach := float(def["range"])
+	var mastered := bool(def.get("mastered", false))
+	var basic := str(def.get("slot", "")) == "basic"
 	var half := float(def.get("arc", 1.5)) * 0.5
+	# 숙련(휘두르기): 등 뒤까지 한 바퀴. 근접의 약점인 "뒤를 못 본다"가 사라진다.
+	if mastered and basic:
+		half = PI
 	for e in _enemies_and_boss():
 		if not is_instance_valid(e):
 			continue
@@ -8339,9 +8363,22 @@ func _skill_slash(def: Dictionary, aim: Vector2, damage: float, effect: String) 
 			continue
 		_hit_with_effect(e, damage, effect, aim)
 	_break_near(player.position + aim * reach * 0.5, reach * 0.7, damage)
+	# 숙련(베기): 벤 자리에서 참격이 날아간다. 근접 스킬이 원거리 수단을 얻는다.
+	if mastered and not basic:
+		var a := Arrow.new()
+		a.position = player.position + aim * reach * 0.5
+		a.velocity = aim * 520.0
+		a.damage = damage * 0.6
+		a.radius = 14.0
+		a.pierce = 3
+		a.life = 0.75
+		a.anim_dir = FxMatrix.resolve_path("slash", str(def["element"]))
+		a.status_effect = effect
+		a.crit_chance = player.crit_chance
+		a.crit_mult = player.crit_mult
+		add_child(a)
 	# 기본 공격(0.5초 간격)은 스킬과 같은 크기로 그리면 흰 스미어가 화면에 상주한다.
 	# 판정 크기만큼만, 절반 투명도로. 스킬 베기(3.2초 쿨)는 그대로 크게 남긴다.
-	var basic := str(def.get("slot", "")) == "basic"
 	spawn_fx_form("slash", player.position + aim * reach * (0.55 if basic else 0.45),
 		reach * (0.8 if basic else 1.3), aim.angle(), 16.0, Vector2.ONE, false,
 		0.5 if basic else 1.0)
@@ -8358,6 +8395,31 @@ func _skill_burst(def: Dictionary, target: Vector2, damage: float, effect: Strin
 			continue
 		_hit_with_effect(e, damage, effect, ((e as Node2D).position - target).normalized())
 	_break_near(target, radius, damage)
+	if bool(def.get("mastered", false)):
+		if heavy:
+			# 숙련(파멸): 바깥으로 두 번째 고리가 퍼진다. 한 점이 아니라 두 겹이 된다.
+			for e2 in _enemies_and_boss():
+				if not is_instance_valid(e2):
+					continue
+				var d2: float = (e2 as Node2D).position.distance_to(target)
+				if d2 <= radius or d2 > radius * 1.9 + float(e2.radius):
+					continue
+				_hit_with_effect(e2, damage * 0.45, effect,
+					((e2 as Node2D).position - target).normalized())
+			spawn_fx_form("impact", target, radius * 2.0, 0.0, 20.0, Vector2.ONE, true, 0.55)
+		else:
+			# 숙련(작렬): 터진 자리에 불씨 지대가 남는다. 한 번 터지고 끝이 아니라
+			# 그 자리를 잠깐 점유해서, 밀려난 적이 다시 들어오면 또 맞는다.
+			var z := VoidZone.new()
+			z.position = target
+			z.radius = radius * 0.75
+			z.dps = damage * 0.28
+			z.life = 2.2
+			z.pull = 0.0
+			z.col = Color(ELEMENT_COL.get(str(def["element"]), Color(0.9, 0.7, 0.5)))
+			z.anim_dir = FxMatrix.resolve_path("zone", str(def["element"]))
+			z.outline = false
+			add_child(z)
 	spawn_fx_form("impact", target, radius * 1.15, 0.0, 16.0, Vector2.ONE, heavy)
 	shake_t = maxf(shake_t, 0.22 if heavy else 0.12)
 	play_sfx("hit", -8.0 if heavy else -12.0, 0.12)
@@ -8381,11 +8443,17 @@ func _skill_field(def: Dictionary, target: Vector2, damage: float, element: Stri
 	z.radius = float(def["radius"])
 	z.dps = damage * 0.55
 	z.life = float(def.get("duration", 4.5))
-	z.pull = 0.0
+	# 숙련(장판): 지대가 적을 안으로 끌어당긴다. 흩어지는 적을 붙잡아 두는
+	# 지대가 되면서 "깔고 터뜨린다"의 앞 절반이 훨씬 잘 걸린다.
+	z.pull = 120.0 if bool(def.get("mastered", false)) else 0.0
 	z.col = Color(ELEMENT_COL.get(element, Color(0.8, 0.8, 0.9)))
 	z.anim_dir = FxMatrix.resolve_path("zone", element, bool(def.get("heavy", false)))
 	z.outline = false
 	add_child(z)
+	# 숙련(결계): 펼친 자신도 보호를 받는다. 공격 지대가 안전 지대를 겸한다.
+	if bool(def.get("mastered", false)) and bool(def.get("heavy", false)):
+		player.armor += 4.0
+		ward_timer = maxf(ward_timer, float(def.get("duration", 7.0)))
 	spawn_fx_form("zone", target, float(def["radius"]) * 1.1, 0.0, 14.0, Vector2.ONE,
 		bool(def.get("heavy", false)))
 	play_sfx("levelup", -16.0, 0.1)
@@ -8396,12 +8464,24 @@ func _skill_ward(def: Dictionary) -> void:
 	player.invuln = maxf(player.invuln, 0.35)
 	player.armor += 4.0
 	ward_timer = duration
+	# 숙련(보호): 두르는 순간 주변을 밀어낸다. 방어 스킬이 포위를 푸는 수단이 된다.
+	if bool(def.get("mastered", false)):
+		for e in _enemies_and_boss():
+			if not is_instance_valid(e) or not e.has_method("shove"):
+				continue
+			if (e as Node2D).position.distance_to(player.position) > float(def["radius"]):
+				continue
+			e.shove(player.position, 300.0)
 	spawn_fx_form("ward", player.position, float(def["radius"]), 0.0, 12.0)
 	play_sfx("levelup", -10.0)
 
 
 func _skill_nova(def: Dictionary, damage: float, effect: String) -> void:
 	var radius := float(def["radius"])
+	# 숙련(분출): 시전하는 동안 무적. 포위됐을 때 쓰는 스킬인데 쓰는 순간에도
+	# 맞으면 패닉 버튼 구실을 못 한다.
+	if bool(def.get("mastered", false)):
+		player.invuln = maxf(player.invuln, 0.55)
 	for e in _enemies_and_boss():
 		if not is_instance_valid(e):
 			continue
@@ -11643,10 +11723,13 @@ func _make_skill_codex_card(archetype: String, seen: bool) -> Control:
 	var slot_text := "기본 공격 (좌클릭)" if str(def.get("slot", "")) == "basic" else "Q/E/R/F 장착"
 	# 도감은 원소 중립이라 상태 이름 없는 역할 문구를 쓴다. 이게 없으면 콤보가
 	# 게임 안 어디에도 설명되지 않는다.
-	var body := "%s\n%s\n%s · 쿨다운 %.1f초" % [str(def["desc"]),
-		SkillDefs.role_label(archetype), slot_text, float(def.get("cd", 0.0))] \
+	var body := "%s\n%s\n[Lv%d] %s\n%s · 쿨다운 %.1f초" % [str(def["desc"]),
+		SkillDefs.role_label(archetype),
+		SkillDefs.MASTERY_LEVEL, str(SkillDefs.UPGRADE.get(archetype, "")),
+		slot_text, float(def.get("cd", 0.0))] \
 		if seen else "아직 배우지 못한 스킬"
-	_ui_card_label(card, body, Vector2(122, 60), Vector2(300, 68), 13, Color(0.76, 0.82, 0.92))
+	# 5줄이라 13px로는 카드(154px)를 넘친다 — 렌더로 확인. 12px + 영역 100px.
+	_ui_card_label(card, body, Vector2(122, 48), Vector2(300, 100), 12, Color(0.76, 0.82, 0.92))
 	return card
 
 

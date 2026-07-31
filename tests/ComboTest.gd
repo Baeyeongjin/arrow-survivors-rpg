@@ -47,6 +47,21 @@ func _initialize() -> void:
 		_expect(SkillDefsScript.role_of(basic) == "setup",
 			"%s 의 기본 공격 %s 가 setup 이 아니다" % [elem, basic])
 
+	# 1-b) 숙련 표 — 아키타입마다 Lv4 규칙이 있어야 한다.
+	# 문구가 없으면 "레벨업이 숫자만 오른다"로 돌아가고, 문구만 있고 실행부가 없으면
+	# 카드가 거짓말을 한다. 여기서는 문구 존재와 build() 반영만 지킨다.
+	for arch in SkillDefsScript.ARCHETYPES.keys():
+		_expect(str(SkillDefsScript.UPGRADE.get(arch, "")) != "",
+			"아키타입 %s 에 숙련 효과가 없다(레벨업이 숫자만 오른다)" % arch)
+	var below := SkillDefsScript.build("burst", "fire", SkillDefsScript.MASTERY_LEVEL - 1)
+	var at := SkillDefsScript.build("burst", "fire", SkillDefsScript.MASTERY_LEVEL)
+	_expect(not bool(below.get("mastered", true)), "숙련 미만인데 mastered 가 켜져 있다")
+	_expect(bool(at.get("mastered", false)), "숙련 레벨인데 mastered 가 안 켜졌다")
+	_expect(str(below.get("upgrade", "")).contains("Lv%d" % SkillDefsScript.MASTERY_LEVEL),
+		"숙련 전에는 목표로 보여 줘야 한다: %s" % str(below.get("upgrade", "")))
+	_expect(str(at.get("upgrade", "")).begins_with("[숙련]"),
+		"숙련 후에는 획득한 효과로 보여 줘야 한다: %s" % str(at.get("upgrade", "")))
+
 	# 2) 상태 태그 수명
 	var e = EnemyScript.new()
 	_expect(e.status == "", "초기 상태는 비어 있어야 함")

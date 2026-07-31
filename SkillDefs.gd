@@ -151,8 +151,37 @@ const PAYOFF_DESC := {
 }
 
 
+# 숙련 단계. 여기 도달하면 스킬이 "하는 일"이 바뀐다.
+#
+# 그 전까지 레벨업은 피해 +22% / 쿨다운 -6% 뿐이었다. 30분을 굴러도 조작이 1분째와
+# 똑같고 숫자만 커졌다. Lv4 한 칸을 규칙 변경으로 만들어 "이 스킬을 키울 이유"를 준다.
+# 4로 잡은 건 만렙 5 직전이라 몰아주기와 나눠 갖기 사이에 실제 선택이 생기기 때문이다.
+const MASTERY_LEVEL := 4
+
+# 숙련 효과. 전부 규칙이다 — 피해·범위 배수는 하나도 없다.
+const UPGRADE := {
+	"bolt": "탄이 적을 뚫고 다음 적을 쫓는다",
+	"swing": "등 뒤까지 한 바퀴 벤다",
+	"slash": "벤 자리에서 참격이 날아간다",
+	"burst": "터진 자리에 불씨 지대가 남는다",
+	"field": "지대가 적을 안으로 끌어당긴다",
+	"ward": "두르는 순간 주변을 밀어낸다",
+	"nova": "시전하는 동안 무적이 된다",
+	"ruin": "바깥으로 두 번째 고리가 퍼진다",
+	"aegis": "펼친 자신도 결계의 보호를 받는다",
+}
+
+
 static func role_of(archetype: String) -> String:
 	return str(ROLE.get(archetype, "setup"))
+
+
+# 숙련 문구. 도달했으면 그 효과를, 아직이면 목표로 보여 준다.
+static func upgrade_line(archetype: String, level: int) -> String:
+	var up := str(UPGRADE.get(archetype, ""))
+	if up == "":
+		return ""
+	return "[숙련] " + up if level >= MASTERY_LEVEL else "Lv%d: %s" % [MASTERY_LEVEL, up]
 
 
 # 이 스킬이 콤보에서 무슨 역할인지 한 줄로. effect 는 캐릭터 원소의 상태 키.
@@ -212,6 +241,9 @@ static func build(archetype: String, element: String, level: int = 1) -> Diction
 	base["effect"] = str(trait_row["effect"])
 	base["name"] = "%s %s" % [str(trait_row["name"]), str(base["name"])]
 	base["role"] = role_of(archetype)
+	# 실행부가 이것만 보고 갈라진다. 레벨 숫자를 executor 마다 비교하면 기준이 흩어진다.
+	base["mastered"] = lv >= MASTERY_LEVEL
+	base["upgrade"] = upgrade_line(archetype, lv)
 	base["desc"] = "%s · %s\n%s" % [
 		str(base["desc"]), str(trait_row["desc"]),
 		role_line(archetype, str(trait_row["effect"]))]
