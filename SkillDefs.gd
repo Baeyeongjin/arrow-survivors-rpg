@@ -103,6 +103,13 @@ const SLOT_LABEL := {"q": "Q", "e": "E", "r": "R", "f": "F"}
 const MAX_SKILL_LEVEL := 5
 
 
+# 원소 효과의 짧은 이름. 캐릭터 상세처럼 좁은 칸에 쓴다(긴 desc는 잘린다).
+const EFFECT_NAME := {
+	"burn": "화상", "chill": "둔화", "drain": "흡혈", "mend": "자힐", "push": "밀어내기",
+	"pierce": "관통", "stun": "기절", "chain": "연쇄", "execute": "처형",
+}
+
+
 static func archetype_keys() -> Array:
 	return ARCHETYPES.keys()
 

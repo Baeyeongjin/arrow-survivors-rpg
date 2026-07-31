@@ -26,14 +26,11 @@ var upright := false              # true면 회전 없이 똑바로 (불꽃·에
 var trail := false                # 잔상 트레일 (스킬용)
 var trail_col := Color(1, 0.9, 0.5)  # 트레일 색 (무기별)
 var scale_mul := 1.0              # 스프라이트 크기 배수
-var _vis := 1.0                   # 무기 성장 시각 배율 (Main.wfx_boost 캡처 — 크기 상한도 함께 키움)
-var _etint := Color(1.0, 0.85, 0.45)   # 진화 시그니처 색 (Main.EVO_TINT — 후광·틴트·트레일)
 var anim_dir := ""                # 투사체 프레임 애니메이션 (assets/anim/<dir>)
 var fx_hit := ""                  # 명중 시 스폰할 이펙트 애니 이름 (assets/anim/<fx_hit>)
 var fx_hit_size := 72.0           # 명중 이펙트 표시 크기
 var _age := 0.0
 var _hist: Array = []
-var evolved_glow := false          # 진화 무기 투사체: 황금 후광 + 발광 + 확대
 var _homing_target: Node2D = null  # 유도 타겟 캐시 (스로틀 재탐색)
 var _retarget_t := 0.0
 var boomerang := false              # 부메랑: 나갔다 감속 후 플레이어에게 되돌아옴
@@ -53,32 +50,6 @@ func _ready() -> void:
 	var p := get_parent()
 	if damage_source == "" and p and p.has_method("telemetry_current_damage_source"):
 		damage_source = str(p.telemetry_current_damage_source())
-	# 무기 성장 시각 배율 캡처 (발사 중 동기 생성이라 유효). 레벨·진화에 따라 투사체가 커진다.
-	if p and "wfx_boost" in p:
-		_vis = clampf(float(p.wfx_boost), 1.0, 1.8)
-		scale_mul *= _vis
-	if p and "_evo_spawn" in p and p._evo_spawn:
-		evolved_glow = true
-		# 진화 무기 시그니처 효과 (EVO_FX 테이블에서 조회 → 투사체가 다르게 공격)
-		var ek: String = p._evo_kind if "_evo_kind" in p else ""
-		# 시그니처 색: 투사체·후광·트레일이 진화 색으로 물든다 (진화가 한눈에 보이게)
-		if ek != "" and p.has_method("_evo_tint"):
-			_etint = p._evo_tint(ek)
-			trail = true
-			trail_col = _etint
-		var fx: Dictionary = p.EVO_FX.get(ek, {}) if ek != "" else {}
-		if fx.has("pierce"):
-			pierce = max(pierce, int(fx["pierce"]))
-		if fx.has("homing"):
-			homing = max(homing, float(fx["homing"]))
-		if fx.has("slow"):
-			slow_amount = max(slow_amount, float(fx["slow"]))
-			slow_time = max(slow_time, float(fx.get("slow_t", 1.6)))
-		if fx.has("ls"):
-			lifesteal += float(fx["ls"])
-		if fx.has("explode"):
-			explode_radius = max(explode_radius, float(fx["explode"]))
-			explode_damage = max(explode_damage, damage * float(fx.get("efrac", 0.5)))
 	life /= SPEED_SCALE   # 느려진 만큼 오래 살아 같은 거리 이동 (사거리 보존)
 	# 사거리 상한 적용 (유도탄은 추적 여유를 위해 1.4배 허용). 부메랑은 자체 궤도라 제외.
 	if not boomerang:
@@ -186,17 +157,8 @@ func _draw() -> void:
 			var a2: float = float(i) / _hist.size() * 0.6
 			draw_line(_hist[i] - position, _hist[i + 1] - position,
 				Color(trail_col.r, trail_col.g, trail_col.b, a2), 3.5)
-	# 진화 오라: 중심에 맥동하는 황금 후광 (진화 무기 식별) + 발광·확대
 	var emod := Color(1, 1, 1)
 	var escale := 1.0
-	if evolved_glow:
-		# 진화 시그니처 색으로 후광·스프라이트 틴트 (무기마다 다른 색 — EVO_TINT)
-		var pls: float = 0.5 + 0.5 * sin(_age * 9.0)
-		var gr: float = min(10.0 * _vis, 5.0 * (radius / 6.0) * scale_mul) * (1.15 + 0.2 * pls)
-		draw_circle(Vector2.ZERO, gr, Color(_etint.r, _etint.g, _etint.b, 0.18 + 0.13 * pls))
-		draw_circle(Vector2.ZERO, gr * 0.62, Color(minf(_etint.r * 1.3, 1.0), minf(_etint.g * 1.3, 1.0), minf(_etint.b * 1.3, 1.0), 0.20 + 0.15 * pls))
-		emod = Color(0.6 + _etint.r * 0.8, 0.6 + _etint.g * 0.8, 0.6 + _etint.b * 0.8)
-		escale = 1.22
 	# 방향: upright=원소 이펙트(회전 안 함) / spin>0=자체 회전 / 그 외=진행방향 지향
 	var ang := 0.0 if upright else ((_age * spin) if spin > 0.0 else (velocity.angle() + PI / 2.0))
 	draw_set_transform(Vector2.ZERO, ang, Vector2(escale, escale))
@@ -205,8 +167,8 @@ func _draw() -> void:
 		var fr: Array = Assets.frames(anim_dir)
 		if fr.size() > 0:
 			var ft: Texture2D = fr[int(_age * 14.0) % fr.size()]
-			# 투사체 크기 대폭 축소(캐릭터보다 작게). 상한도 성장 배율(_vis)만큼 함께 커짐.
-			var fw: float = min(13.0 * _vis, 7.0 * (radius / 6.0) * scale_mul)
+			# 투사체 크기 대폭 축소(캐릭터보다 작게).
+			var fw: float = min(13.0, 7.0 * (radius / 6.0) * scale_mul)
 			draw_texture_rect(ft, Rect2(Vector2(-fw / 2.0, -fw / 2.0), Vector2(fw, fw)), false, emod)
 			return
 	# 전용 프레임이 아직 없을 때만 코드 기반 실루엣을 사용한다.
@@ -215,8 +177,8 @@ func _draw() -> void:
 		return
 	var tex := Assets.tex(sprite_path)
 	if tex:
-		# 뱀서식: 투사체 작게 (화면 가림 방지). 상한은 성장 배율(_vis)만큼 함께 커짐.
-		var w: float = min(13.0 * _vis, 7.0 * (radius / 6.0) * scale_mul)
+		# 뱀서식: 투사체 작게 (화면 가림 방지).
+		var w: float = min(13.0, 7.0 * (radius / 6.0) * scale_mul)
 		draw_texture_rect(tex, Rect2(Vector2(-w / 2.0, -w / 2.0), Vector2(w, w)), false, emod)
 		return
 	var k := radius / 6.0   # 큰 화살이면 길게

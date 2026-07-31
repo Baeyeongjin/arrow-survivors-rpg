@@ -3,6 +3,7 @@ extends Node2D
 
 const SPRITE := "res://assets/boss/boss.png"
 
+var _flash_t := 0.0   # 피격 흰 플래시 남은 시간
 var key := "boss_1"   # 스테이지별 보스 (boss_1 ~ boss_5)
 var max_hp := 1000.0
 var hp := 1000.0
@@ -248,6 +249,10 @@ func configure_castle_final(gates_opened: int) -> void:
 
 func _process(delta: float) -> void:
 	_anim_t += delta
+	if _flash_t > 0.0:
+		_flash_t -= delta
+		if _flash_t <= 0.0:
+			self_modulate = Color(1, 1, 1)
 	var pl := get_tree().get_first_node_in_group("player") as Player
 	if pl:
 		if hell_final:
@@ -716,6 +721,12 @@ func _take_damage_castle(d: float, crit: bool, elem: String, m) -> void:
 
 
 func take_damage(d: float, _crit: bool = true, element: String = "") -> void:
+	# 피격 흰 플래시. 명중 이펙트를 걷어내면서(사장님: 어색한 이펙트 대신 흰 플래시만)
+	# 보스에는 피격 피드백이 아예 없어졌다. 층별 분기(_take_damage_grave/glacier/
+	# void/castle, hell 갑옷)로 갈라지기 전에 여기 한 곳에서 켠다 — 분기마다
+	# 넣으면 언젠가 하나를 빠뜨린다.
+	_flash_t = 0.14
+	self_modulate = Color(7, 7, 8)
 	var m := get_parent()
 	# 상성: 공격 속성 미지정이면 플레이어 공격 속성 사용. 약점 ×1.5 / 저항 ×0.6.
 	var elem := element

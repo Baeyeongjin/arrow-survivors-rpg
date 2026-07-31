@@ -27,135 +27,9 @@ const UI_ICONS := {
 
 # 장판 무기는 독안개(poison_cloud) 하나만 남김 — 성수·용암지대 제거.
 # (공허구 void_orb는 VoidZone을 쓰지만 바닥 장판이 아니라 끌어당기는 블랙홀이라 유지)
-const ALL_WEAPONS := ["arrow", "blade", "aura", "lightning", "frost", "knife",
-	"fireball", "boomerang", "holy", "venom", "whip",
-	"chakram", "spear", "starfall",
-	"flamethrower", "ice_lance", "crossbow", "holy_cross",
-	"poison_cloud", "quake", "spread_shot", "soul_bolt",
-	"holy_beam", "bone_spiral", "moonlight", "axe",
-	"homing_skull", "thorn_burst", "chain_bolt", "frost_ring", "blood_sword",
-	"cleave",
-	"excalibur", "void_orb"]
-const TIMED_WEAPONS := ["arrow", "lightning", "frost", "knife",
-	"fireball", "boomerang", "holy", "venom", "whip", "excalibur", "void_orb",
-	# 신규 무기 웨이브 1~5 (전부 쿨다운 발사)
-	"chakram", "spear", "starfall",
-	"flamethrower", "ice_lance", "crossbow", "holy_cross",
-	"poison_cloud", "quake", "spread_shot", "soul_bolt",
-	"holy_beam", "bone_spiral", "moonlight", "axe",
-	"homing_skull", "thorn_burst", "chain_bolt", "frost_ring", "blood_sword",
-	"cleave"]
-const RANGED_WEAPONS := ["arrow", "lightning", "frost", "knife", "fireball", "boomerang",
-	"holy", "venom", "chakram", "spear", "starfall", "flamethrower", "ice_lance",
-	"crossbow", "holy_cross", "spread_shot", "soul_bolt", "holy_beam", "bone_spiral",
-	"moonlight", "axe", "homing_skull", "thorn_burst", "chain_bolt", "frost_ring",
-	"excalibur", "void_orb"]
-
-# 직업 전용 스킬은 제거됨. 뱀서는 전 캐릭터가 같은 무기 풀을 공유하고,
-# 캐릭터 차별화는 '고유 시작 무기 + 레벨에 따라 자라는 고유 특성'으로만 한다.
-# (관통사격·노바·메테오 등 17종의 발사 코드/아이콘/카드는 이 커밋에서 함께 삭제)
-# sword.png는 칼끝이 '좌상단 45°'를 향해 그려져 있는데 회전검 코드는 '위를 향함'으로
-# 가정하고 돌린다 → 45° 틀어져 보임. 스프라이트 고유 방향 보정값.
-# (아트를 45° 회전시키면 픽셀이 뭉개지므로 코드에서 보정)
-const BLADE_ART_FIX := PI * 0.75
-
-# CC0 슬래시 아트 보정 (tbbk 팩)
-#  fx_cleave: 크레센트의 볼록한 면이 '오른쪽(0)'을 향함 → 조준 θ에 그대로 맞음
-#  fx_whip  : 아트 단계에서 가로로 구워둠 → 추가 보정 불필요 (0/180°만 쓰므로
-#             세로 눌림(stretch)과 축이 어긋나지 않음)
-const SLASH_ART_FIX := 0.0
-
-# 무기 표시명. 캐릭터 선택 화면이 참조 — 여기 없으면 내부 키가 그대로 노출된다.
-# (같은 표가 아래 함수들에도 지역 변수로 복붙돼 있음. 무기 추가 시 함께 갱신 필요)
-const WNAMES := {
-	"arrow": "마법 화살", "blade": "회전 검", "aura": "신성 오라",
-	"lightning": "번개", "frost": "서리 폭발", "knife": "칼 던지기",
-	"fireball": "파이어볼", "boomerang": "부메랑", "holy": "천벌",
-	"venom": "독날", "whip": "채찍", "chakram": "차크람", "spear": "창격",
-	"starfall": "별똥별", "flamethrower": "화염분사", "ice_lance": "얼음창",
-	"crossbow": "석궁", "holy_cross": "성십자", "poison_cloud": "독안개", "quake": "대지강타",
-	"spread_shot": "산탄", "soul_bolt": "혼탄",
-	"holy_beam": "성광선", "bone_spiral": "뼈나선", "moonlight": "월광강림", "axe": "전투도끼",
-	"homing_skull": "유도해골", "thorn_burst": "가시분출",
-	"chain_bolt": "연쇄뇌전", "frost_ring": "서리고리", "blood_sword": "흡혈검", "cleave": "검기",
-	"excalibur": "엑스칼리버", "void_orb": "공허구",
-}
-
-# 장비 무기 5종은 캐릭터 수와 별개인 전투 아키타입이다.
-# 캐릭터는 고유 패시브·Q를, 현재 주무기는 자동공격·E를 결정한다.
-const WEAPON_ACTIVE_DEFS := {
-	"sword": {"name": "반격의 호", "cd": 6.0, "icon": "res://assets/items/gear_sword.png",
-		"desc": "짧게 무적이 되고 전방을 넓게 베어 밀쳐냅니다."},
-	"axe": {"name": "파쇄 강타", "cd": 7.5, "icon": "res://assets/items/gear_axe.png",
-		"desc": "주변을 내려쳐 큰 피해와 경직을 줍니다."},
-	"staff": {"name": "원소 폭발", "cd": 6.5, "icon": "res://assets/items/gear_staff.png",
-		"desc": "조준 지점에 현재 속성의 폭발을 일으킵니다."},
-	"dagger": {"name": "그림자 난무", "cd": 4.0, "icon": "res://assets/items/gear_dagger.png",
-		"desc": "치명타 확률이 높은 단검을 빠르게 난사합니다."},
-	"spear": {"name": "돌파 찌르기", "cd": 5.5, "icon": "res://assets/items/gear_spear.png",
-		"desc": "짧게 돌진한 뒤 긴 직선을 관통합니다."},
-}
-
-# 모든 시작·드롭·해금 무기를 5개 조작 문법에 연결한다. 새 무기를 추가하면 테스트가 누락을 잡는다.
-const WEAPON_ACTIVE_ARCHETYPE := {
-	"arrow": "dagger", "blade": "sword", "aura": "staff", "lightning": "staff",
-	"frost": "staff", "knife": "dagger", "fireball": "staff", "boomerang": "dagger",
-	"holy": "staff", "venom": "dagger", "whip": "sword", "chakram": "dagger",
-	"spear": "spear", "starfall": "staff", "flamethrower": "staff", "ice_lance": "spear",
-	"crossbow": "spear", "holy_cross": "staff", "poison_cloud": "staff", "quake": "axe",
-	"spread_shot": "dagger", "soul_bolt": "staff", "holy_beam": "spear", "bone_spiral": "staff",
-	"moonlight": "staff", "axe": "axe", "homing_skull": "staff", "thorn_burst": "staff",
-	"chain_bolt": "staff", "frost_ring": "staff", "blood_sword": "sword", "cleave": "sword",
-	"excalibur": "sword", "void_orb": "staff",
-}
-
-# 장비를 끼지 않은 캐릭터는 같은 5개 조작 문법 안에서도 고유 시작 무기 이름을 유지한다.
-# 실제 장비 무기는 WEAPON_ACTIVE_DEFS의 보편적인 명칭을 사용해 교체 결과를 예측하기 쉽게 한다.
-const STARTING_WEAPON_ACTIVE_VARIANTS := {
-	"poison_cloud": {"name": "역병 폭발", "desc": "조준 지점에 암흑 역병을 터뜨려 적을 둔화합니다."},
-	"aura": {"name": "성역 파동", "desc": "자신을 중심으로 신성 파동을 일으키고 생명력을 회복합니다."},
-	"blood_sword": {"name": "혈월 반격", "desc": "짧게 무적이 되어 베고, 적중한 피를 흡수합니다."},
-	"fireball": {"name": "화염 폭발", "desc": "조준 지점에 강력한 화염 폭발을 일으킵니다."},
-	"spread_shot": {"name": "속사 난무", "desc": "치명타 확률이 높은 총탄을 부채꼴로 난사합니다."},
-	"bone_spiral": {"name": "뼈 폭풍", "desc": "조준 지점에서 암흑 뼈 폭풍을 폭발시킵니다."},
-	"moonlight": {"name": "월광 폭발", "desc": "조준 지점에 차가운 월광을 응축해 터뜨립니다."},
-	"ice_lance": {"name": "빙하 돌진", "desc": "짧게 돌진한 뒤 적을 둔화하는 얼음창으로 관통합니다."},
-	"chain_bolt": {"name": "연쇄 폭발", "desc": "조준 지점에 암흑 뇌전을 응축해 폭발시킵니다."},
-}
-# 무기별 발사 섬광 (색 + 스타일). style: "slash"(전방 부채꼴)/"spin"(회전)/"ring"(방사링)/"burst"(파티클)
-# 신규 무기 위주로 발사 순간 생동감 부여 — 기존 무기는 자체 이펙트가 있어 제외.
-# "slash"(반투명 부채꼴) 스타일은 전면 폐기 — 투사체가 이미 날아가는데 그 위에
-# 부채꼴이 겹쳐 지저분했음. arrow·spear·flamethrower·ice_lance·crossbow·
-# spread_shot·axe가 쓰고 있었고, blood_sword는 근접 전환 때 먼저 제외됨.
-const WMUZZLE := {
-	"knife": [Color(0.85, 0.9, 1.0), "spin"],
-	"fireball": [Color(1.0, 0.55, 0.2), "burst"],
-	"boomerang": [Color(0.85, 0.65, 0.35), "spin"],
-	"chakram": [Color(0.8, 0.85, 0.95), "spin"],
-	"starfall": [Color(0.8, 0.6, 1.0), "burst"],
-	"holy_cross": [Color(1.0, 0.95, 0.6), "burst"],   # 노란 링 → 작은 파티클
-	"poison_cloud": [Color(0.4, 0.85, 0.3), "ring"],
-	"quake": [Color(0.7, 0.5, 0.3), "ring"],
-	"soul_bolt": [Color(0.5, 0.9, 0.7), "burst"],
-	"holy_beam": [Color(1.0, 0.95, 0.7), "burst"],
-	"bone_spiral": [Color(0.9, 0.9, 0.82), "spin"],
-	"moonlight": [Color(0.7, 0.8, 1.0), "burst"],
-	"homing_skull": [Color(0.5, 1.0, 0.6), "burst"],
-	"thorn_burst": [Color(0.6, 0.8, 0.4), "spin"],
-	"chain_bolt": [Color(0.7, 0.85, 1.0), "burst"],
-	"frost_ring": [Color(0.7, 0.9, 1.0), "spin"],
-}
-# 주무기 1 + 보조 1. 뱀서식 6수집 → 3 → 2로 좁혀 왔다.
-# 2로 내린 것은 취향이 아니라 레벨 곡선 개편의 필요조건이다. 한 런의 레벨이 약 85회에서
-# 35회로 줄어 레벨업 카드 총량도 함께 줄었는데, 무기 3개가 그걸 나눠 가지면 무기당
-# 약 5.8레벨에 그쳐 만렙(MAX_WLEVEL 8)에 못 닿는다. 그러면 진화(×1.45)가 영영 안 열린다.
-# 2개면 무기당 약 8.75레벨이라 진화가 다시 사거리 안으로 들어온다.
-const MAX_WEAPONS := 2
-const MAX_PASSIVES := 4   # M2: 패시브 슬롯 상한 (빌드 수렴)
-const MAX_WLEVEL := 8   # 뱀서식: 무기 만렙 Lv8
+# 패시브 슬롯 상한 (빌드 수렴). 무기가 사라진 뒤 남은 유일한 아이템 축이다.
+const MAX_PASSIVES := 4
 const MAX_PLEVEL := 5
-const EVO_START_TIME := 600.0 # 일반 런 진화 상자는 10:00 이후부터 활성화
-const FREE_WEAPON_SLOTS := 1   # M2 무기 숙련: 주무기 외 신규무기는 25% 확률로만 제시 (주무기 집중)
 # 숙련 갈림길: 전투 스타일을 2회 갈라 고른다. 한쪽을 고르면 반대쪽은 잠긴다.
 # 예전엔 주무기 레벨로 열렸지만 무기가 스탯으로 내려가면서 그 축이 사라졌다.
 # 이제 캐릭터 원소가 정체성이므로 원소별로 갈림길을 두고 플레이어 레벨로 연다.
@@ -260,88 +134,6 @@ const EXPEDITION_FLOORS := ExpeditionRulesScript.FLOOR_COUNT
 const MAX_ENEMIES := 300     # 동시 등장 상한 (뱀서형 밀도 + 내장 GPU 부하 관리. 340은 Iris Xe에서 랙 → 300으로 한 단계 롤백)
 # 무기 진화 레시피 (뱀서식): 무기 만렙(Lv8) + 필수 패시브 보유 → 보스 상자 개봉 시 진화
 # passive=필수 패시브 키, name=진화 무기 이름
-const EVO_RECIPE := {
-	"arrow":     {"passive": "candela", "name": "폭풍 화살", "icon": "res://assets/items/evo_arrow.png"},
-	"blade":     {"passive": "armor",   "name": "사신의 대검", "icon": "res://assets/items/evo_blade.png"},
-	"aura":      {"passive": "heart",   "name": "지옥불 오라", "icon": "res://assets/items/evo_aura.png"},
-	"lightning": {"passive": "tome",    "name": "천둥의 진노", "icon": "res://assets/items/evo_lightning.png"},
-	"frost":     {"passive": "wings",   "name": "절대영도", "icon": "res://assets/items/evo_frost.png"},
-	"knife":     {"passive": "spinach", "name": "천 개의 칼", "icon": "res://assets/items/evo_knife.png"},
-	"fireball":  {"passive": "candela", "name": "운석우", "icon": "res://assets/items/evo_fireball.png"},
-	"boomerang": {"passive": "wings",   "name": "사신의 낫", "icon": "res://assets/items/evo_boomerang.png"},
-	"holy":      {"passive": "tome",    "name": "신의 심판", "icon": "res://assets/items/evo_holy.png"},
-	"venom":     {"passive": "tomato",  "name": "역병", "icon": "res://assets/items/evo_venom.png"},
-	"whip":      {"passive": "spinach", "name": "피의 눈물", "icon": "res://assets/items/evo_whip.png"},
-	# 신규 무기 진화 (중앙 강화 방식 — NEW_EVO_WEAPONS)
-	"chakram":      {"passive": "duplicator",  "name": "죽음의 원반", "icon": "res://assets/items/evo_chakram.png"},
-	"spear":        {"passive": "keen_eye",    "name": "관통의 벼락창", "icon": "res://assets/items/evo_spear.png"},
-	"starfall":     {"passive": "candela",     "name": "종말의 유성우", "icon": "res://assets/items/evo_starfall.png"},
-	"flamethrower": {"passive": "candela",     "name": "지옥불 분사", "icon": "res://assets/items/evo_flamethrower.png"},
-	"ice_lance":    {"passive": "wings",       "name": "절대영도창", "icon": "res://assets/items/evo_ice_lance.png"},
-	"crossbow":     {"passive": "berserker",   "name": "발리스타", "icon": "res://assets/items/evo_crossbow.png"},
-	"holy_cross":   {"passive": "tome",        "name": "심판의 십자", "icon": "res://assets/items/evo_holy_cross.png"},
-	"poison_cloud": {"passive": "tomato",      "name": "대역병 안개", "icon": "res://assets/items/evo_poison_cloud.png"},
-	"quake":        {"passive": "armor",       "name": "대격변", "icon": "res://assets/items/evo_quake.png"},
-	"spread_shot":  {"passive": "duplicator",  "name": "폭풍 산탄", "icon": "res://assets/items/evo_spread_shot.png"},
-	"soul_bolt":    {"passive": "keen_eye",    "name": "군단 혼탄", "icon": "res://assets/items/evo_soul_bolt.png"},
-	"holy_beam":    {"passive": "spellbinder", "name": "천상의 빛기둥", "icon": "res://assets/items/evo_holy_beam.png"},
-	"bone_spiral":  {"passive": "skull",       "name": "죽음의 나선", "icon": "res://assets/items/evo_bone_spiral.png"},
-	"moonlight":    {"passive": "candela",     "name": "월식 강림", "icon": "res://assets/items/evo_moonlight.png"},
-	"axe":          {"passive": "berserker",   "name": "파멸의 도끼", "icon": "res://assets/items/evo_axe.png"},
-	"homing_skull": {"passive": "skull",       "name": "망령 군세", "icon": "res://assets/items/evo_homing_skull.png"},
-	"thorn_burst":  {"passive": "spinach",     "name": "가시 지옥", "icon": "res://assets/items/evo_thorn_burst.png"},
-	"chain_bolt":   {"passive": "tome",        "name": "뇌신의 분노", "icon": "res://assets/items/evo_chain_bolt.png"},
-	"frost_ring":   {"passive": "wings",       "name": "절대 동결지대", "icon": "res://assets/items/evo_frost_ring.png"},
-	"blood_sword":  {"passive": "vitality",    "name": "흡혈 대검", "icon": "res://assets/items/evo_blood_sword.png"},
-	"cleave":       {"passive": "armor",       "name": "파천 검기", "icon": "res://assets/items/evo_cleave.png"},
-}
-# 신규 무기 진화는 _fire_weapon에서 일괄 강화(피해·투사체·범위↑) — 개별 _fire 수정 불필요
-# 레벨업에 제안되는 핵심 무기 풀 (뱀서식: 패턴별 대표만 남겨 "골라 키우는 맛"). 코드는 전부 유지,
-# 여기 없는 무기는 신규 카드로 안 뜸(시작무기·진화·유니온은 별개로 정상 동작).
-# 미니멀 무기 풀 (뱀서식): 아키타입별 대표 하나씩만 신규 카드로 제안 → 겹치는 무기 제거.
-# (제외된 무기도 코드·진화 레시피는 유지 → 진화무기·시작무기로는 여전히 등장)
-const POOL_WEAPONS := [
-	"arrow",        # 유도 단발 (매직완드)
-	"knife",        # 직선 다중 투척
-	"spread_shot",  # 전방 산탄
-	"crossbow",     # 관통 저격
-	"blade",        # 공전 검 (성경)
-	"aura",         # 근접 오라 (마늘)
-	"whip",         # 전방 채찍
-	"cleave",       # 검기 호
-	"frost",        # 빙결 노바
-	"lightning",    # 랜덤 낙뢰
-	"fireball",     # 폭발 투척
-	"boomerang",    # 귀환 투척
-	"chakram",      # 튕기는 원반 (룬트레이서)
-	"moonlight",    # 하늘 폭격
-]
-const NEW_EVO_WEAPONS := ["chakram", "spear", "starfall", "flamethrower",
-	"ice_lance", "crossbow", "holy_cross", "poison_cloud", "quake", "spread_shot", "soul_bolt",
-	"holy_beam", "bone_spiral", "moonlight", "axe", "homing_skull",
-	"thorn_burst", "chain_bolt", "frost_ring", "blood_sword", "cleave"]
-# 신규 진화 무기의 시그니처 효과 (Arrow 투사체에 부여). Arrow._ready가 부모의 EVO_FX를 읽어 적용.
-# 지원 키: pierce(+관통), explode(폭발 반경)+efrac(폭발 피해 비율), homing(유도), slow/slow_t(둔화), ls(흡혈)
-const EVO_FX := {
-	"chakram":      {"pierce": 99},                         # 죽음의 원반: 전관통
-	"spear":        {"pierce": 99, "explode": 60.0, "efrac": 0.5},  # 벼락창: 관통+낙뢰
-	"flamethrower": {"explode": 66.0, "efrac": 0.6},        # 지옥불: 착탄마다 폭발
-	"ice_lance":    {"pierce": 99, "slow": 0.6, "slow_t": 2.0},     # 절대영도창: 관통+빙결
-	"crossbow":     {"pierce": 99, "explode": 96.0, "efrac": 0.8},  # 발리스타: 관통 폭발볼트
-	"spread_shot":  {"homing": 4.0},                        # 산탄 유도
-	"soul_bolt":    {"homing": 5.0, "explode": 54.0, "efrac": 0.5}, # 혼탄: 추적+작렬
-	"holy_beam":    {"explode": 74.0, "efrac": 0.6},        # 성광선: 관통+폭발광
-	"bone_spiral":  {"pierce": 3, "explode": 50.0, "efrac": 0.4},   # 뼈나선 작렬
-	"axe":          {"explode": 104.0, "efrac": 0.7},       # 전투도끼: 대지 폭쇄
-	"homing_skull": {"explode": 70.0, "efrac": 0.6},        # 유도해골: 작렬
-	"thorn_burst":  {"pierce": 99},                         # 가시분출 전관통
-	"frost_ring":   {"pierce": 2, "slow": 0.6, "slow_t": 2.2},      # 서리고리 강빙결
-	# 흡혈검은 근접 베기로 바뀌어 Arrow를 안 만듦 → EVO_FX(투사체 전용) 대상 아님.
-	#   진화 효과는 _fire_blood_sword 안에서 직접 처리 (범위·피해·흡혈 강화)
-	"holy_cross":   {"pierce": 2, "explode": 60.0, "efrac": 0.5},   # 성십자 작렬
-}
-var _evo_kind := ""   # 현재 발사 중인 진화 무기 kind (Arrow가 EVO_FX 조회용)
-
 # 범위 배수의 체감 감쇠. area_mult는 숙련 분기·패시브(촛대·봉인의서)·스탯 집중·장비
 # 어픽스·가호·유물·리밋 등 8곳에서 곱으로 누적돼, 그대로 반경에 넣으면 진화 무기가
 # 화면을 덮는다(로그라이크를 벗어난 뒤로는 넓은 범위가 재미를 깎는다).
@@ -360,89 +152,7 @@ func _area_scale() -> float:
 		return m
 	return AREA_SOFT_CAP + (m - AREA_SOFT_CAP) * AREA_OVER_RATE
 
-# 진화 무기 시그니처 색 — 진화하면 투사체·이펙트·후광·트레일이 이 색으로 물든다.
-# 기본 무기 색과 확 다르게 잡아 "진화했다"가 한눈에 보이게 (뱀서식 비주얼 정체성).
-const EVO_TINT := {
-	"arrow": Color(1.0, 0.45, 0.40),        # 진홍 마탄
-	"lightning": Color(0.80, 0.55, 1.00),   # 보라 뇌전
-	"fireball": Color(0.50, 0.65, 1.00),    # 청염
-	"frost": Color(0.60, 0.92, 1.00),       # 심빙
-	"knife": Color(1.00, 0.55, 0.50),       # 혈인
-	"boomerang": Color(1.00, 0.85, 0.40),   # 황금 원반
-	"holy": Color(1.00, 0.95, 0.65),        # 순백금
-	"venom": Color(0.70, 1.00, 0.30),       # 맹독 라임
-	"whip": Color(1.00, 0.40, 0.40),        # 핏빛 채찍
-	"starfall": Color(0.70, 0.80, 1.00),    # 청백 유성
-	"poison_cloud": Color(0.75, 0.50, 1.00),# 독보라
-	"quake": Color(1.00, 0.55, 0.25),       # 용암 균열
-	"moonlight": Color(1.00, 0.45, 0.50),   # 붉은 월식
-	"cleave": Color(1.00, 0.85, 0.50),      # 황금 검기
-	"blood_sword": Color(1.00, 0.25, 0.30), # 심홍 혈검
-	"chakram": Color(0.85, 0.40, 1.00),     # 죽음 보라
-	"spear": Color(0.55, 0.85, 1.00),       # 전격 하늘
-	"flamethrower": Color(0.45, 0.65, 1.00),# 지옥 청염
-	"ice_lance": Color(0.70, 0.95, 1.00),   # 절대영도
-	"crossbow": Color(1.00, 0.70, 0.35),    # 발리스타 주황
-	"spread_shot": Color(0.50, 1.00, 0.55), # 유도 녹탄
-	"soul_bolt": Color(0.50, 1.00, 0.90),   # 유령 청록
-	"holy_beam": Color(1.00, 0.90, 0.40),   # 순금 광선
-	"bone_spiral": Color(1.00, 0.50, 0.45), # 핏빛 뼈
-	"axe": Color(1.00, 0.55, 0.20),         # 용암 도끼
-	"homing_skull": Color(0.55, 1.00, 0.40),# 지옥 녹염
-	"thorn_burst": Color(0.80, 0.40, 0.90), # 독자주 가시
-	"frost_ring": Color(0.60, 0.90, 1.00),  # 얼음 고리
-	"holy_cross": Color(1.00, 0.95, 0.60),  # 금백 십자
-}
 
-
-# 진화 시그니처 색 조회 (없으면 공통 황금)
-func _evo_tint(kind: String) -> Color:
-	return EVO_TINT.get(kind, Color(1.3, 1.15, 0.7))
-
-# 무기 조합: 두 무기 모두 Lv3+ → 조합 카드 등장 (조합당 1회)
-const COMBO_DEFS := [
-	{"key": "arrow_lightning", "a": "arrow", "b": "lightning", "t": "스톰 애로우",
-		"d": "화살 명중 시 30% 번개 연쇄", "icon": "res://assets/items/icon_lightning.png"},
-	{"key": "arrow_frost", "a": "arrow", "b": "frost", "t": "프로스트 애로우",
-		"d": "모든 화살에 둔화 부여", "icon": "res://assets/items/icon_frost.png"},
-	{"key": "blade_aura", "a": "blade", "b": "aura", "t": "블레이드 스톰",
-		"d": "검 +1, 오라 범위 +15%", "icon": "res://assets/items/sword.png"},
-	{"key": "lightning_frost", "a": "lightning", "b": "frost", "t": "블리자드",
-		"d": "번개 맞은 적 둔화", "icon": "res://assets/items/icon_frost.png"},
-	{"key": "aura_frost", "a": "aura", "b": "frost", "t": "서리 오라",
-		"d": "오라가 적을 둔화", "icon": "res://assets/items/icon_aura.png"},
-	{"key": "blade_lightning", "a": "blade", "b": "lightning", "t": "뇌명검",
-		"d": "검 피해 +40%, 번개 강타 +1", "icon": "res://assets/items/sword.png"},
-	# 신규 무기 조합
-	{"key": "fire_frost", "a": "fireball", "b": "frost", "t": "증기 폭발",
-		"d": "파이어볼 폭발 +30%, 둔화 부여", "icon": "res://assets/items/icon_fireball.png"},
-	{"key": "venom_fire", "a": "venom", "b": "fireball", "t": "맹독 화염",
-		"d": "독날 명중 시 화염 폭발", "icon": "res://assets/items/icon_venom.png"},
-	{"key": "holy_lightning", "a": "holy", "b": "lightning", "t": "천벌 강림",
-		"d": "천벌 착탄에 번개 연쇄", "icon": "res://assets/items/icon_holy.png"},
-	{"key": "whip_boomerang", "a": "whip", "b": "boomerang", "t": "난무",
-		"d": "채찍 범위 +30%, 부메랑 +1", "icon": "res://assets/items/icon_whip.png"},
-	{"key": "arrow_fireball", "a": "arrow", "b": "fireball", "t": "폭렬 화살",
-		"d": "화살이 소형 폭발", "icon": "res://assets/items/icon_fireball.png"},
-]
-# 유니온: 두 무기 모두 Lv8(만렙) → 보스 상자에서 합체 신규 무기 (뱀서 Union)
-const UNION_DEFS := [
-	{"key": "storm_bow",    "a": "arrow",   "b": "lightning", "name": "폭풍궁",
-		"desc": "화살 폭풍 + 낙뢰 동시 강타", "icon": "res://assets/items/icon_lightning.png", "cd": 1.1},
-	{"key": "frostfire",    "a": "fireball", "b": "frost",    "name": "빙염",
-		"desc": "화상+빙결 대폭발", "icon": "res://assets/items/icon_fireball.png", "cd": 1.6},
-	{"key": "cyclone",      "a": "whip",    "b": "boomerang", "name": "선풍",
-		"desc": "전방위 고속 회전 참격", "icon": "res://assets/items/icon_whip.png", "cd": 1.3},
-	{"key": "plague_bomb",  "a": "venom",   "b": "fireball",  "name": "역병탄",
-		"desc": "독구름 남기는 폭발", "icon": "res://assets/items/icon_venom.png", "cd": 1.8},
-	{"key": "divine_storm", "a": "holy",    "b": "lightning", "name": "신벌",
-		"desc": "신성 기둥 + 낙뢰 다중 강타", "icon": "res://assets/items/icon_holy.png", "cd": 1.5},
-	{"key": "blade_dance",  "a": "blade",   "b": "aura",      "name": "검무",
-		"desc": "검+오라 융합 광역 지속", "icon": "res://assets/items/sword.png", "cd": 1.4},
-]
-# 월드 크기. StageLayout.WORLD와 반드시 같아야 한다(StageLayoutTest가 검사).
-# 2800 → 3840: 탐사 체감을 위해 면적 1.88배. 몹은 플레이어 주변에 스폰되므로
-# 넓혀도 화면 밀도는 유지되고, 대신 방·복도 사이 이동이 실제 탐험이 된다.
 const WORLD := Vector2(3840, 3840)
 const StageLayoutData = preload("res://StageLayout.gd")
 const StageTiles = preload("res://StageTileRenderer.gd")
@@ -459,10 +169,8 @@ const STAGE_TILE_MODULATES := [
 ]
 var _decor_cache: Array = []
 var _decor_loaded := false
-var _evo_spawn := false   # 진화 무기 발사 중이면 true (Arrow가 진화 오라를 켜기 위해 읽음)
 # 현재 발사 중 무기의 시각 배율 (레벨·진화 성장감). 디스패처가 설정, 발사 후 1.0 복귀.
 # 발사 중 동기 생성되는 투사체(Arrow)·이펙트(spawn_fx)·낙하체(SkyStrike)가 읽는다.
-var wfx_boost := 1.0
 
 # 업적 (달성 시 골드 보상 + 일부는 특수무기 해금)
 const ACHIEVEMENTS := [
@@ -470,14 +178,14 @@ const ACHIEVEMENTS := [
 	{"key": "survivor",     "name": "불굴의 생존자",   "desc": "한 판에서 15분 이상 생존",     "gold": 120},
 	{"key": "slayer",       "name": "학살자",         "desc": "한 판에서 800킬 달성",         "gold": 250, "unlock": "void_orb"},
 	{"key": "evolved",      "name": "완전한 진화",     "desc": "Lv75 도달 (5단계 진화)",       "gold": 200},
-	{"key": "combo_master", "name": "유니온 완성",     "desc": "한 판에서 유니온 무기 1개 완성", "gold": 150},
-	{"key": "legend_weapon","name": "전설을 손에",     "desc": "무기 하나를 진화시킴",          "gold": 100},
+	{"key": "combo_master", "name": "완성된 조합",     "desc": "한 판에서 스킬 4칸을 모두 채움", "gold": 150},
+	{"key": "legend_weapon","name": "전설을 손에",     "desc": "스킬 하나를 만렙까지 올림",      "gold": 100},
 	{"key": "boss_slayer",  "name": "보스 슬레이어",   "desc": "한 판에서 보스 4마리 처치",     "gold": 150},
 	{"key": "rich",         "name": "부호",           "desc": "골드 3000 보유",               "gold": 100},
 	{"key": "hard_clear",   "name": "진정한 도전자",   "desc": "어려움 난이도 승리",            "gold": 300, "unlock": "excalibur"},
 	{"key": "no_revive",    "name": "무결점",         "desc": "부활 없이 승리",               "gold": 200},
 	{"key": "abyss",        "name": "심연의 정복자",   "desc": "심연 5층 도달",                "gold": 250},
-	{"key": "knife_thrower","name": "투척 전문가",     "desc": "보통 이상에서 원거리 무기 4종 보유 승리", "gold": 150, "unlock": "knife"},
+	{"key": "knife_thrower","name": "투척 전문가",     "desc": "보통 이상에서 스킬 4칸을 채우고 승리", "gold": 150},
 	{"key": "win_corvius",  "name": "역병의 승리",     "desc": "코르비우스로 승리",             "gold": 80},
 	{"key": "win_gustavo",  "name": "정육점의 승리",   "desc": "구스타보로 승리",               "gold": 80},
 	{"key": "win_serafina", "name": "타락한 가호",     "desc": "세라피나로 승리",               "gold": 80},
@@ -506,7 +214,6 @@ const RELIC_DEFS := [
 	{"key":"hungry_heart", "name":"굶주린 심장", "desc":"최대 체력 +15%", "unlock":"combo_master", "icon_key":"heart", "icon":"res://assets/items/relic_hungry_heart.png"},
 ]
 # 해금 무기: 무기키 → 필요 업적키 (미달성이면 카드 풀에 안 나옴)
-const UNLOCK_WEAPONS := {"knife": "knife_thrower", "excalibur": "hard_clear", "void_orb": "slayer"}
 
 # 던전 가호(선택): 입장 전 1개 선택해 런의 성격을 바꾼다.
 # 위험과 보상은 난이도가 전담하고, 가호는 플레이 방식의 변주만 담당한다.
@@ -542,42 +249,6 @@ const RELIC_SETS := [
 ]
 
 # 무기/패시브 아이콘 (파일 없으면 아이콘 없이 텍스트만)
-const WICON := {
-	"arrow": "res://assets/items/arrow.png",
-	"blade": "res://assets/items/sword.png",
-	"aura": "res://assets/items/icon_aura.png",
-	"lightning": "res://assets/items/icon_lightning.png",
-	"frost": "res://assets/items/icon_frost.png",
-	"knife": "res://assets/items/icon_throwknife.png",
-	"fireball": "res://assets/items/icon_fireball.png",
-	"boomerang": "res://assets/items/icon_boomerang.png",
-	"holy": "res://assets/items/icon_holy.png",
-	"venom": "res://assets/items/icon_venom.png",
-	"whip": "res://assets/items/icon_whip.png",
-	"chakram": "res://assets/items/icon_chakram.png",
-	"spear": "res://assets/items/icon_spear.png",
-	"starfall": "res://assets/items/icon_starfall.png",
-	"flamethrower": "res://assets/items/icon_flamethrower.png",
-	"ice_lance": "res://assets/items/icon_icelance.png",
-	"crossbow": "res://assets/items/icon_crossbow.png",
-	"holy_cross": "res://assets/items/icon_holycross.png",
-	"poison_cloud": "res://assets/items/icon_poisoncloud.png",
-	"quake": "res://assets/items/icon_quake.png",
-	"spread_shot": "res://assets/items/icon_spreadshot.png",
-	"soul_bolt": "res://assets/items/icon_soulbolt.png",
-	"holy_beam": "res://assets/items/icon_holybeam.png",
-	"bone_spiral": "res://assets/items/icon_bonespiral.png",
-	"moonlight": "res://assets/items/icon_moonlight.png",
-	"axe": "res://assets/items/icon_axe.png",
-	"homing_skull": "res://assets/items/icon_homingskull.png",
-	"thorn_burst": "res://assets/items/icon_thornburst.png",
-	"chain_bolt": "res://assets/items/icon_chainbolt.png",
-	"frost_ring": "res://assets/items/icon_frostring.png",
-	"blood_sword": "res://assets/items/icon_bloodsword.png",
-	"cleave": "res://assets/items/icon_slash.png",
-	"excalibur": "res://assets/items/icon_excalibur.png",
-	"void_orb": "res://assets/items/icon_voidorb.png",
-}
 const PICON := {
 	"spinach": "res://assets/items/icon_spinach.png",
 	"armor": "res://assets/items/icon_armor.png",
@@ -619,9 +290,6 @@ var room_wake_timer := 0.0      # 방 배치 몹 각성 검사 주기
 var spawn_timer := 1.0
 var pickup_timer := 10.0
 var breakable_timer := 6.0   # 파괴 오브젝트 주기 스폰
-var _blade_angle := 0.0
-var _aura_pulse_t := 0.0
-var _blade_evo_pulse_t := 0.0
 
 # 스테이지
 var stage_num := 1
@@ -787,7 +455,7 @@ var ach_progress_label: Label
 var collection_panel: Control
 var collection_list_box: GridContainer
 var collection_progress_label: Label
-var collection_tab := "evolutions"
+var collection_tab := "skills"
 var collection_tab_buttons: Dictionary = {}
 
 # 캐릭터 선택 + 특화 배수
@@ -893,14 +561,8 @@ var flash_overlay: FlashOverlay   # 레벨업·진화 화면 플래시
 var _slowmo_until := 0        # 슬로우모션 종료 시각(ms, 실시간)
 var skill_label: Label
 
-var weapons := {}     # kind -> level
-var wtimer := {}      # 쿨다운 무기 -> 남은 시간
 var passives := {}    # kind -> level
-var evolved := {}     # 진화한 무기 kind -> true
-var primary_weapon := ""   # M2: 이번 런 주무기(숙련 트리 대상). _start_game에서 sw로 확정.
 var mastery_picks := {}     # M2: 주무기 숙련 갈림길 선택 {fork_level:int -> "a"/"b"}. 리셋 대상.
-var combos := {}      # (구) 조합 — 유니온으로 대체, 미사용
-var unions := {}      # 획득한 유니온 key -> true (합체 신규 무기)
 
 # 난이도
 var diff_enemy_hp := 1.0
@@ -1145,7 +807,7 @@ func _autoshot() -> void:
 				for arg in args:
 					if arg.begins_with("--collection-tab="):
 						var requested_tab := arg.trim_prefix("--collection-tab=")
-						if requested_tab in ["evolutions", "unions", "relics", "enemies"]:
+						if requested_tab in ["skills", "relics", "enemies"]:
 							collection_tab = requested_tab
 				_refresh_collection()
 			_goto_screen(panel)
@@ -1319,8 +981,8 @@ func _autoshot() -> void:
 			{"slot": "weapon", "name": "서리의 장궁", "rarity": "epic", "level": 1},
 			{"slot": "trinket", "name": "잿불 수호 부적", "rarity": "legendary", "level": 0},
 		]
-		weapons = {"arrow": 8, "aura": 6, "lightning": 5}
-		evolved = {"arrow": true}
+		skill_levels = {"bolt": 5, "burst": 3, "field": 2}
+		skill_slots = {"q": "burst", "e": "field", "r": "", "f": ""}
 		passives = {"spinach": 5, "tome": 4, "heart": 3}
 		var end_preview_win := not "--end-defeat" in args
 		if not end_preview_win:
@@ -1344,8 +1006,6 @@ func _autoshot() -> void:
 	if active_preview != "":
 		if state == State.PAUSED:
 			_toggle_pause()
-		weapons.clear()
-		wtimer.clear()
 		xp_to_next = 999999
 		if stage_label:
 			stage_label.visible = false
@@ -1409,8 +1069,6 @@ func _autoshot() -> void:
 	# --hell-preview=fissure|midboss|boss: M3 핵심 전투 상태를 실제 렌더로 검수한다.
 	if hell_preview != "":
 		player.invuln = 999.0
-		weapons.clear()
-		wtimer.clear()
 		xp_to_next = 999999
 		for preview_enemy in get_tree().get_nodes_in_group("enemies"):
 			if is_instance_valid(preview_enemy):
@@ -1463,8 +1121,6 @@ func _autoshot() -> void:
 	# --graveyard-preview=seal|midboss|boss: M5-A 핵심 전투 상태를 실제 렌더로 검수한다.
 	if grave_preview != "":
 		player.invuln = 999.0
-		weapons.clear()
-		wtimer.clear()
 		xp_to_next = 999999
 		for preview_enemy in get_tree().get_nodes_in_group("enemies"):
 			if is_instance_valid(preview_enemy):
@@ -1518,8 +1174,6 @@ func _autoshot() -> void:
 	# --glacier-preview=brazier|midboss|boss: M5-B 핵심 전투 상태를 실제 렌더로 검수한다.
 	if glacier_preview != "":
 		player.invuln = 999.0
-		weapons.clear()
-		wtimer.clear()
 		xp_to_next = 999999
 		for preview_enemy in get_tree().get_nodes_in_group("enemies"):
 			if is_instance_valid(preview_enemy):
@@ -1588,8 +1242,6 @@ func _autoshot() -> void:
 	# --void-preview=anchor|midboss|boss: M5-C 핵심 전투 상태를 실제 렌더로 검수한다.
 	if void_preview != "":
 		player.invuln = 999.0
-		weapons.clear()
-		wtimer.clear()
 		xp_to_next = 999999
 		for preview_enemy in get_tree().get_nodes_in_group("enemies"):
 			if is_instance_valid(preview_enemy):
@@ -1652,8 +1304,6 @@ func _autoshot() -> void:
 	# --castle-preview=gate|midboss|boss: M5-D 핵심 전투 상태를 실제 렌더로 검수한다.
 	if castle_preview != "":
 		player.invuln = 999.0
-		weapons.clear()
-		wtimer.clear()
 		xp_to_next = 999999
 		for preview_enemy in get_tree().get_nodes_in_group("enemies"):
 			if is_instance_valid(preview_enemy):
@@ -1868,24 +1518,16 @@ func _autoshot() -> void:
 				errors.append("missing relic unlock achievement: " + str(relic["unlock"]))
 			if not FileAccess.file_exists(str(relic.get("icon", ""))):
 				errors.append("missing relic icon: " + str(relic["key"]))
-		for weapon_key in UNLOCK_WEAPONS.keys():
-			if not (weapon_key in ALL_WEAPONS):
-				errors.append("unknown unlock weapon: " + str(weapon_key))
-			if _ach_by_key(str(UNLOCK_WEAPONS[weapon_key])).is_empty():
-				errors.append("missing unlock achievement: " + str(UNLOCK_WEAPONS[weapon_key]))
 		var passive_defs := _passive_defs()
-		for weapon_key in EVO_RECIPE.keys():
-			if not (weapon_key in ALL_WEAPONS):
-				errors.append("unknown evolution weapon: " + str(weapon_key))
-			var passive_key := str(EVO_RECIPE[weapon_key]["passive"])
-			if not passive_defs.has(passive_key):
-				errors.append("unknown evolution passive: " + passive_key)
-			if not FileAccess.file_exists(str(EVO_RECIPE[weapon_key].get("icon", ""))):
-				errors.append("missing evolution icon: " + str(weapon_key))
-		for union_data in UNION_DEFS:
-			for material in [union_data["a"], union_data["b"]]:
-				if not (material in ALL_WEAPONS):
-					errors.append("unknown union material: " + str(material))
+		# 스킬은 아키타입 x 원소 조합이라 개수가 아니라 이펙트 존재 여부를 본다.
+		for arch in SkillDefs.archetype_keys():
+			for elem in SkillDefs.elements():
+				var sdef := SkillDefs.build(str(arch), str(elem), 1)
+				if sdef.is_empty():
+					errors.append("skill build failed: %s/%s" % [arch, elem])
+					continue
+				if not DirAccess.dir_exists_absolute("res://assets/anim/%s" % str(sdef["fx"])):
+					errors.append("missing skill fx: %s (%s/%s)" % [sdef["fx"], arch, elem])
 		for stage_index in range(1, FINAL_STAGE + 1):
 			for enemy_key in GameConfig.stage_roster(stage_index):
 				if str(GameConfig.tier_by_key(enemy_key)["key"]) != str(enemy_key):
@@ -1899,7 +1541,7 @@ func _autoshot() -> void:
 		if GameConfig.WAVE_SCHEDULE.size() != 30:
 			errors.append("wave schedule is not 30 minutes")
 		var passed := errors.is_empty()
-		print("DATA_TEST %s characters=%d achievements=%d evolutions=%d unions=%d waves=%d" % ["PASS" if passed else "FAIL", GameConfig.characters().size(), ACHIEVEMENTS.size(), EVO_RECIPE.size(), UNION_DEFS.size(), GameConfig.WAVE_SCHEDULE.size()])
+		print("DATA_TEST %s characters=%d achievements=%d skills=%d elements=%d waves=%d" % ["PASS" if passed else "FAIL", GameConfig.characters().size(), ACHIEVEMENTS.size(), SkillDefs.ARCHETYPES.size(), SkillDefs.elements().size(), GameConfig.WAVE_SCHEDULE.size()])
 		for error in errors:
 			push_error(error)
 		get_tree().quit(0 if passed else 1)
@@ -1979,51 +1621,6 @@ func _autoshot() -> void:
 		get_tree().quit(0 if passed else 1)
 		return
 
-	# --evo-test : 집중 성장 선택지와 10분 상자 제한을 저장 변경 없이 검사.
-	if "--evo-test" in args:
-		var start_weapon := str(sel_char.get("weapon", "arrow"))
-		var material_key := str(EVO_RECIPE[start_weapon]["passive"])
-		var choices_ok := true
-		# 시작 무기 레벨은 저장 상태(유물 「위대한 복음」 등)에 따라 1이 아닐 수 있으므로
-		# 만렙까지 실제 필요한 강화 횟수를 동적으로 계산한다.
-		var upgrades_needed: int = MAX_WLEVEL - int(weapons.get(start_weapon, 1))
-		# 무기 레벨 시간 소프트캡(_weapon_time_cap)이 초반엔 Lv8을 막으므로,
-		# 만렙 시뮬레이션은 10분 경과 상태(진화 시점)로 두고 돌린다.
-		time_survived = EVO_START_TIME + 5.0
-		for upgrade_index in upgrades_needed:
-			var picks := _pick3(_card_options())
-			var weapon_card: Dictionary = {}
-			var material_offered := false
-			for card in picks:
-				if card.get("t", "") == "w" and card.get("key", "") == start_weapon:
-					weapon_card = card
-				if card.get("t", "") == "p" and card.get("key", "") == material_key:
-					material_offered = true
-			choices_ok = choices_ok and not weapon_card.is_empty() and material_offered
-			if weapon_card.is_empty():
-				break
-			(weapon_card["act"] as Callable).call()
-		var material_card: Dictionary = {}
-		for card in _card_options():
-			if card.get("t", "") == "p" and card.get("key", "") == material_key:
-				material_card = card
-				break
-		if not material_card.is_empty():
-			(material_card["act"] as Callable).call()
-		var ready_kind: String = _ready_evolution_kind()
-		time_survived = EVO_START_TIME - 1.0
-		var blocked_before_ten: bool = not _can_evolve_from_chest()
-		time_survived = EVO_START_TIME + 1.0
-		var enabled_after_ten: bool = _can_evolve_from_chest()
-		var passed: bool = (choices_ok and int(weapons.get(start_weapon, 0)) == MAX_WLEVEL
-			and int(passives.get(material_key, 0)) >= 1 and ready_kind == start_weapon
-			and blocked_before_ten and enabled_after_ten)
-		print("EVO_TEST %s weapon=%s lv=%d material=%s offered=%s gate_599=%s gate_601=%s" % ["PASS" if passed else "FAIL", start_weapon, int(weapons.get(start_weapon, 0)), material_key, choices_ok, blocked_before_ten, enabled_after_ten])
-		if not passed:
-			push_error("Evolution pacing regression test failed")
-		get_tree().quit(0 if passed else 1)
-		return
-
 	# --growth : 캐릭터별 성장 특성이 레벨에 따라 실제로 붙는지 콘솔 검증
 	if "--growth" in args:
 		for c in GameConfig.characters():
@@ -2043,23 +1640,6 @@ func _autoshot() -> void:
 				c["key"], g.get("stat", "-"), before, level, after, _growth_tier])
 		get_tree().quit()
 		return
-
-	# --wfx=<무기키> : 해당 무기를 지급하고 발사 순간을 캡처 (모션 점검용)
-	for a in args:
-		if a.begins_with("--wfx="):
-			var wk := a.split("=")[1]
-			weapons[wk] = 5
-			wtimer[wk] = 0.0
-			await get_tree().create_timer(1.0, true, false, true).timeout
-			if state == State.PAUSED:
-				_toggle_pause()
-			# 발사 직후를 잡기 위해 짧게 여러 프레임 대기
-			await get_tree().create_timer(0.06, true, false, true).timeout
-			var imw := get_viewport().get_texture().get_image()
-			imw.save_png("user://autoshot.png")
-			print("AUTOSHOT SAVED: ", ProjectSettings.globalize_path("user://autoshot.png"))
-			get_tree().quit()
-			return
 
 	# --census=<초> : 시간대별 적 수·젬 수를 콘솔에 찍음 (뱀서 밀도 비교용)
 	for a in args:
@@ -2177,30 +1757,14 @@ func _autoshot() -> void:
 		get_tree().quit()
 		return
 
-	# --blade=<레벨> : 회전검을 즉시 지급하고 캡처 (이펙트 점검용)
-	for a in args:
-		if a.begins_with("--blade="):
-			weapons["blade"] = int(a.split("=")[1])
-			if "--evo" in args:
-				evolved["blade"] = true
-			await get_tree().create_timer(1.2, true, false, true).timeout
-			if state == State.PAUSED:
-				_toggle_pause()
-			await get_tree().process_frame
-			var imb := get_viewport().get_texture().get_image()
-			imb.save_png("user://autoshot.png")
-			print("AUTOSHOT SAVED: ", ProjectSettings.globalize_path("user://autoshot.png"))
-			get_tree().quit()
-			return
-
 	# --chest=<초> : 3릴 룰렛을 띄우고 [열기] 후 지정 시각에 캡처 (연출 단계 점검용)
 	for a in args:
 		if a.begins_with("--chest="):
 			var at := float(a.split("=")[1])
 			await get_tree().create_timer(0.3, true, false, true).timeout
 			var icons: Array = []
-			for k in WICON.keys():
-				var t := Assets.tex(WICON[k])
+			for k in PICON.keys():
+				var t := Assets.tex(PICON[k])
 				if t:
 					icons.append(t)
 			var rw: Array = []
@@ -2244,7 +1808,6 @@ func _process(delta: float) -> void:
 
 	time_survived += delta
 	var dungeon_elapsed := _dungeon_elapsed()
-	_blade_angle += delta * 3.2
 	# 업적 토스트 타이머
 	if ach_toast_t > 0.0:
 		ach_toast_t -= delta
@@ -2507,93 +2070,13 @@ func _physics_process(delta: float) -> void:
 					a.hit[b] = true
 					b.take_damage(a.damage)
 					# 타격 이펙트 (파괴 오브젝트에도 명중 연출 — 딜 들어가는 게 보이게)
-					spawn_fx(a.fx_hit if a.fx_hit != "" else "fx_hit", b.position, 40.0)
+					spawn_fx("fx_hit", b.position, 40.0)
 					_spawn_dmg_num(b.position, max(1, int(round(a.damage))), false)
 					if a.pierce <= 0:
 						a.queue_free()
 						break
 					else:
 						a.pierce -= 1
-
-	# 신성 오라 (지속 범위 피해)
-	if weapons.has("aura"):
-		var aura_previous_source := telemetry_push_damage_source("aura")
-		var ar := _aura_radius()
-		var dps := _aura_dps()
-		_aura_pulse_t -= delta
-		for e in enemies:
-			if is_instance_valid(e) and player.position.distance_to(e.position) < ar + e.radius:
-				e.take_damage(dps * delta, false, true)   # dot: 넉백·플래시 없음 (장판·오라 공통)
-				if combos.has("aura_frost"):
-					e.apply_slow(0.25, 0.4)
-		if evolved.get("aura", false) and _aura_pulse_t <= 0.0:
-			# 지옥불 맥동: 크기를 줄인 대신 한 방이 세고 태워서 둔화시킨다(범위 대신 효과).
-			_aura_pulse_t = 1.1
-			for e in enemies:
-				if is_instance_valid(e) and player.position.distance_to(e.position) < ar + e.radius:
-					e.take_damage(dps * 1.15)
-					e.shove(player.position, 130.0)
-					e.apply_slow(0.30, 0.9)   # 화상: 맥동에 휩쓸린 적은 느려진다
-			# 연출도 절제 — 형광 주황 대신 어두운 잉걸빛, 반경은 실제 타격 범위만.
-			_spawn_proc_fx("ring", player.position, ar, Color(0.86, 0.38, 0.16), 0.30)
-		if boss and is_instance_valid(boss) and player.position.distance_to(boss.position) < ar + boss.radius:
-			boss.take_damage(dps * delta)
-			if evolved.get("aura", false) and _aura_pulse_t > 1.15:
-				boss.take_damage(dps * 0.55)
-		for objective in _combat_objectives():
-			if is_instance_valid(objective) and player.position.distance_to(objective.position) < ar + objective.radius:
-				objective.take_damage(dps * delta, false, true)
-		# 오라로 파괴 오브젝트도 부숨
-		for br in get_tree().get_nodes_in_group("breakables"):
-			if is_instance_valid(br) and player.position.distance_to(br.position) < ar + br.radius:
-				br.take_damage(dps * delta)
-		telemetry_restore_damage_source(aura_previous_source)
-
-	# 회전 검 (공전 접촉 피해)
-	if weapons.has("blade"):
-		var blade_previous_source := telemetry_push_damage_source("blade")
-		var cnt := _blade_count()
-		var dpsb := _blade_dps()
-		var orad := _blade_orbit()
-		for i in cnt:
-			var ang := _blade_angle + i * TAU / cnt
-			var bpos := player.position + Vector2(cos(ang), sin(ang)) * orad
-			for e in enemies:
-				if is_instance_valid(e) and bpos.distance_to(e.position) < 16.0 + e.radius:
-					e.take_damage(dpsb * delta)
-			if boss and is_instance_valid(boss) and bpos.distance_to(boss.position) < 16.0 + boss.radius:
-				boss.take_damage(dpsb * delta)
-			for objective in _combat_objectives():
-				if is_instance_valid(objective) and bpos.distance_to(objective.position) < 16.0 + objective.radius:
-					objective.take_damage(dpsb * delta, false, true)
-			# 회전 검으로 파괴 오브젝트도 부숨
-			for br in get_tree().get_nodes_in_group("breakables"):
-				if is_instance_valid(br) and bpos.distance_to(br.position) < 16.0 + br.radius:
-					br.take_damage(dpsb * delta)
-		if evolved.get("blade", false):
-			_blade_evo_pulse_t -= delta
-			if _blade_evo_pulse_t <= 0.0:
-				_blade_evo_pulse_t = 1.05
-				var sweep_dir := Vector2.from_angle(_blade_angle)
-				var sweep_rad := orad * 1.35
-				for e2 in enemies:
-					if is_instance_valid(e2):
-						var to2: Vector2 = e2.position - player.position
-						if to2.length() <= sweep_rad + e2.radius and abs(to2.angle_to(sweep_dir)) < 0.95:
-							e2.take_damage(dpsb * 0.65)
-				if boss and is_instance_valid(boss):
-					var tob2: Vector2 = boss.position - player.position
-					if tob2.length() <= sweep_rad + boss.radius and abs(tob2.angle_to(sweep_dir)) < 0.95:
-						boss.take_damage(dpsb * 0.65)
-				for objective in _combat_objectives():
-					if not is_instance_valid(objective):
-						continue
-					var too: Vector2 = objective.position - player.position
-					if too.length() <= sweep_rad + objective.radius and abs(too.angle_to(sweep_dir)) < 0.95:
-						objective.take_damage(dpsb * 0.65)
-				_spawn_proc_fx("slash", player.position, sweep_rad, Color(1.0, 0.22, 0.12), 0.28,
-					sweep_dir, player.position + sweep_dir * sweep_rad)
-		telemetry_restore_damage_source(blade_previous_source)
 
 	# 적 접촉: 겹친 적은 몸박 넉백으로 밀어냄(뚫고 지나가지 않게) + 데미지(무적 프레임)
 	var _touched := false
@@ -2657,19 +2140,6 @@ func _physics_process(delta: float) -> void:
 const WEAPON_CD_SCALE := 1.15   # 발사 속도 대폭↑ (쿨다운 1.50→1.15, 추가 +30%)
 # 전역 무기 범위(장판·폭발·AoE) 배율. 1보다 작을수록 좁아짐 (밸런스 너프 노브).
 const WPN_AREA := 0.72
-func _weapon_level_scale(lv: int) -> float:
-	return lerp(0.40, 1.35, clamp((lv - 1) / 7.0, 0.0, 1.0))   # Lv1 초반 공격력 상향(0.33→0.40, +20%)
-
-
-# 자동공격 사거리. 예전에는 무제한이라 화면 밖 적까지 알아서 정리돼 게임이 쉬웠다.
-# 720p 화면 절반 높이(360)를 기준으로 잡아 "보이는 적은 쏘고 안 보이는 적은 못 쏜다"가 되게 한다.
-# 범위 투자(area_mult)는 사거리에도 반영하되 _area_scale()의 소프트캡을 그대로 쓴다.
-# ponytail: 무기별 사거리 차등(활 vs 도끼)은 실플레이 표본을 본 뒤에. 지금은 전 무기 공통 한 줄.
-# 상한이 없으면 범위를 몰아준 빌드에서 사거리가 1200px을 넘어(테스트로 확인) 화면 밖 적
-# 자동 처리가 그대로 되살아난다. 범위 투자는 장판·검기 크기로 계속 보상하고, 사거리만 묶는다.
-# 2차 하향(사장님 "사거리를 좀더 너프해도 좋을것같고"): 360/560 -> 300/460.
-# 300px이면 이동 속도 상한(96px/s)인 몬스터가 사거리 진입부터 접촉까지 약 3.1초다.
-# 무기 사이클 몇 번은 돌아가지만 "다 쏴 죽이고 기다린다"는 안 된다.
 const ATTACK_RANGE_BASE := 300.0
 const ATTACK_RANGE_MAX := 460.0
 
@@ -2721,41 +2191,6 @@ func _muzzle(pos: Vector2, dir: Vector2, size: float = 44.0) -> void:
 	fx.life = 0.14
 	fx.max_life = 0.14
 	add_child(fx)
-func _aura_radius() -> float:
-	var lv: int = weapons.get("aura", 0)
-	var r := (44.0 + lv * 10.0) * _area_scale() * WPN_AREA   # 초반 좁게(정통 마늘) → 레벨로 확장
-	if evolved.get("aura", false):
-		r *= 1.15   # 1.5 → 1.15. 진화 가치는 크기가 아니라 맥동(밀어내기·화상)으로 준다.
-	if combos.has("blade_aura"):
-		r *= 1.15
-	return r
-
-func _aura_dps() -> float:
-	var lv: int = weapons.get("aura", 0)
-	var d := (10.0 + lv * 5.0) * player.damage_mult * char_melee * _weapon_level_scale(lv)
-	if evolved.get("aura", false):
-		d *= 1.6
-	return d
-
-func _blade_count() -> int:
-	var c: int = weapons.get("blade", 0) + 1
-	if evolved.get("blade", false):
-		c += 2
-	if combos.has("blade_aura"):
-		c += 1
-	return c
-
-func _blade_orbit() -> float:
-	return 72.0 * _area_scale() * WPN_AREA
-
-func _blade_dps() -> float:
-	var lv: int = weapons.get("blade", 0)
-	var d := (16.0 + lv * 6.0) * player.damage_mult * char_melee * _weapon_level_scale(lv)
-	if evolved.get("blade", false):
-		d *= 1.5
-	if combos.has("blade_lightning"):
-		d *= 1.4
-	return d
 func _spawn_bolt(pos: Vector2) -> void:
 	# fx_lightning/fx_thunder 아트는 '회색 기둥'으로 보여 폐기 — 코드 지그재그 낙뢰만 사용.
 	var fx := Effect.new()
@@ -2827,10 +2262,6 @@ func _apply_arrow_hit(a, target) -> void:
 		df.life = 0.34
 		df.max_life = df.life
 		add_child(df)
-	# 조합: 스톰 애로우 — 명중 시 30% 번개 연쇄
-	if combos.has("arrow_lightning") and randf() < 0.3 and is_instance_valid(target):
-		target.take_damage(a.damage * 0.8)
-		_spawn_bolt(target.position)
 	if a.slow_amount > 0.0 and is_instance_valid(target) and target.has_method("apply_slow"):
 		target.apply_slow(a.slow_amount, a.slow_time)
 	if a.explode_radius > 0.0:
@@ -2894,7 +2325,6 @@ func spawn_fx(dir_name: String, pos: Vector2, size_px: float = 72.0, rot: float 
 		return
 	if Assets.frames("res://assets/anim/" + dir_name).is_empty():
 		return
-	size_px *= wfx_boost   # 무기 성장 시각 배율 (발사 중 동기 호출만 적용, 평시 1.0)
 	var fx := FxAnim.new()
 	fx.frames_dir = "res://assets/anim/" + dir_name
 	fx.size_px = size_px
@@ -2902,9 +2332,6 @@ func spawn_fx(dir_name: String, pos: Vector2, size_px: float = 72.0, rot: float 
 	fx.fps = fps
 	fx.stretch = stretch
 	fx.position = pos
-	# 진화 무기 발사 중이면 이펙트를 시그니처 색으로 물들임 (진화가 한눈에 보이게)
-	if _evo_spawn and _evo_kind != "":
-		fx.modulate = _evo_tint(_evo_kind)
 	if alpha < 1.0:
 		fx.modulate.a = alpha
 	add_child(fx)
@@ -3461,15 +2888,10 @@ func on_pickup(kind: String) -> void:
 			_event_banner("[기력] 물약 — 모든 스킬 재사용 준비 완료")
 			_refresh_skill_hud()
 		_:
-			# chest: 회복 + 골드 → 진화 조건 충족 무기 있으면 진화, 없으면 보너스 카드
+			# chest: 회복 + 골드 + 랜덤 보상 1/3/5개 + 다중 룰렛
 			player.hp = min(player.max_hp, player.hp + 15.0)
 			run_gold += 5
 			_chest_fanfare(1)   # 파밍 쾌감: 금화 분출 + 팡파레 + 흔들림 (기본 등급)
-			if _try_evolve_from_chest():
-				return
-			if _try_union_from_chest():
-				return
-			# 뱀서식: 진화/유니온 없으면 1/3/5개 랜덤 보상 자동 지급 + 다중 룰렛
 			_open_bonus_chest()
 
 
@@ -4570,8 +3992,8 @@ func _show_roulette(rewards: Array, title: String, gold: float = 0.0) -> void:
 	if ui_overlay == null or rewards.is_empty():
 		return
 	var cycle: Array = []
-	for k in WICON.keys():
-		var t: Texture2D = Assets.tex(WICON[k])
+	for k in PICON.keys():
+		var t: Texture2D = Assets.tex(PICON[k])
 		if t:
 			cycle.append(t)
 	var r := ChestRoulette.new()
@@ -5559,8 +4981,9 @@ func _roll_gear_for(slot: String, rarity: String) -> Dictionary:
 	var nm := "%s %s" % [adj, noun]
 	# _found: 런 중 주운 표식 → 런 종료 시 이 장비만 마을 보관함으로 이월. lvl: 대장간 강화 레벨.
 	# element: 접두어에서 결정. 무기 슬롯이면 이 속성이 곧 내 공격 속성.
-	# weapon_kind: 무기 슬롯이면 실제 전투 무기 키 (주무기 대체). 다른 슬롯은 "".
-	return {"slot": slot, "rarity": rarity, "affixes": affs, "name": nm, "icon": GEAR_NOUN_ICON.get(noun, ""), "element": GEAR_ADJ_ELEMENT.get(adj, "phys"), "weapon_kind": GEAR_NOUN_ATTACK.get(noun, ""), "_found": true, "gear_id": _new_gear_id(), "lvl": 0}
+	# 장비는 전부 패시브다. 스탯(affixes)과 부여 속성(element)만 준다 —
+	# 무엇을 어떻게 쏘는지는 캐릭터의 원소와 스킬이 정한다.
+	return {"slot": slot, "rarity": rarity, "affixes": affs, "name": nm, "icon": GEAR_NOUN_ICON.get(noun, ""), "element": GEAR_ADJ_ELEMENT.get(adj, "phys"), "_found": true, "gear_id": _new_gear_id(), "lvl": 0}
 
 
 func _roll_hell_gear(force_epic: bool = false, slot_override: String = "") -> Dictionary:
@@ -5995,18 +5418,10 @@ func _gear_detail_text(it: Dictionary) -> String:
 	]
 	if bool(it.get("boss_crafted", false)):
 		lines.append("[제작] 보스 파편 장비")
+	# 장비는 이제 전부 패시브다. 무기 슬롯도 스탯과 속성만 준다 —
+	# 공격 방식은 캐릭터(원소)와 스킬이 정한다.
 	if str(it.get("slot", "")) == "weapon":
-		var weapon_kind := str(it.get("weapon_kind", ""))
-		var active_def := _weapon_active_def_for_kind(weapon_kind)
-		lines.append("자동공격  %s · %s 속성" % [
-			str(WNAMES.get(weapon_kind, "기본 공격")),
-			str(ELEMENT_NAME.get(str(it.get("element", "phys")), "물리")),
-		])
-		lines.append("E %s  (기본 %.1f초)" % [
-			str(active_def.get("name", "무기 스킬")),
-			float(active_def.get("cd", 0.0)),
-		])
-		lines.append(str(active_def.get("desc", "")))
+		lines.append("공격 속성  %s" % str(ELEMENT_NAME.get(str(it.get("element", "phys")), "물리")))
 	for raw_affix in it.get("affixes", []):
 		if not (raw_affix is Dictionary):
 			continue
@@ -6149,11 +5564,10 @@ func _gear_line(it: Dictionary) -> String:
 		parts.append("%s+%s" % [str(a["name"]), vs])
 	var lv := _gear_level(it)
 	var forge_tag := " +%d" % lv if lv > 0 else ""
-	# 무기 장비: 속성 + 발동 무기를 함께 표기(장착 시 주공격이 바뀜을 알림).
-	var wk := str(it.get("weapon_kind", ""))
+	# 무기 장비: 부여 속성만 표기(스킬 피해에 속성으로 얹힌다).
 	var extra := ""
-	if str(it.get("slot", "")) == "weapon" and wk != "":
-		extra = "  [%s·%s]" % [str(ELEMENT_NAME.get(str(it.get("element", "phys")), "물리")), str(WNAMES.get(wk, wk))]
+	if str(it.get("slot", "")) == "weapon":
+		extra = "  [%s]" % str(ELEMENT_NAME.get(str(it.get("element", "phys")), "물리"))
 	return "%s %s%s%s  (%s)" % [str(RARITY_TAG.get(str(it["rarity"]), "")), str(it["name"]), forge_tag, extra, ", ".join(parts)]
 
 
@@ -6202,8 +5616,8 @@ func _normalize_persistent_gear(it: Dictionary) -> Dictionary:
 	# 속성 백필: 구 세이브·프리뷰 장비는 element가 없으니 이름 접두어로 보완.
 	if str(normalized.get("element", "")).is_empty():
 		normalized["element"] = GEAR_ADJ_ELEMENT.get(str(normalized.get("name", "")).split(" ")[0], "phys")
-	# 무기 키 백필: 무기 슬롯인데 weapon_kind가 없으면 이름 명사(둘째 단어)로 보완.
-	if str(normalized.get("slot", "")) == "weapon" and str(normalized.get("weapon_kind", "")).is_empty():
+	# (구) 세이브에 남은 weapon_kind는 읽지 않는다 — 장비는 전부 패시브가 됐다.
+	if false:
 		var parts: PackedStringArray = str(normalized.get("name", "")).split(" ")
 		normalized["weapon_kind"] = GEAR_NOUN_ATTACK.get(parts[1] if parts.size() > 1 else "", "")
 	var affixes: Array = []
@@ -6337,7 +5751,6 @@ func _telemetry_gear_summary(item: Dictionary, slot_hint: String = "") -> Dictio
 		"rarity": str(item.get("rarity", "common")),
 		"level": int(item.get("lvl", 0)),
 		"gear_id": str(item.get("gear_id", "")),
-		"weapon_kind": str(item.get("weapon_kind", "")),
 		"element": str(item.get("element", "")),
 	}
 
@@ -7069,12 +6482,11 @@ func _fill_lvl_inv() -> void:
 		return
 	for ch in lvl_inv.get_children():
 		ch.queue_free()
-	for kind in weapons.keys():
-		_lvl_inv_icon(WICON.get(kind, ""), evolved.get(kind, false))
-	for u in unions.keys():
-		var ud := UNION_DEFS.filter(func(x): return x["key"] == u)
-		if ud.size() > 0:
-			_lvl_inv_icon(ud[0].get("icon", ""), true)
+	for slot in SkillDefs.SLOT_KEYS:
+		var arch := str(skill_slots.get(slot, ""))
+		if arch != "":
+			_lvl_inv_icon(_skill_icon_path(arch),
+				int(skill_levels.get(arch, 1)) >= SkillDefs.MAX_SKILL_LEVEL)
 	for pkey in passives.keys():
 		_lvl_inv_icon(PICON.get(pkey, ""), false)
 
@@ -7084,17 +6496,17 @@ func _fill_pause_icons() -> void:
 	if pause_weap_box:
 		for ch in pause_weap_box.get_children():
 			ch.queue_free()
-		for k in weapons.keys():
-			var wlv: int = weapons[k]
-			var wtip := "%s Lv%d\n%s" % [WNAMES.get(k, k), wlv, _weapon_lv_desc(k, mini(wlv + 1, MAX_WLEVEL))]
-			if wlv >= MAX_WLEVEL and not evolved.get(k, false):
-				var h := _evo_hint(k)
-				if h != "": wtip = "%s Lv%d\n%s" % [WNAMES.get(k, k), wlv, h]
-			_pause_slot(pause_weap_box, WICON.get(k, ""), wlv, evolved.get(k, false), 8, wtip)
-		for u in unions.keys():
-			var ud := UNION_DEFS.filter(func(x): return x["key"] == u)
-			if ud.size() > 0:
-				_pause_slot(pause_weap_box, ud[0].get("icon", ""), 8, true, 8, "%s (유니온)" % ud[0].get("name", u))
+		for slot in SkillDefs.SLOT_KEYS:
+			var arch := str(skill_slots.get(slot, ""))
+			if arch == "":
+				continue
+			var sd := skill_def(arch)
+			var slv := int(skill_levels.get(arch, 1))
+			var tip := "[%s] %s Lv%d\n%s" % [
+				str(SkillDefs.SLOT_LABEL.get(slot, str(slot).to_upper())),
+				str(sd.get("name", arch)), slv, str(sd.get("desc", ""))]
+			_pause_slot(pause_weap_box, _skill_icon_path(arch), slv,
+				slv >= SkillDefs.MAX_SKILL_LEVEL, SkillDefs.MAX_SKILL_LEVEL, tip)
 	if pause_pass_box:
 		for ch in pause_pass_box.get_children():
 			ch.queue_free()
@@ -7342,10 +6754,6 @@ func _element_icon() -> String:
 func _card_options() -> Array:
 	var opts: Array = []
 
-	# (진화는 레벨업 카드가 아니라 보스 상자 개봉 시 발동 — _try_evolve_from_chest)
-
-	# (조합은 유니온으로 대체 — 레벨업 카드가 아니라 두 무기 만렙 후 보스 상자에서 합체)
-
 	# 2) 스킬 습득 / 강화
 	# 무기 22종 카드를 걷어내고 캐릭터 원소의 스킬로 바꿨다(사장님 결정: 무기는 스탯,
 	# 스킬은 캐릭터). 기본 공격은 처음부터 갖고 시작하므로 카드에 안 나온다.
@@ -7396,21 +6804,18 @@ func _card_options() -> Array:
 	var pdefs := _passive_defs()
 	for pkey in pdefs.keys():
 		var pd: Dictionary = pdefs[pkey]
-		var evo_weapon: String = _evo_weapon_for_passive(pkey)
-		var evo_match: bool = evo_weapon != ""
-		var evo_desc: String = "\n[%s 진화 재료]" % WNAMES.get(evo_weapon, evo_weapon) if evo_match else ""
 		if passives.has(pkey):
 			if passives[pkey] < MAX_PLEVEL:
 				var pk1: String = pkey
-				opts.append({"r": "common", "t": "p", "key": pkey, "owned": true, "evo_match": evo_match,
+				opts.append({"r": "common", "t": "p", "key": pkey, "owned": true,
 					"title": "%s Lv%d" % [pd["name"], passives[pkey] + 1],
-					"desc": pd["desc"] + evo_desc, "icon": PICON.get(pkey, ""),
+					"desc": str(pd["desc"]), "icon": PICON.get(pkey, ""),
 					"act": func() -> void: _add_passive(pk1)})
 		elif passives.size() < MAX_PASSIVES:
 			var pk2: String = pkey
-			opts.append({"r": "common", "t": "p", "key": pkey, "new": true, "evo_match": evo_match,
-				"title": ("[진화 재료] " if evo_match else "[신규] ") + pd["name"],
-				"desc": pd["desc"] + evo_desc, "icon": PICON.get(pkey, ""),
+			opts.append({"r": "common", "t": "p", "key": pkey, "new": true,
+				"title": "[신규] " + str(pd["name"]),
+				"desc": str(pd["desc"]), "icon": PICON.get(pkey, ""),
 				"act": func() -> void: _add_passive(pk2)})
 
 	# 이번 판 밴된 카드 제외 (3장 이상 남을 때만)
@@ -7530,131 +6935,6 @@ func _add_passive(key: String) -> void:
 			player.pickup_radius += 15.0
 		"skull":
 			run_pressure_mult += 0.12
-
-
-# 진화 조건 안내 문구
-func _evo_hint(kind: String) -> String:
-	if EVO_RECIPE.has(kind):
-		var pn: String = _passive_defs().get(EVO_RECIPE[kind]["passive"], {}).get("name", "")
-		return "Lv%d 만렙 + [%s] · 10:00 이후 보스 상자에서 진화!" % [MAX_WLEVEL, pn]
-	return ""
-
-
-# 현재 보유한 미진화 무기 중 이 패시브를 진화 재료로 쓰는 무기.
-func _evo_weapon_for_passive(pkey: String) -> String:
-	for kind in weapons.keys():
-		if EVO_RECIPE.has(kind) and not evolved.get(kind, false):
-			if str(EVO_RECIPE[kind]["passive"]) == pkey:
-				return str(kind)
-	return ""
-
-
-# 무기별 성장 명세 (뱀서식): 각 무기가 레벨업으로 실제 강해지는 축을 표기.
-# 짝수 성장 무기는 해당 레벨에 "투사체 +1"을 강조, 그 외 레벨은 무기별 성장 문구.
-const WGROW := {
-	"arrow": "투사체 +1 · 관통 증가", "knife": "투사체 +1 · 사거리",
-	"aura": "범위 확장 · 지속피해 증가", "lightning": "낙뢰 대상 +1 · 피해 증가",
-	"spread_shot": "탄 수 증가 · 피해 증가", "cleave": "범위 확장 · 피해 증가",
-	"blade": "회전검 +1 · 궤도 확대", "whip": "타격 폭 확대 · 피해 증가",
-	"frost": "범위 확장 · 둔화 강화", "holy": "심판 낙뢰 +1 · 피해 증가",
-	"fireball": "투사체 +1 · 폭발 범위 증가", "boomerang": "투사체 +1 · 관통",
-	"axe": "투사체 +1 · 관통 증가", "crossbow": "볼트 +1 · 관통 강화",
-	"blood_sword": "피해량 크게 증가 · 흡혈율 증가", "chakram": "튕김 +1 · 피해 증가",
-	"frost_ring": "유도 서리탄 +1 · 둔화 증가", "homing_skull": "유도탄 +1 · 관통",
-	"moonlight": "낙하 수 +1 · 범위 증가", "holy_cross": "유도 성탄 +1 · 관통",
-	"soul_bolt": "동시 조준 +1 · 관통", "holy_beam": "빛기둥 확대 · 관통",
-	"bone_spiral": "유도 뼈탄 +1 · 관통", "ice_lance": "창 수 +1 · 둔화 증가",
-	"venom": "투사체 +1 · 중독 강화", "spear": "관통 · 낙뢰 강화",
-	"thorn_burst": "유도 가시탄 +1 · 관통",
-	"poison_cloud": "구름 범위 증가 · 중첩 한계 증가",
-}
-func _weapon_lv_desc(kind: String, _next_lv: int) -> String:
-	return WGROW.get(kind, "피해 증가 · 쿨타임 감소")
-
-
-# 보스 상자 개봉 시: 만렙+필수패시브 충족한 무기를 진화시킴 (하나)
-func _ready_evolution_kind() -> String:
-	for kind in EVO_RECIPE.keys():
-		if weapons.get(kind, 0) >= MAX_WLEVEL and not evolved.get(kind, false):
-			if passives.get(EVO_RECIPE[kind]["passive"], 0) >= 1:
-				return str(kind)
-	return ""
-
-
-func _can_evolve_from_chest() -> bool:
-	return (abyss_mode or time_survived >= EVO_START_TIME) and _ready_evolution_kind() != ""
-
-
-func _try_evolve_from_chest() -> bool:
-	# VS 기본 규칙에 맞춰 첫 진화는 10분 이후 상자부터 허용한다.
-	# 그 전에 조건을 완성했다면 상자는 일반 성장 보상을 주고 준비 완료를 안내한다.
-	if not abyss_mode and time_survived < EVO_START_TIME:
-		if _ready_evolution_kind() != "":
-			_event_banner("[진화] 준비 완료 — 10:00 이후 보스 상자를 노려라!")
-		return false
-	var kind := _ready_evolution_kind()
-	if kind == "":
-		return false
-	_evolve(kind)
-	if stage_label:
-		stage_label.text = "[진화] %s!" % EVO_RECIPE[kind]["name"]
-		stage_label.visible = true
-	stage_banner_t = 2.6
-	play_sfx("levelup", -4.0)
-	shake_t = max(shake_t, 0.2)
-	spawn_fx_form("ward", player.position, 132.0)
-	_grant_ach("legend_weapon")
-	_flash(Color(1.0, 1.0, 0.95, 0.62))   # 진화 화이트 플래시
-	_show_chest_roulette(WICON.get(kind, ""), "무기 진화", EVO_RECIPE[kind]["name"])
-	return true
-
-
-# 보스 상자: 두 재료 무기가 모두 만렙이면 유니온(합체 신규 무기) 발동
-func _try_union_from_chest() -> bool:
-	for u in UNION_DEFS:
-		if unions.has(u["key"]):
-			continue
-		if weapons.get(u["a"], 0) >= MAX_WLEVEL and weapons.get(u["b"], 0) >= MAX_WLEVEL:
-			unions[u["key"]] = true
-			meta.get_or_add("union_seen", {})[u["key"]] = true
-			Meta.save_data(meta)
-			wtimer[u["key"]] = 0.0   # 발사 루프에 등록
-			if stage_label:
-				stage_label.text = "[유니온] %s!" % u["name"]
-				stage_label.visible = true
-			stage_banner_t = 2.6
-			play_sfx("levelup", -4.0)
-			shake_t = max(shake_t, 0.2)
-			spawn_fx_form("ward", player.position, 140.0)
-			_grant_ach("legend_weapon")
-			_flash(Color(0.75, 0.9, 1.0, 0.62))   # 유니온 블루 플래시
-			_show_chest_roulette(u.get("icon", ""), "유니온 합체", u["name"])
-			return true
-	return false
-
-
-func _evolve(kind: String) -> void:
-	evolved[kind] = true
-	meta.get_or_add("evo_known", {})[kind] = true
-	meta.get_or_add("evo_seen", {})[kind] = true
-	Meta.save_data(meta)
-
-func _add_combo(key: String) -> void:
-	combos[key] = true
-func _upgrade_weapon(k: String) -> void:
-	weapons[k] = weapons.get(k, 1) + 1
-
-func _add_weapon(k: String) -> void:
-	weapons[k] = 1
-	if k in TIMED_WEAPONS:
-		wtimer[k] = 0.0
-	# 한 번이라도 획득한 무기의 레시피는 이후 도감에서 재료까지 공개한다.
-	if EVO_RECIPE.has(k) and not meta.get("evo_known", {}).get(k, false):
-		meta.get_or_add("evo_known", {})[k] = true
-		# 자동 캡처·회귀 검사는 실제 사용자 세이브를 절대 변경하지 않는다.
-		if not "--autoshot" in OS.get_cmdline_user_args():
-			Meta.save_data(meta)
-
 func _p_hp() -> void:
 	player.max_hp += 25.0
 	player.hp += 25.0
@@ -8099,16 +7379,12 @@ func _start_game(d: Dictionary) -> void:
 			pt = Assets.tex("res://assets/hero/%s_1.png" % pk)
 		hud_portrait.texture = pt
 	# 뱀서식: 기본공격 없음 — 시작무기만 지급 (아래 _add_weapon)
-	weapons = {}
-	wtimer = {}
 	passives = {}
-	evolved = {}
-	combos = {}
-	unions = {}
 	mastery_picks = {}   # M2: 이번 런 숙련 갈림길 미선택 상태로 초기화
 	# 스킬 초기화. 기본 공격은 처음부터 Lv1로 가지고 시작하고 슬롯을 쓰지 않는다.
 	# 나머지 7종은 레벨업 카드로 배운다.
 	skill_levels = {_basic_archetype(): 1}
+	_record_skill_seen(_basic_archetype())
 	skill_slots = {"q": "", "e": "", "r": "", "f": ""}
 	skill_cds = {"q": 0.0, "e": 0.0, "r": 0.0, "f": 0.0}
 	basic_cd = 0.0
@@ -8125,23 +7401,15 @@ func _start_game(d: Dictionary) -> void:
 	_reset_glacier_floor_state()
 	_reset_void_floor_state()
 	_reset_castle_floor_state()
-	# B블렌드: 장착한 무기 장비가 캐릭터 주무기(weapon1)를 대체. 없으면 캐릭터 기본 무기.
-	# (캐릭터 고유 2번째 무기 weapon2는 유지 → 캐릭터 정체성 일부 보존)
-	var gear_wpn := str(equipped.get("weapon", {}).get("weapon_kind", ""))
-	var sw := gear_wpn if gear_wpn != "" and WNAMES.has(gear_wpn) else str(sel_char.get("weapon", "arrow"))
-	primary_weapon = sw   # M2: 주무기 = 숙련 트리 대상
-	_add_weapon(sw)
-	# 캐릭터 고유 2번째 시작 무기 (예: 나이트 = 검기 + 회전검 '방패')
-	var sw2 := str(sel_char.get("weapon2", ""))
-	if sw2 != "":
-		_add_weapon(sw2)
-	# 가호 「축복받은 시작」: 시작 무기를 추가 레벨로
-	if mod.has("start_weapon"):
-		for j in int(mod["start_weapon"]) - 1:
-			_upgrade_weapon(sw)
-	# 유물 「위대한 복음」: 시작 무기 +1레벨 (무기가 추가된 뒤에 적용)
-	if _has_relic("great_gospel") and weapons.has(sw):
-		_upgrade_weapon(sw)
+	# 가호 「축복받은 시작」·유물 「위대한 복음」: 예전엔 시작 무기 레벨이었다.
+	# 무기가 사라졌으니 기본 공격 스킬 레벨로 옮긴다(같은 "출발이 세다" 보상).
+	var basic := SkillDefs.basic_archetype()
+	var head_start := int(mod.get("start_weapon", 1)) - 1
+	if _has_relic("great_gospel"):
+		head_start += 1
+	if head_start > 0:
+		skill_levels[basic] = mini(SkillDefs.MAX_SKILL_LEVEL,
+			int(skill_levels.get(basic, 1)) + head_start)
 	pickup_timer = 10.0
 	_scatter_pickups(int(4 + 8 * diff_loot))
 	_spawn_stage_landmarks()
@@ -8229,16 +7497,10 @@ func _game_over() -> void:
 
 
 func _telemetry_source_name(source: String) -> String:
-	if source.begins_with("active:"):
-		var weapon_key := source.trim_prefix("active:")
-		return "E · %s" % str(WNAMES.get(weapon_key, weapon_key))
-	if WNAMES.has(source):
-		return str(WNAMES[source])
-	for union_data in UNION_DEFS:
-		if str(union_data["key"]) == source:
-			return str(union_data["name"])
+	if SkillDefs.ARCHETYPES.has(source):
+		return str(SkillDefs.ARCHETYPES[source].get("name", source))
 	return {
-		"ultimate": "Q · 궁극기",
+		"ultimate": "우클릭 · 궁극기",
 		"other": "기타 피해",
 		"test_weapon": "시험 무기",
 	}.get(source, source)
@@ -8318,8 +7580,8 @@ func _finalize_run_telemetry(win: bool, earned_gold: int,
 		"route_history": expedition_route_history.duplicate(),
 		"stage_history": expedition_stage_history.duplicate(),
 		"mastery_picks": mastery_picks.duplicate(true),
-		"weapons": weapons.duplicate(true),
-		"evolved": evolved.duplicate(true),
+		"skills": skill_levels.duplicate(true),
+		"skill_slots": skill_slots.duplicate(true),
 		"passives": passives.duplicate(true),
 		"equipment": equipment,
 		"extracted_gear": run_extracted_gear.duplicate(true),
@@ -8419,14 +7681,9 @@ func _show_end(title: String, win: bool) -> void:
 			_grant_ach("hard_clear")
 		if not used_revive:
 			_grant_ach("no_revive")
-		# 현재 공용 무기 풀 기준: 보통 이상에서 원거리 빌드를 충분히 구성하면 투척 칼 해금.
-		if diff_label != "쉬움":
-			var ranged_count := 0
-			for k in weapons.keys():
-				if k in RANGED_WEAPONS:
-					ranged_count += 1
-			if ranged_count >= 4:
-				_grant_ach("knife_thrower")
+		# 보통 이상에서 스킬 4칸을 모두 채우고 클리어하면 해금.
+		if diff_label != "쉬움" and _free_skill_slot() == "":
+			_grant_ach("knife_thrower")
 	_check_achievements()
 	# 독립 스테이지 클리어 시 다음 맵 해금. 캠페인(0)은 기존 진행을 보존한다.
 	# 치트 런은 해금·기록·골드 전부 미반영 (cheated).
@@ -8594,33 +7851,6 @@ func _char_ult() -> String:
 
 func _char_skill_element() -> String:
 	return str((CHAR_SKILLS.get(str(sel_char.get("key", "")), {}) as Dictionary).get("element", "phys"))
-
-
-func _primary_weapon_kind() -> String:
-	var equipped_weapon: Dictionary = equipped.get("weapon", {})
-	var gear_kind := str(equipped_weapon.get("weapon_kind", ""))
-	if gear_kind != "" and WEAPON_ACTIVE_ARCHETYPE.has(gear_kind):
-		return gear_kind
-	var starting_kind := str(sel_char.get("weapon", "soul_bolt"))
-	return starting_kind if WEAPON_ACTIVE_ARCHETYPE.has(starting_kind) else "soul_bolt"
-
-
-func _weapon_active_archetype(kind: String) -> String:
-	return str(WEAPON_ACTIVE_ARCHETYPE.get(kind, "staff"))
-
-
-func _weapon_active_def_for_kind(kind: String) -> Dictionary:
-	return WEAPON_ACTIVE_DEFS.get(_weapon_active_archetype(kind), WEAPON_ACTIVE_DEFS["staff"])
-
-
-func _current_weapon_active_def() -> Dictionary:
-	var weapon_kind := _primary_weapon_kind()
-	var active_def := _weapon_active_def_for_kind(weapon_kind).duplicate(true)
-	if equipped.get("weapon", {}).is_empty() and STARTING_WEAPON_ACTIVE_VARIANTS.has(weapon_kind):
-		var variant: Dictionary = STARTING_WEAPON_ACTIVE_VARIANTS[weapon_kind]
-		for key in variant:
-			active_def[key] = variant[key]
-	return active_def
 func _skill_aim_direction() -> Vector2:
 	if player == null:
 		return Vector2.RIGHT
@@ -8780,6 +8010,15 @@ func _player_element() -> String:
 
 
 # 이 캐릭터의 스킬 정의. 레벨은 배운 만큼.
+# 캐릭터 타일·상세창의 계열 아이콘. 그 캐릭터 기본 공격 이펙트의 한 프레임이라
+# 고르기 전에도 "무슨 색으로 어떻게 싸우는가"가 보인다. (sel_char와 무관 — 목록용)
+func _char_element_icon(char_key: String) -> String:
+	var elem := SkillDefs.element_of(char_key)
+	var def := SkillDefs.build(SkillDefs.basic_archetype(elem), elem, 1)
+	var fx := str(def.get("fx", ""))
+	return "" if fx == "" else "res://assets/anim/%s/2.png" % fx
+
+
 # 이 캐릭터의 기본 공격(좌클릭). 근접 캐릭터는 swing, 원거리는 bolt다.
 func _basic_archetype() -> String:
 	return SkillDefs.basic_archetype(_player_element())
@@ -8801,6 +8040,15 @@ func skill_def(archetype: String) -> Dictionary:
 
 func has_skill(archetype: String) -> bool:
 	return skill_levels.has(archetype)
+
+
+# 도감 기록. 자동 캡처·회귀 검사는 실제 사용자 세이브를 절대 건드리지 않는다.
+func _record_skill_seen(archetype: String) -> void:
+	if bool(meta.get("skill_seen", {}).get(archetype, false)):
+		return
+	meta.get_or_add("skill_seen", {})[archetype] = true
+	if not "--autoshot" in OS.get_cmdline_user_args():
+		Meta.save_data(meta)
 
 
 # 비어 있는 첫 슬롯 키. 없으면 "".
@@ -8836,6 +8084,7 @@ func learn_skill(archetype: String, slot: String = "") -> void:
 			int(skill_levels[archetype]) + 1)
 	else:
 		skill_levels[archetype] = 1
+		_record_skill_seen(archetype)
 		var dst := slot if slot != "" else _free_skill_slot()
 		if dst != "":
 			var replaced := str(skill_slots.get(dst, ""))
@@ -8931,7 +8180,9 @@ func _skill_bolt(def: Dictionary, aim: Vector2, damage: float, effect: String) -
 		a.pierce = 1 + (2 if effect == "pierce" else 0)
 		a.life = float(def["range"]) / 560.0 * 1.35
 		a.anim_dir = FxMatrix.resolve_path("bolt", str(def["element"]))
-		a.fx_hit = FxMatrix.resolve("impact", str(def["element"]))
+		# 명중 이펙트는 일부러 안 붙인다. 초당 두세 번 맞히는 기본 공격에 폭발
+		# 스프라이트를 매번 띄우면 화면이 이펙트로 덮인다. 맞은 몬스터가 흰색으로
+		# 번쩍이는 것(Enemy._flash_t)과 데미지 숫자로 충분하다.
 		a.crit_chance = player.crit_chance + (0.20 if effect == "execute" else 0.0)
 		a.crit_mult = player.crit_mult
 		if effect == "chill":
@@ -9095,7 +8346,6 @@ func _chain_to_nearby(from_target, damage: float, count: int) -> void:
 		if origin.distance_to((e as Node2D).position) > 150.0:
 			continue
 		_deal_damage(e, damage, false, attack_element)
-		spawn_fx_form("impact", (e as Node2D).position, 40.0)
 		hits += 1
 
 
@@ -9483,9 +8733,12 @@ func _preview_char(c: Dictionary) -> void:
 			pt = Assets.tex("res://assets/hero/%s_1.png" % c["key"])
 		char_det_spr.texture = pt
 	if char_det_wicon:
-		char_det_wicon.texture = Assets.tex(WICON.get(c.get("weapon", ""), ""))
+		char_det_wicon.texture = Assets.tex(_char_element_icon(str(c.get("key", ""))))
 	if char_det_desc:
 		var t: String = str(c.get("desc", ""))
+		var tr: Dictionary = SkillDefs.ELEMENT_TRAITS.get(SkillDefs.element_of(str(c.get("key", ""))), {})
+		if not tr.is_empty():
+			t += "\n[원소] %s — %s" % [str(tr["name"]), str(tr["desc"])]
 		if c.has("trait"):
 			t += "\n[특성] %s — %s" % [c["trait"], c.get("trait_desc", "")]
 		char_det_desc.text = t
@@ -9512,11 +8765,17 @@ func _fill_char_stats(c: Dictionary) -> void:
 	_stat_row(char_stats_box, II + "icon_candela.png", "공격 범위", "기본" if range_text == "-" else range_text)
 	_stat_row(char_stats_box, II + "icon_spinach.png", "근접 피해", "기본" if melee_text == "-" else melee_text)
 	_stat_row(char_stats_box, II + "icon_keeneye.png", "원거리 피해", "기본" if ranged_text == "-" else ranged_text)
-	var wk: String = str(c.get("weapon", ""))
-	_stat_row(char_stats_box, WICON.get(wk, ""), "시작 무기", str(WNAMES.get(wk, wk)))
-	if c.has("weapon2"):
-		var w2: String = str(c["weapon2"])
-		_stat_row(char_stats_box, WICON.get(w2, ""), "추가 무기", str(WNAMES.get(w2, w2)))
+	# 무기 대신 원소가 캐릭터 정체성이다 — 스킬 색과 부가 규칙이 여기서 갈린다.
+	var elem := SkillDefs.element_of(str(c.get("key", "")))
+	var icon := _char_element_icon(str(c.get("key", "")))
+	var trait_data: Dictionary = SkillDefs.ELEMENT_TRAITS.get(elem, {})
+	_stat_row(char_stats_box, icon, "원소", str(trait_data.get("name", elem)))
+	# 값 칸이 좁아 긴 설명은 잘린다. 짧은 이름만 넣고 자세한 문구는 아래 설명란에 붙인다.
+	_stat_row(char_stats_box, icon, "원소 효과",
+		str(SkillDefs.EFFECT_NAME.get(str(trait_data.get("effect", "")), "-")))
+	var basic := SkillDefs.basic_archetype(elem)
+	_stat_row(char_stats_box, icon, "기본 공격",
+		"근접" if SkillDefs.is_melee(basic) else "원거리")
 
 
 func _open_shop() -> void:
@@ -9678,7 +8937,7 @@ func _check_achievements() -> void:
 		_grant_ach("survivor")
 	if level >= 75:
 		_grant_ach("evolved")
-	if unions.size() >= 1:
+	if _free_skill_slot() == "":
 		_grant_ach("combo_master")
 	if run_bosses >= 4:
 		_grant_ach("boss_slayer")
@@ -9686,8 +8945,8 @@ func _check_achievements() -> void:
 		_grant_ach("rich")
 	if abyss_mode and stage_num >= FINAL_STAGE + 5:
 		_grant_ach("abyss")
-	for k in evolved.keys():
-		if evolved[k]:
+	for lv in skill_levels.values():
+		if int(lv) >= SkillDefs.MAX_SKILL_LEVEL:
 			_grant_ach("legend_weapon")
 			break
 
@@ -10006,10 +9265,12 @@ func _populate_end_build() -> void:
 	var wrow := HBoxContainer.new()
 	wrow.alignment = BoxContainer.ALIGNMENT_CENTER
 	wrow.add_theme_constant_override("separation", 4)
-	for kind in ALL_WEAPONS:
-		if weapons.has(kind):
-			var lvl := "진화" if evolved.get(kind, false) else str(weapons[kind])
-			wrow.add_child(_inv_slot(WICON.get(kind, ""), lvl, str(kind).substr(0, 2)))
+	for slot in SkillDefs.SLOT_KEYS:
+		var arch := str(skill_slots.get(slot, ""))
+		if arch != "":
+			wrow.add_child(_inv_slot(_skill_icon_path(arch), str(skill_levels.get(arch, 1)),
+				str(SkillDefs.SLOT_LABEL.get(slot, str(slot).to_upper())),
+				false, SkillDefs.MAX_SKILL_LEVEL))
 	end_build_box.add_child(wrow)
 	if passives.size() > 0:
 		var prow := HBoxContainer.new()
@@ -10018,33 +9279,22 @@ func _populate_end_build() -> void:
 		for key in passives.keys():
 			prow.add_child(_inv_slot(PICON.get(key, ""), str(passives[key]), pdefs[key]["name"].substr(0, 2), false, MAX_PLEVEL))
 		end_build_box.add_child(prow)
-
-
-func _is_evolvable(kind: String) -> bool:
-	# 진화 준비 완료: 만렙 + 미진화 + 요구 패시브 보유 (보물상자에서 진화 발동 조건)
-	if not EVO_RECIPE.has(kind):
-		return false
-	if evolved.get(kind, false):
-		return false
-	if weapons.get(kind, 0) < MAX_WLEVEL:
-		return false
-	return passives.get(EVO_RECIPE[kind]["passive"], 0) >= 1
-
-
 func _refresh_inventory_ui() -> void:
 	for c in inv_weapons_box.get_children():
 		c.queue_free()
 	for c in inv_passives_box.get_children():
 		c.queue_free()
-	var wnames := {"arrow": "화살", "blade": "검", "aura": "오라", "lightning": "번개", "frost": "서리", "knife": "칼",
-		"fireball": "파이어", "boomerang": "부메랑", "holy": "천벌", "venom": "독날", "whip": "채찍", "excalibur": "엑스칼리버", "void_orb": "공허구"}
 	var pdefs := _passive_defs()
 	var wcount := 0
-	for kind in ALL_WEAPONS:
-		if weapons.has(kind):
-			var lvl := "진화" if evolved.get(kind, false) else str(weapons[kind])
-			inv_weapons_box.add_child(_inv_slot(WICON.get(kind, ""), lvl, wnames.get(kind, kind), _is_evolvable(kind)))
-			wcount += 1
+	for slot in SkillDefs.SLOT_KEYS:
+		var arch := str(skill_slots.get(slot, ""))
+		if arch == "":
+			continue
+		inv_weapons_box.add_child(_inv_slot(_skill_icon_path(arch),
+			str(skill_levels.get(arch, 1)),
+			str(SkillDefs.SLOT_LABEL.get(slot, str(slot).to_upper())),
+			false, SkillDefs.MAX_SKILL_LEVEL))
+		wcount += 1
 	var pcount := 0
 	for key in passives.keys():
 		var pname: String = pdefs[key]["name"].substr(0, 2)
@@ -11163,7 +10413,7 @@ func _build_ui(s: Vector2) -> void:
 	char_det_wicon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	char_weapon_box.add_child(char_det_wicon)
 	var char_weapon_caption := Label.new()
-	char_weapon_caption.text = "시작 무기"
+	char_weapon_caption.text = "원소"
 	char_weapon_caption.position = Vector2(4, 76)
 	char_weapon_caption.size = Vector2(88, 24)
 	char_weapon_caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -11235,9 +10485,9 @@ func _build_ui(s: Vector2) -> void:
 			spr.modulate = Color(0.04, 0.04, 0.055, 0.95)
 		cb.add_child(spr)
 
-		# 시작 무기 아이콘 (타일 우하단 — 뱀서와 동일)
+		# 원소 아이콘 (타일 우하단)
 		var wi := TextureRect.new()
-		wi.texture = Assets.tex(WICON.get(c.get("weapon", ""), ""))
+		wi.texture = Assets.tex(_char_element_icon(str(c.get("key", ""))))
 		wi.position = Vector2(tw - 36.0, th - 36.0)
 		wi.size = Vector2(28.0, 28.0)
 		wi.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -11956,8 +11206,8 @@ func _build_ui(s: Vector2) -> void:
 	collection_progress_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	collection_progress_label.add_theme_color_override("font_color", Color(0.85, 0.9, 1.0))
 	collection_panel.add_child(collection_progress_label)
-	var tab_names := {"evolutions":"진화", "unions":"유니온", "relics":"유물", "enemies":"몬스터"}
-	var tab_order := ["evolutions", "unions", "relics", "enemies"]
+	var tab_names := {"skills":"스킬", "relics":"유물", "enemies":"몬스터"}
+	var tab_order := ["skills", "relics", "enemies"]
 	collection_tab_buttons.clear()
 	for tab_index in tab_order.size():
 		var tab_key: String = tab_order[tab_index]
@@ -12133,35 +11383,27 @@ func _make_relic_set_card(set_def: Dictionary) -> Control:
 	return card
 
 
-func _make_evolution_codex_card(kind: String, known: bool, seen: bool) -> Control:
-	var recipe: Dictionary = EVO_RECIPE[kind]
+# 스킬 도감 카드. 한 번이라도 배운 스킬은 이름·설명이 열린다(meta.skill_seen).
+# 아이콘은 그 스킬이 쓰는 이펙트 프레임이라 도감과 실제 화면이 같은 그림이다.
+func _make_skill_codex_card(archetype: String, seen: bool) -> Control:
+	# 도감은 원소 중립이다. build()를 쓰면 이름에 "물리"가 붙고 설명에 phys 효과가
+	# 섞여 나온다 — 아키타입 원본을 그대로 보여주고, 아이콘만 phys 프레임을 빌린다.
+	var def: Dictionary = SkillDefs.ARCHETYPES.get(archetype, {})
+	if def.is_empty():
+		return Control.new()
+	def = def.duplicate(true)
+	def["fx"] = FxMatrix.resolve(str(def["form"]), "phys")
 	var card := _ui_card("res://assets/ui/card_evolution.png", Rect2(42, 22, 438, 154), 132)
-	_ui_card_icon(card, str(WICON.get(kind, "")), Vector2(22, 43), Vector2(58, 58), not known)
-	_ui_card_label(card, "+", Vector2(82, 50), Vector2(25, 42), 20, Color(0.88, 0.72, 1.0))
-	_ui_card_icon(card, str(PICON.get(recipe["passive"], "")), Vector2(108, 51), Vector2(42, 42), not known)
-	_ui_icon_socket(card, Vector2(376, 31), Vector2(80, 80))
-	if seen:
-		var result_icon := str(recipe.get("icon", WICON.get(kind, "")))
-		_ui_card_icon(card, result_icon, Vector2(384, 39), Vector2(64, 64))
-	else:
-		_ui_card_label(card, "?", Vector2(376, 31), Vector2(80, 80), 30, Color(0.48, 0.46, 0.58)).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var result_name := str(recipe["name"]) if seen else ("???" if known else "미발견 레시피")
-	_ui_card_label(card, result_name, Vector2(164, 29), Vector2(210, 34), 17, Color(1.0, 0.78, 0.38) if seen else Color(0.66, 0.6, 0.76))
-	var material_name := str(_passive_defs().get(recipe["passive"], {}).get("name", recipe["passive"]))
-	var recipe_text := "%s Lv%d + %s" % [WNAMES.get(kind, kind), MAX_WLEVEL, material_name] if known else "무기를 획득하면 재료 공개"
-	_ui_card_label(card, recipe_text, Vector2(164, 64), Vector2(210, 52), 12, Color(0.76, 0.82, 0.92))
-	return card
-
-
-func _make_union_codex_card(union_data: Dictionary, known: bool, seen: bool) -> Control:
-	var card := _ui_card("res://assets/ui/card_evolution.png", Rect2(42, 22, 438, 154), 132)
-	_ui_card_icon(card, str(WICON.get(union_data["a"], "")), Vector2(22, 43), Vector2(52, 52), not known)
-	_ui_card_label(card, "+", Vector2(78, 50), Vector2(25, 42), 20, Color(0.62, 0.8, 1.0))
-	_ui_card_icon(card, str(WICON.get(union_data["b"], "")), Vector2(106, 43), Vector2(52, 52), not known)
-	_ui_card_icon(card, str(union_data.get("icon", "")), Vector2(385, 39), Vector2(64, 64), not seen)
-	_ui_card_label(card, str(union_data["name"]) if seen else "???", Vector2(168, 29), Vector2(205, 34), 17, Color(0.64, 0.84, 1.0) if seen else Color(0.58, 0.62, 0.72))
-	var info := "%s + %s" % [WNAMES.get(union_data["a"], union_data["a"]), WNAMES.get(union_data["b"], union_data["b"])] if known else "두 무기를 발견하면 공개"
-	_ui_card_label(card, info, Vector2(168, 64), Vector2(205, 52), 12, Color(0.76, 0.82, 0.92))
+	_ui_icon_socket(card, Vector2(26, 31), Vector2(80, 80))
+	_ui_card_icon(card, "res://assets/anim/%s/2.png" % str(def.get("fx", "")),
+		Vector2(34, 39), Vector2(64, 64), not seen)
+	_ui_card_label(card, str(def["name"]) if seen else "???",
+		Vector2(122, 29), Vector2(300, 34), 17,
+		Color(1.0, 0.78, 0.38) if seen else Color(0.66, 0.6, 0.76))
+	var slot_text := "기본 공격 (좌클릭)" if str(def.get("slot", "")) == "basic" else "Q/E/R/F 장착"
+	var body := "%s\n%s · 쿨다운 %.1f초" % [str(def["desc"]), slot_text, float(def.get("cd", 0.0))] \
+		if seen else "아직 배우지 못한 스킬"
+	_ui_card_label(card, body, Vector2(122, 64), Vector2(300, 60), 13, Color(0.76, 0.82, 0.92))
 	return card
 
 
@@ -12183,21 +11425,15 @@ func _refresh_collection() -> void:
 	for tab_key in collection_tab_buttons.keys():
 		var selected := str(tab_key) == collection_tab
 		collection_tab_buttons[tab_key].modulate = Color(1.25, 1.2, 0.9) if selected else Color(0.68, 0.72, 0.8)
-	var known_data: Dictionary = meta.get("evo_known", {})
-	var seen_data: Dictionary = meta.get("evo_seen", {})
-	var union_seen_data: Dictionary = meta.get("union_seen", {})
+	var skill_seen_data: Dictionary = meta.get("skill_seen", {})
 	var enemy_data: Dictionary = meta.get("enemy_kills", {})
-	# 유물 「노란 표식」: 보유 시 도감의 모든 진화·유니온 재료 공개 (P4 연동)
+	# 유물 「노란 표식」: 보유 시 도감을 전부 공개 (P4 연동)
 	var yellow_sign := _has_relic("yellow_sign")
 	match collection_tab:
-		"evolutions":
-			for kind in EVO_RECIPE.keys():
-				var known := yellow_sign or bool(known_data.get(kind, false))
-				collection_list_box.add_child(_make_evolution_codex_card(str(kind), known, bool(seen_data.get(kind, false))))
-		"unions":
-			for union_data in UNION_DEFS:
-				var known: bool = yellow_sign or (bool(known_data.get(union_data["a"], false)) and bool(known_data.get(union_data["b"], false)))
-				collection_list_box.add_child(_make_union_codex_card(union_data, known, bool(union_seen_data.get(union_data["key"], false))))
+		"skills":
+			for arch in SkillDefs.archetype_keys():
+				collection_list_box.add_child(_make_skill_codex_card(str(arch),
+					yellow_sign or bool(skill_seen_data.get(arch, false))))
 		"relics":
 			for relic in RELIC_DEFS:
 				collection_list_box.add_child(_make_relic_codex_card(relic))
@@ -12209,27 +11445,22 @@ func _refresh_collection() -> void:
 	var char_count := 0
 	for character in GameConfig.characters():
 		if _is_char_unlocked(character): char_count += 1
-	var evolution_count := 0
-	for kind in EVO_RECIPE.keys():
-		if seen_data.get(kind, false): evolution_count += 1
-	var union_count := 0
-	for union_data in UNION_DEFS:
-		if union_seen_data.get(union_data["key"], false): union_count += 1
+	var skill_count := 0
+	for arch in SkillDefs.archetype_keys():
+		if skill_seen_data.get(arch, false): skill_count += 1
 	var enemy_count := 0
 	for tier in GameConfig.enemy_tiers():
 		if int(enemy_data.get(tier["key"], 0)) > 0: enemy_count += 1
 	var relic_count := 0
 	for relic in RELIC_DEFS:
 		if _has_relic(str(relic["key"])): relic_count += 1
-	collection_progress_label.text = "캐릭터 %d/%d · 진화 %d/%d · 유니온 %d/%d · 유물 %d/%d · 몬스터 %d/%d" % [char_count, GameConfig.characters().size(), evolution_count, EVO_RECIPE.size(), union_count, UNION_DEFS.size(), relic_count, RELIC_DEFS.size(), enemy_count, GameConfig.enemy_tiers().size()]
+	collection_progress_label.text = "캐릭터 %d/%d · 스킬 %d/%d · 유물 %d/%d · 몬스터 %d/%d" % [char_count, GameConfig.characters().size(), skill_count, SkillDefs.ARCHETYPES.size(), relic_count, RELIC_DEFS.size(), enemy_count, GameConfig.enemy_tiers().size()]
 
 
 func _achievement_icon_path(achievement: Dictionary) -> String:
 	var key := str(achievement["key"])
 	if key.begins_with("win_"):
 		return "res://assets/hero/%s_1.png" % key.trim_prefix("win_")
-	if achievement.has("unlock"):
-		return str(WICON.get(achievement["unlock"], "res://assets/items/icon_blessing.png"))
 	var icons := {
 		"first_win":"res://assets/items/icon_blessing.png", "survivor":"res://assets/items/icon_vitality.png",
 		"slayer":"res://assets/items/icon_skull.png", "evolved":"res://assets/items/icon_meteor.png",
@@ -12713,76 +11944,6 @@ func _draw() -> void:
 
 	if player == null:
 		return
-
-	# 신성 오라 표시 (진화 시 지옥불 오라 아트)
-	if weapons.has("aura"):
-		var ar := _aura_radius()
-		var inferno: Array = []
-		if evolved.get("aura", false):
-			inferno = Assets.frames("res://assets/anim/fx_inferno_evo")
-			if inferno.is_empty():
-				inferno = Assets.frames("res://assets/anim/fx_inferno")
-		if inferno.size() > 0:
-			# 사장님 피드백: 오라가 너무 크고 화려해서 화면을 덮었다.
-			# 텍스처를 실제 타격 반경에 맞추고(2.15 → 1.5) 알파를 크게 낮춘다(0.9 → 0.40).
-			# 진화 정체성은 크기가 아니라 1.25초 맥동(밀어내기 + 추가 피해)이 담당한다.
-			var it: Texture2D = inferno[int(_blade_angle * 3.0) % inferno.size()]
-			var isz := ar * 1.5
-			draw_texture_rect(it, Rect2(player.position - Vector2(isz / 2.0, isz / 2.0), Vector2(isz, isz)),
-				false, Color(1, 1, 1, 0.40))
-			# 실제 피해 반경을 얇은 호로만 알려준다(꽉 찬 채움은 시야를 막는다).
-			draw_arc(player.position, ar, 0.0, TAU, 48, Color(0.90, 0.45, 0.20, 0.22), 2.0)
-		else:
-			draw_circle(player.position, ar, Color(1.0, 0.95, 0.6, 0.08))
-			# (금색 링 테두리 제거 — 구려서 뺌. 부드러운 채움 글로우만 유지)
-
-	# 회전 검 표시 (진화 시 사신의 대검 아트).
-	# 정적 스프라이트만 돌리면 죽어 보임 → 궤도 잔광 링 + 검마다 잔상 3겹 + 칼끝 섬광으로 속도감.
-	if weapons.has("blade"):
-		var cnt := _blade_count()
-		var orad := _blade_orbit()
-		var evo_b: bool = evolved.get("blade", false)
-		var reaper: Array = Assets.frames("res://assets/anim/proj_reaper") if evo_b else []
-		var sword_tex := Assets.tex("res://assets/items/sword.png")
-		var bcol: Color = Color(1.0, 0.55, 0.35) if evo_b else Color(0.75, 0.9, 1.0)
-		var bsz: float = 19.0 if evo_b else 12.0   # 크기 축소 (26/16 → 너무 컸음)
-		# 궤도 잔광 링 — 검이 훑고 지나간 자리
-		draw_arc(player.position, orad, 0.0, TAU, 64, Color(bcol.r, bcol.g, bcol.b, 0.09), 3.0)
-		for i in cnt:
-			var ang := _blade_angle + i * TAU / cnt
-			var btex: Texture2D = null
-			if evo_b and reaper.is_empty():
-				# 전용 사신 스프라이트가 아직 없어도 기본 검으로 되돌아가지 않음.
-				# 아래 procedural crescent fallback이 진화 무기의 실루엣을 담당한다.
-				btex = null
-			elif reaper.size() > 0:
-				btex = reaper[int(_blade_angle * 4.0 + i) % reaper.size()]
-			else:
-				btex = sword_tex
-			if btex:
-				# 잔상: 지나온 궤적에 3겹 (뒤로 갈수록 옅고 작게)
-				for k in range(3, 0, -1):
-					var ta: float = ang - k * 0.15
-					var tp: Vector2 = player.position + Vector2(cos(ta), sin(ta)) * orad
-					var tsz: float = bsz * (1.0 - 0.07 * k)
-					draw_set_transform(tp, ta + PI / 2.0 + BLADE_ART_FIX, Vector2.ONE)
-					draw_texture_rect(btex, Rect2(Vector2(-tsz, -tsz), Vector2(tsz * 2.0, tsz * 2.0)), false,
-						Color(bcol.r, bcol.g, bcol.b, 0.32 - k * 0.08))
-					draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-			var bpos := player.position + Vector2(cos(ang), sin(ang)) * orad
-			draw_circle(bpos, bsz * 0.34, Color(bcol.r, bcol.g, bcol.b, 0.20))
-			if btex:
-				draw_set_transform(bpos, ang + PI / 2.0 + BLADE_ART_FIX, Vector2.ONE)
-				draw_texture_rect(btex, Rect2(Vector2(-bsz, -bsz), Vector2(bsz * 2.0, bsz * 2.0)), false)
-				draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-			else:
-				if evo_b:
-					draw_circle(bpos, bsz * 0.34, Color(1.0, 0.25, 0.12, 0.45))
-					draw_arc(bpos, bsz * 0.86, ang - 1.05, ang + 1.05, 18, bcol, 4.0)
-					draw_arc(bpos, bsz * 0.62, ang - 0.72, ang + 0.72, 14, Color(1.0, 0.9, 0.55), 2.0)
-				else:
-					draw_circle(bpos, 6.0, Color(0.85, 0.95, 1.0))
-					draw_line(bpos + Vector2(0, 8), bpos + Vector2(0, -10), Color(0.8, 0.9, 1.0), 3.0)
 
 	# 미션 네비게이터: 화면 밖 목표 방향을 알린다.
 	# 미니맵을 없애고(90c92f9) 맵을 3840으로 키운 뒤(76c88bc) 한 화면에 보이는 범위가

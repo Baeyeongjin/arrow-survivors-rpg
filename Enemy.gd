@@ -448,7 +448,9 @@ func take_damage(d: float, crit: bool = false, dot: bool = false, element: Strin
 	# 지속피해는 흰 피격 플래시도 생략 — 매 프레임 갱신되면 적이 계속 하얗게 떠서
 	# 장판 안의 적이 흰 덩어리로 보임
 	if not dot:
-		_flash_t = 0.09
+		# 명중 이펙트를 걷어낸 뒤로 피격 피드백이 이 플래시 하나다. 0.09초는
+		# 60fps에서 5프레임뿐이라 난전에서 놓친다 -> 0.14초(8프레임).
+		_flash_t = 0.14
 		_hit_t = HIT_DUR
 		self_modulate = Color(8, 8, 9)
 	# 데미지 숫자: 단발 타격(≥1)은 즉시, 지속피해(<1 틱)는 누적 후 주기 표시 (0 표시 방지)
