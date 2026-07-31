@@ -427,7 +427,8 @@ var forge_list_item_width := 300.0
 var _forge_sel := -1              # 선택한 보관함 인덱스
 var pause_panel: Control
 var pause_stats_box: GridContainer   # 일시정지 스탯 패널 (레벨업과 동일한 아이콘 그리드)
-var pause_weap_box: HBoxContainer   # 일시정지: 무기 아이콘 줄
+var pause_weap_box: HBoxContainer   # 일시정지: 스킬 슬롯 줄 (클릭 두 번 = 자리 교환)
+var _skill_swap_sel := ""           # 교환 대기 중인 슬롯 키 ("" = 없음)
 var pause_pass_box: HBoxContainer   # 일시정지: 패시브 아이콘 줄
 var pause_map_rect: TextureRect     # 일시정지: 유물 「은하 지도」 미니맵 (해금 시에만)
 var pause_map_title: Label
@@ -6487,16 +6488,7 @@ func _fill_pause_icons() -> void:
 		for ch in pause_weap_box.get_children():
 			ch.queue_free()
 		for slot in SkillDefs.SLOT_KEYS:
-			var arch := str(skill_slots.get(slot, ""))
-			if arch == "":
-				continue
-			var sd := skill_def(arch)
-			var slv := int(skill_levels.get(arch, 1))
-			var tip := "[%s] %s Lv%d\n%s" % [
-				str(SkillDefs.SLOT_LABEL.get(slot, str(slot).to_upper())),
-				str(sd.get("name", arch)), slv, str(sd.get("desc", ""))]
-			_pause_slot(pause_weap_box, _skill_icon_path(arch), slv,
-				slv >= SkillDefs.MAX_SKILL_LEVEL, SkillDefs.MAX_SKILL_LEVEL, tip)
+			_pause_skill_slot(str(slot))
 	if pause_pass_box:
 		for ch in pause_pass_box.get_children():
 			ch.queue_free()
@@ -6551,6 +6543,84 @@ func _minimap_dot(img: Image, p: Vector2, col: Color, r: int) -> void:
 			var y := cy + dy
 			if x >= 0 and x < img.get_width() and y >= 0 and y < img.get_height():
 				img.set_pixel(x, y, col)
+
+
+# 일시정지 화면의 스킬 칸 하나. 빈 칸도 그린다 — 안 그리면 거기로 옮길 수가 없다.
+func _pause_skill_slot(slot: String) -> void:
+	var arch := str(skill_slots.get(slot, ""))
+	var label := str(SkillDefs.SLOT_LABEL.get(slot, slot.to_upper()))
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 2)
+
+	# 빈 칸도 클릭 대상이라 테두리가 있어야 "여기를 누르면 된다"가 읽힌다.
+	var frame := Panel.new()
+	frame.custom_minimum_size = Vector2(46, 46)
+	frame.add_theme_stylebox_override("panel", _slot_style())
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var tr := TextureRect.new()
+	tr.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	tr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	if arch != "":
+		tr.texture = Assets.tex(_skill_icon_path(arch))
+		var sd := skill_def(arch)
+		var slv := int(skill_levels.get(arch, 1))
+		tr.tooltip_text = "[%s] %s Lv%d\n%s\n\n클릭 두 번으로 자리 교환" % [
+			label, str(sd.get("name", arch)), slv, str(sd.get("desc", ""))]
+	else:
+		tr.tooltip_text = "[%s] 빈 칸 — 레벨업 카드로 스킬을 배우세요" % label
+	if slot == _skill_swap_sel:
+		tr.modulate = Color(1.6, 1.45, 0.8)   # 교환 대기: 밝게
+	elif arch == "":
+		tr.modulate = Color(0.45, 0.44, 0.52)
+	var picked := slot
+	tr.mouse_filter = Control.MOUSE_FILTER_STOP
+	tr.gui_input.connect(func(e: InputEvent) -> void:
+		if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
+			_on_skill_slot_clicked(picked))
+	frame.add_child(tr)
+	if slot == _skill_swap_sel:
+		frame.modulate = Color(1.5, 1.4, 0.9)
+	vb.add_child(frame)
+
+	var key_lb := Label.new()
+	key_lb.text = label
+	key_lb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	key_lb.add_theme_font_size_override("font_size", 12)
+	key_lb.add_theme_color_override("font_color",
+		Color(1.0, 0.9, 0.55) if slot == _skill_swap_sel else Color(0.72, 0.74, 0.82))
+	key_lb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(key_lb)
+
+	if arch != "":
+		var pips := _level_pips(int(skill_levels.get(arch, 1)), SkillDefs.MAX_SKILL_LEVEL)
+		pips.custom_minimum_size = Vector2(46, 5)
+		vb.add_child(pips)
+	pause_weap_box.add_child(vb)
+
+
+# 슬롯 클릭: 첫 번째는 선택, 두 번째는 교환. 같은 칸을 다시 누르면 취소.
+func _on_skill_slot_clicked(slot: String) -> void:
+	if _skill_swap_sel == "":
+		if str(skill_slots.get(slot, "")) == "":
+			return   # 빈 칸에서 시작하면 옮길 게 없다
+		_skill_swap_sel = slot
+	elif _skill_swap_sel == slot:
+		_skill_swap_sel = ""
+	else:
+		var from_slot := _skill_swap_sel
+		# 쿨다운도 함께 옮긴다. 안 옮기면 쿨 도는 스킬을 빈 칸으로 밀어
+		# 초기화하는 꼼수가 된다.
+		var arch := str(skill_slots.get(from_slot, ""))
+		var cd := float(skill_cds.get(from_slot, 0.0))
+		skill_slots[from_slot] = skill_slots.get(slot, "")
+		skill_cds[from_slot] = float(skill_cds.get(slot, 0.0))
+		skill_slots[slot] = arch
+		skill_cds[slot] = cd
+		_skill_swap_sel = ""
+		_refresh_skill_hud()
+	_fill_pause_icons()
 
 
 func _pause_slot(box: HBoxContainer, path: String, lv: int, glow: bool, max_pips: int = 8, tip: String = "") -> void:
@@ -8467,6 +8537,7 @@ func _toggle_pause() -> void:
 	if state == State.PLAYING:
 		state = State.PAUSED
 		get_tree().paused = true
+		_skill_swap_sel = ""   # 지난번 교환 선택이 남아 있으면 첫 클릭이 교환이 돼 버린다
 		_fill_pause_icons()
 		_fill_stats_grid(pause_stats_box)
 		pause_panel.visible = true
@@ -10060,7 +10131,7 @@ func _build_ui(s: Vector2) -> void:
 
 	# 뱀서식: 무기 / 패시브 아이콘 줄 (상단)
 	var pw_lbl := Label.new()
-	pw_lbl.text = "무기"
+	pw_lbl.text = "스킬  (칸을 두 번 눌러 자리 교환)"
 	pw_lbl.position = Vector2(s.x / 2.0 - 322, 116)
 	pw_lbl.add_theme_font_size_override("font_size", 14)
 	pw_lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
@@ -10072,12 +10143,12 @@ func _build_ui(s: Vector2) -> void:
 
 	var pp_lbl := Label.new()
 	pp_lbl.text = "패시브"
-	pp_lbl.position = Vector2(s.x / 2.0 - 322, 200)
+	pp_lbl.position = Vector2(s.x / 2.0 - 322, 224)
 	pp_lbl.add_theme_font_size_override("font_size", 14)
 	pp_lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
 	pause_panel.add_child(pp_lbl)
 	pause_pass_box = HBoxContainer.new()
-	pause_pass_box.position = Vector2(s.x / 2.0 - 322, 222)
+	pause_pass_box.position = Vector2(s.x / 2.0 - 322, 246)
 	pause_pass_box.add_theme_constant_override("separation", 6)
 	pause_panel.add_child(pause_pass_box)
 	# 하단 버튼 3개 가로 정렬 (간격 확보). 스탯 스크롤 높이 계산에 쓰이므로 먼저 정의.
@@ -10127,7 +10198,7 @@ func _build_ui(s: Vector2) -> void:
 	pause_panel.add_child(pause_map_rect)
 
 	var pause_controls := Label.new()
-	pause_controls.text = "[ 조작 ]\nWASD / 방향키  이동\nSpace  회피 · E  무기 스킬\nQ  궁극기 · I  인벤토리"
+	pause_controls.text = "[ 조작 ]\nWASD / 방향키  이동 · 마우스  조준\n좌클릭  기본 공격 · 우클릭  궁극기\nQ E R F  스킬 · Space  회피 · I  인벤토리"
 	pause_controls.position = Vector2(s.x / 2.0 + 40, 452)
 	pause_controls.size = Vector2(290, 104)
 	pause_controls.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
