@@ -744,7 +744,7 @@ func consume_status() -> String:
 	status = ""
 	status_t = 0.0
 	if _flash_t <= 0.0:
-		self_modulate = Color(1, 1, 1)
+		self_modulate = _status_modulate()
 	return k
 
 
@@ -757,7 +757,7 @@ func tick_status(delta: float) -> void:
 	if status_t <= 0.0:
 		status = ""
 		if _flash_t <= 0.0:
-			self_modulate = Color(1, 1, 1)
+			self_modulate = _status_modulate()
 
 func _status_modulate() -> Color:
 	return Color(1, 1, 1).lerp(status_col, 0.55) if status != "" else Color(1, 1, 1)

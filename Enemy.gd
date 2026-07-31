@@ -23,6 +23,14 @@ var resist := ""     # 저항 속성 (이 속성으로 맞으면 ×0.6)
 var status := ""
 var status_t := 0.0
 var status_col := Color(1, 1, 1)
+# 콤보 요구 특성 ("" | "warded" | "shell"). GameConfig 의 tier 가 정한다.
+#   warded: 상태가 걸려 있어야 제대로 아프다        -> 바르게 만든다
+#   shell : 상태를 터뜨려야 껍질이 깨진다           -> 터뜨리게 만든다
+var combo_trait := ""
+var shell_open_t := 0.0   # 껍질이 깨져 무방비인 남은 시간
+const WARDED_MULT := 0.30
+const SHELL_MULT := 0.25
+const SHELL_OPEN_TIME := 5.0
 # 둔화 상태
 var slow_factor := 1.0
 var slow_timer := 0.0
@@ -173,26 +181,49 @@ func mark_status(kind: String, time: float, col: Color) -> void:
 
 # 상태를 꺼내 쓰고 지운다. 없으면 "".
 func consume_status() -> String:
+	if combo_trait == "shell" and status != "":
+		shell_open_t = SHELL_OPEN_TIME
 	var k := status
 	status = ""
 	status_t = 0.0
 	if _flash_t <= 0.0:
-		self_modulate = Color(1, 1, 1)
+		self_modulate = _status_modulate()
 	return k
 
 
 # 상태 시간 감쇠. _process 에서 부르지만 따로 떼어 둔 건 검증 때문이다 —
 # _process 는 플레이어 조회 같은 씬 의존이 있어 단독으로 못 돌린다.
 func tick_status(delta: float) -> void:
+	if shell_open_t > 0.0:
+		shell_open_t -= delta
+		if shell_open_t <= 0.0 and _flash_t <= 0.0:
+			self_modulate = _status_modulate()
 	if status_t <= 0.0:
 		return
 	status_t -= delta
 	if status_t <= 0.0:
 		status = ""
 		if _flash_t <= 0.0:
-			self_modulate = Color(1, 1, 1)
+			self_modulate = _status_modulate()
+
+# 콤보 특성에 따른 받는 피해 배수. 조건을 못 맞추면 거의 안 아프다 —
+# 그게 "이 몹에겐 콤보를 써라"는 압력이다.
+func _combo_damage_mult() -> float:
+	match combo_trait:
+		"warded":
+			return 1.0 if status != "" else WARDED_MULT
+		"shell":
+			return 1.0 if shell_open_t > 0.0 else SHELL_MULT
+	return 1.0
+
 
 func _status_modulate() -> Color:
+	# 굳어 있는 동안은 무채색으로 어둡게. 조건을 맞추면 색이 돌아온다 —
+	# 머리 위 아이콘 없이 몸 색만으로 "지금 아픈가"를 알린다.
+	if _combo_damage_mult() < 1.0:
+		return Color(0.42, 0.44, 0.50)
+	if combo_trait == "shell" and shell_open_t > 0.0:
+		return Color(1.35, 1.15, 0.95)   # 껍질이 깨진 동안은 밝게
 	return Color(1, 1, 1).lerp(status_col, 0.55) if status != "" else Color(1, 1, 1)
 
 
@@ -258,6 +289,10 @@ func setup(t: Dictionary, time: float) -> void:
 	# 30분 접촉 피해 기본값 약 24. 플레이어 방어·난이도 체력으로 생존 차이를 만든다.
 	touch_damage = (10.0 + time * 0.008) * float(t.get("dmg_mult", 1.0)) * 1.75
 	behavior = t.get("behavior", "")
+	combo_trait = str(t.get("combo_trait", ""))
+	# 스폰 직후부터 굳어 보여야 한다. 첫 피격 때 색이 바뀌면 "왜 안 아프지"를
+	# 맞아 보고 나서야 알게 된다.
+	self_modulate = _status_modulate()
 	weak = t.get("weak", "")
 	resist = t.get("resist", "")
 	_shoot_cd = randf_range(0.8, 1.8)
@@ -486,6 +521,7 @@ func take_damage(d: float, crit: bool = false, dot: bool = false, element: Strin
 			d *= 0.6
 			hit_kind = "resist"
 	d *= threat_damage_taken_mult
+	d *= _combo_damage_mult()
 	var actual_damage := minf(maxf(0.0, hp), maxf(0.0, d))
 	if m and m.has_method("record_damage_dealt"):
 		m.record_damage_dealt(actual_damage)

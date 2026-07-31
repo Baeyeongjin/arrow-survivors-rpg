@@ -72,6 +72,33 @@ func _initialize() -> void:
 	_expect(e.self_modulate == Color(1, 1, 1), "상태가 풀렸는데 몸 색이 남았다")
 
 	e.free()
+
+	# 3) 콤보를 요구하는 몹. 조건을 못 맞추면 거의 안 아파야 압력이 된다.
+	var w = EnemyScript.new()
+	w.combo_trait = "warded"
+	_expect(w._combo_damage_mult() < 0.5, "경화 몹이 상태 없이도 제대로 아프다(압력이 없다)")
+	w.mark_status("burn", 4.0, SkillDefsScript.EFFECT_COL["burn"])
+	_expect(is_equal_approx(w._combo_damage_mult(), 1.0), "상태를 발랐는데 경화가 안 풀렸다")
+	w.tick_status(5.0)
+	_expect(w._combo_damage_mult() < 0.5, "상태가 풀렸는데 경화가 안 돌아왔다")
+	w.free()
+
+	var s = EnemyScript.new()
+	s.combo_trait = "shell"
+	_expect(s._combo_damage_mult() < 0.5, "껍질 몹이 처음부터 제대로 아프다")
+	s.mark_status("stun", 4.0, SkillDefsScript.EFFECT_COL["stun"])
+	_expect(s._combo_damage_mult() < 0.5, "껍질은 상태만 발라서는 안 열려야 한다(터뜨려야 한다)")
+	s.consume_status()
+	_expect(is_equal_approx(s._combo_damage_mult(), 1.0), "터뜨렸는데 껍질이 안 열렸다")
+	s.tick_status(EnemyScript.SHELL_OPEN_TIME + 0.1)
+	_expect(s._combo_damage_mult() < 0.5, "껍질이 영구히 열린 채로 남았다")
+	s.free()
+
+	# 특성이 없는 평범한 몹은 아무 영향이 없어야 한다
+	var n = EnemyScript.new()
+	_expect(is_equal_approx(n._combo_damage_mult(), 1.0), "특성 없는 몹이 피해 배수를 받는다")
+	n.free()
+
 	if failed:
 		quit(1)
 		return

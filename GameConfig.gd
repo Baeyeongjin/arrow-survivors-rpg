@@ -131,6 +131,7 @@ static func enemy_tiers() -> Array:
 			"hp_mult": 2.5, "speed_mult": 1.05, "xp": 5, "radius": 17.0, "min_stage": 2,
 			"sprite": "res://assets/enemies/hellhound.png", "weak": "ice", "resist": "fire"},
 		{"name": "가고일", "key": "gargoyle", "shape": "demon", "color": Color(0.5, 0.5, 0.55),
+			"combo_trait": "warded",
 			"hp_mult": 2.8, "speed_mult": 1.12, "xp": 6, "radius": 20.0, "min_stage": 3,
 			"sprite": "res://assets/enemies/gargoyle.png"},
 		{"name": "데몬",   "key": "demon", "shape": "demon", "color": Color(0.95, 0.30, 0.35),
@@ -142,7 +143,9 @@ static func enemy_tiers() -> Array:
 		{"name": "아이스 위습", "key": "ice_wisp", "shape": "bat", "color": Color(0.6, 0.85, 1.0),
 			"hp_mult": 3.4, "speed_mult": 1.05, "xp": 8, "radius": 14.0, "min_stage": 3,
 			"sprite": "res://assets/enemies/ice_wisp.png", "weak": "fire", "resist": "ice"},
+		# 경화: 상태가 안 걸려 있으면 거의 안 아프다. 붙기 전에 발라 두게 만드는 몹.
 		{"name": "프로스트 골렘", "key": "frost_golem", "shape": "orc", "color": Color(0.5, 0.7, 0.95),
+			"combo_trait": "warded",
 			"hp_mult": 4.0, "speed_mult": 0.55, "xp": 9, "radius": 25.0, "min_stage": 3,
 			"sprite": "res://assets/enemies/frost_golem.png", "weak": "fire", "resist": "ice"},
 		{"name": "눈알 덩어리", "key": "eye_mass", "shape": "demon", "color": Color(0.60, 0.40, 0.80),
@@ -152,12 +155,15 @@ static func enemy_tiers() -> Array:
 			"hp_mult": 4.6, "speed_mult": 1.22, "xp": 11, "radius": 20.0, "min_stage": 4,
 			"sprite": "res://assets/enemies/void_wraith.png", "weak": "holy", "resist": "dark"},
 		{"name": "망령 기사", "key": "wraith_knight", "shape": "orc", "color": Color(0.4, 0.45, 0.55),
+			"combo_trait": "shell",
 			"hp_mult": 5.2, "speed_mult": 0.88, "xp": 13, "radius": 23.0, "min_stage": 4,
 			"sprite": "res://assets/enemies/wraith_knight.png", "weak": "holy", "resist": "dark"},
 		{"name": "뿔 광신도", "key": "cultist", "shape": "orc", "color": Color(0.70, 0.28, 0.30),
 			"hp_mult": 5.5, "speed_mult": 1.00, "xp": 13, "radius": 16.0, "min_stage": 5,
 			"sprite": "res://assets/enemies/cultist.png", "weak": "holy", "resist": "dark"},
+		# 껍질: 상태를 터뜨려야 5초간 무방비가 된다. 마무리 스킬을 아껴 쓰게 만드는 몹.
 		{"name": "다크 나이트", "key": "dark_knight", "shape": "orc", "color": Color(0.35, 0.30, 0.40),
+			"combo_trait": "shell",
 			"hp_mult": 6.0, "speed_mult": 0.82, "xp": 14, "radius": 22.0, "min_stage": 5,
 			"sprite": "res://assets/enemies/dark_knight.png", "weak": "holy", "resist": "dark"},
 	]
