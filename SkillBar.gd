@@ -54,9 +54,10 @@ func _draw_slot(x: float, entry: Dictionary) -> void:
 
 	var icon: Texture2D = entry.get("icon", null)
 	if icon:
-		draw_texture_rect(icon,
-			Rect2(x + ICON_PAD, ICON_PAD, SLOT - ICON_PAD * 2.0, SLOT - ICON_PAD * 2.0),
-			false)
+		# 원본 크기 그대로 가운데에. 아이콘은 32px로 만들어 뒀고 슬롯은 46px이라
+		# 여백이 남는데, 슬롯에 맞춰 늘리면 정수배가 아니라 픽셀이 어긋난다.
+		var isz := icon.get_size()
+		draw_texture(icon, Vector2(x + (SLOT - isz.x) * 0.5, (SLOT - isz.y) * 0.5))
 
 	var cd := float(entry.get("cd", 0.0))
 	var cd_max := maxf(0.001, float(entry.get("cd_max", 1.0)))

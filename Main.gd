@@ -8074,8 +8074,7 @@ func _player_element() -> String:
 func _char_element_icon(char_key: String) -> String:
 	var elem := SkillDefs.element_of(char_key)
 	var def := SkillDefs.build(SkillDefs.basic_archetype(elem), elem, 1)
-	var fx := str(def.get("fx", ""))
-	return "" if fx == "" else "res://assets/anim/%s/2.png" % fx
+	return _fx_icon_path(str(def.get("fx", "")))
 
 
 # 이 캐릭터의 기본 공격(좌클릭). 근접 캐릭터는 swing, 원거리는 bolt다.
@@ -8083,11 +8082,16 @@ func _basic_archetype() -> String:
 	return SkillDefs.basic_archetype(_player_element())
 
 
-# 스킬 아이콘 = 그 스킬이 실제로 쓰는 이펙트의 한 프레임. 슬롯과 화면이 같은 그림이 된다.
+# 스킬 아이콘. 그 스킬이 실제로 쓰는 이펙트에서 뽑아낸 32px 그림이라
+# 슬롯과 화면에 터지는 것이 같은 그림이다.
+# (tools/make_skill_icons.py 가 절정 프레임을 골라 알파 여백을 잘라 만든다)
 func _skill_icon_path(archetype: String) -> String:
-	var d := skill_def(archetype)
-	var fx := str(d.get("fx", ""))
-	return "" if fx == "" else "res://assets/anim/%s/2.png" % fx
+	return _fx_icon_path(str(skill_def(archetype).get("fx", "")))
+
+
+# 이펙트 폴더 이름 -> 아이콘 경로. 없으면 "" (호출부가 조용히 건너뛴다).
+func _fx_icon_path(fx: String) -> String:
+	return "" if fx == "" else "res://assets/skill_icons/%s.png" % fx
 
 
 func skill_def(archetype: String) -> Dictionary:
@@ -11464,7 +11468,7 @@ func _make_skill_codex_card(archetype: String, seen: bool) -> Control:
 	def["fx"] = FxMatrix.resolve(str(def["form"]), "phys")
 	var card := _ui_card("res://assets/ui/card_evolution.png", Rect2(42, 22, 438, 154), 132)
 	_ui_icon_socket(card, Vector2(26, 31), Vector2(80, 80))
-	_ui_card_icon(card, "res://assets/anim/%s/2.png" % str(def.get("fx", "")),
+	_ui_card_icon(card, _fx_icon_path(str(def.get("fx", ""))),
 		Vector2(34, 39), Vector2(64, 64), not seen)
 	_ui_card_label(card, str(def["name"]) if seen else "???",
 		Vector2(122, 29), Vector2(300, 34), 17,
