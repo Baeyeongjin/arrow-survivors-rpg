@@ -10014,17 +10014,20 @@ func _refresh_ult_bar() -> void:
 # 캐릭터별 고유 스킬: ult=궁극기 아키타입, element=스킬 3종의 속성(색·상성).
 # GameConfig를 안 건드리고 여기 한 곳에서 분기 (character key 기준).
 const CHAR_SKILLS := {
-	"corvius":   {"ult": "blast",    "element": "dark"},   # 역병의사 — 비전 폭발
-	"gustavo":   {"ult": "reap",     "element": "phys"},   # 정육점 탱커 — 흡혈 수확
-	"serafina":  {"ult": "judgment", "element": "holy"},   # 수녀 — 신성 심판+자힐
-	"valentino": {"ult": "reap",     "element": "dark"},   # 뱀파이어 — 흡혈 수확
-	"pixie":     {"ult": "meteor",   "element": "fire"},   # 마녀 — 운석비
-	"django":    {"ult": "blast",    "element": "phys"},   # 노상강도 — 비전 폭발
-	"bolt":      {"ult": "blast",    "element": "dark"},    # 해골 — 비전 폭발
-	"morgana":   {"ult": "blizzard", "element": "ice"},    # 유령 — 빙결 결계
-	"isolde":    {"ult": "blizzard", "element": "ice"},    # 서리 마녀 — 빙결 결계
-	"grimble":   {"ult": "blast",    "element": "dark"},    # 부두술사 — 비전 폭발
-	"mordek":    {"ult": "reap",     "element": "phys"},   # 처형인 — 흡혈 수확
+	# 원소 재배정(사장님 결정: 이펙트는 캐릭터 기준). 예전에는 dark 4명·phys 3명·ice 2명으로
+	# 편중돼 11명 중 절반이 같은 색으로 싸웠다. VFX 팩의 9원소에 흩어 캐릭터마다 다른 색·형태를
+	# 갖게 했다. 전투 상성은 fire/ice/dark/holy만 쓰므로 신규 4원소는 상성상 중립이다.
+	"corvius":   {"ult": "blast",    "element": "dark"},   # 역병의사 — 어둠
+	"gustavo":   {"ult": "reap",     "element": "earth"},  # 정육점 탱커 — 대지
+	"serafina":  {"ult": "judgment", "element": "holy"},   # 수녀 — 신성
+	"valentino": {"ult": "reap",     "element": "phys"},   # 뱀파이어 — 물리(피의 베기)
+	"pixie":     {"ult": "meteor",   "element": "fire"},   # 마녀 — 화염
+	"django":    {"ult": "blast",    "element": "wind"},   # 노상강도 — 바람(속사)
+	"bolt":      {"ult": "blast",    "element": "elec"},   # 해골 — 전기
+	"morgana":   {"ult": "blizzard", "element": "water"},  # 유령 — 물
+	"isolde":    {"ult": "blizzard", "element": "ice"},    # 서리 마녀 — 냉기
+	"grimble":   {"ult": "blast",    "element": "dark"},   # 부두술사 — 어둠
+	"mordek":    {"ult": "reap",     "element": "phys"},   # 처형인 — 물리
 }
 const ULT_NAME := {"blast": "비전 폭발", "meteor": "운석비", "blizzard": "빙결 결계", "judgment": "신성 심판", "reap": "암흑 수확"}
 

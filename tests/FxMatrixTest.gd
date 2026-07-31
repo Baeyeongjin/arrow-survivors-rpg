@@ -70,10 +70,23 @@ func _initialize() -> void:
 		!= FxMatrixScript.resolve("impact", "fire", false),
 		"impact heavy가 기본과 같다")
 
-	# 3) 미지의 원소는 phys 폴백.
-	_expect(FxMatrixScript.normalize_element("water") == "phys", "미지 원소 폴백 실패")
-	_expect(FxMatrixScript.resolve("bolt", "water")
+	# 2-b) 원소 시그니처. 캐릭터 궁극기가 "이 캐릭터다"로 읽히려면 원소마다 있어야 한다.
+	for element in FxMatrixScript.ELEMENTS:
+		var sig := FxMatrixScript.signature(element)
+		_expect(sig != "", "원소 %s 에 시그니처가 없다" % element)
+		_expect(_frames_exist(sig), "시그니처 자산 없음: %s (원소 %s)" % [sig, element])
+		checked += 1
+	_expect(FxMatrixScript.signature("no_such_element")
+		== FxMatrixScript.signature("phys"), "미지 원소 시그니처가 phys로 안 떨어짐")
+
+	# 3) 미지의 원소는 phys 폴백. water/wind/earth/elec은 이제 정식 원소라 폴백 대상이 아니다.
+	_expect(FxMatrixScript.normalize_element("no_such_element") == "phys", "미지 원소 폴백 실패")
+	_expect(FxMatrixScript.normalize_element("water") == "water",
+		"물이 정식 원소로 인정되지 않음")
+	_expect(FxMatrixScript.resolve("bolt", "no_such_element")
 		== FxMatrixScript.resolve("bolt", "phys"), "미지 원소가 phys로 안 떨어짐")
+	_expect(FxMatrixScript.resolve("bolt", "water")
+		!= FxMatrixScript.resolve("bolt", "fire"), "물과 화염 투사체가 같다")
 	_expect(FxMatrixScript.resolve("no_such_form", "fire") == "",
 		"없는 형태가 빈 문자열을 반환하지 않음")
 	_expect(FxMatrixScript.resolve_path("bolt", "fire").begins_with("res://assets/anim/"),
@@ -98,9 +111,18 @@ func _initialize() -> void:
 		_expect(element in FxMatrixScript.ELEMENTS,
 			"캐릭터 %s 의 원소 %s 를 매트릭스가 모른다" % [key, element])
 		seen_elements[element] = true
-	# 원소가 하나뿐이면 캐릭터가 전부 같은 색으로 싸운다 — 재설계 목적이 사라진다.
-	_expect(seen_elements.size() >= 3,
+	# 원소가 몇 개 안 되면 캐릭터가 같은 색으로 싸운다 — 재설계 목적이 사라진다.
+	# 예전에는 dark 4명·phys 3명·ice 2명으로 11명 중 절반이 겹쳤다.
+	_expect(seen_elements.size() >= 8,
 		"캐릭터 원소가 %d종뿐 — 캐릭터별 이펙트 구분이 약하다" % seen_elements.size())
+	# 한 원소에 너무 몰리면 그만큼 캐릭터가 안 갈린다.
+	var per_element := {}
+	for key in char_skills:
+		var el := str((char_skills[key] as Dictionary).get("element", ""))
+		per_element[el] = int(per_element.get(el, 0)) + 1
+	for el in per_element:
+		_expect(int(per_element[el]) <= 2,
+			"원소 %s 에 캐릭터가 %d명 몰렸다" % [el, int(per_element[el])])
 
 	if failed:
 		quit(1)
