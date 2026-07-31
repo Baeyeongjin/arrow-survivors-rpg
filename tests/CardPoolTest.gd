@@ -33,8 +33,10 @@ func _initialize() -> void:
 		game.free()
 		return
 
-	for kind in game.ALL_WEAPONS:
-		game.weapons[kind] = game.MAX_WLEVEL
+	# 성장을 전부 소진시킨다: 스킬 9종 만렙 + 패시브 만렙.
+	# 이 상태에서도 카드 3장이 나와야 한다(리밋 브레이크가 받아 준다).
+	for arch in SkillDefs.ARCHETYPES.keys():
+		game.skill_levels[arch] = SkillDefs.MAX_SKILL_LEVEL
 	for key in game._passive_defs().keys():
 		game.passives[key] = game.MAX_PLEVEL
 

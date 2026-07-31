@@ -66,7 +66,7 @@ static func aggregate(records: Array) -> Dictionary:
 	var deaths_by_floor := {}
 	var route_counts := {}
 	var damage_by_source := {}
-	var weapon_counts := {}
+	var skill_counts := {}
 	var passive_counts := {}
 	var mastery_counts := {}
 	for raw_record in records:
@@ -93,11 +93,13 @@ static func aggregate(records: Array) -> Dictionary:
 				damage_by_source[source] = (
 					float(damage_by_source.get(source, 0.0))
 					+ maxf(0.0, float(source_map[source_key])))
-		var selected_weapons = record.get("weapons", {})
-		if selected_weapons is Dictionary:
-			for weapon_key in selected_weapons.keys():
-				var weapon := str(weapon_key)
-				weapon_counts[weapon] = int(weapon_counts.get(weapon, 0)) + 1
+		# 구버전 기록은 "weapons"에 무기를 담았다. 무기 시스템이 사라진 뒤로는
+		# "skills"다. 옛 기록도 계속 읽히도록 둘 다 본다.
+		var selected_skills = record.get("skills", record.get("weapons", {}))
+		if selected_skills is Dictionary:
+			for skill_key in selected_skills.keys():
+				var skill := str(skill_key)
+				skill_counts[skill] = int(skill_counts.get(skill, 0)) + 1
 		var selected_passives = record.get("passives", {})
 		if selected_passives is Dictionary:
 			for passive_key in selected_passives.keys():
@@ -119,7 +121,7 @@ static func aggregate(records: Array) -> Dictionary:
 		"deaths_by_floor": deaths_by_floor,
 		"route_counts": route_counts,
 		"damage_by_source": damage_by_source,
-		"weapon_counts": weapon_counts,
+		"skill_counts": skill_counts,
 		"passive_counts": passive_counts,
 		"mastery_counts": mastery_counts,
 	}

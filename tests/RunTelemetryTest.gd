@@ -24,7 +24,7 @@ func _record(outcome: String, floor_no: int, route: String, damage: Dictionary,
 		"damage_by_source": damage,
 		"extracted_gear_count": extracted,
 		"duration_seconds": duration,
-		"weapons": {"arrow": 8},
+		"skills": {"bolt": 5, "burst": 3},
 		"passives": {"tome": 3},
 		"mastery_picks": {4: "a"},
 	}
@@ -63,7 +63,8 @@ func _initialize() -> void:
 		"경로 선택 집계 오류: %s" % summary)
 	_expect(int(summary["extracted_gear_count"]) == 3,
 		"추출 장비 집계 오류: %s" % summary)
-	_expect(int(summary["weapon_counts"].get("arrow", 0)) == 2
+	_expect(int(summary["skill_counts"].get("bolt", 0)) == 2
+		and int(summary["skill_counts"].get("burst", 0)) == 2
 		and int(summary["passive_counts"].get("tome", 0)) == 2
 		and int(summary["mastery_counts"].get("4:a", 0)) == 2,
 		"빌드 선택률 집계 오류: %s" % summary)

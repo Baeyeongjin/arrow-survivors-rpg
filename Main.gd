@@ -718,7 +718,7 @@ func _ready() -> void:
 func _seed_gear_ui_preview() -> void:
 	var current_weapon := {
 		"slot": "weapon", "rarity": "rare", "name": "심연의 단검", "gear_id": "preview-current-weapon", "lvl": 1,
-		"weapon_kind": "knife", "element": "dark",
+		"element": "dark",
 		"affixes": [{"stat": "damage_mult", "name": "공격력", "value": 0.1008, "base_value": 0.09, "pct": true}]}
 	var preview_armor := {
 		"slot": "armor", "rarity": "common", "name": "강철의 갑옷", "gear_id": "preview-armor", "lvl": 0,
@@ -728,7 +728,7 @@ func _seed_gear_ui_preview() -> void:
 		"affixes": [{"stat": "regen", "name": "재생", "value": 0.4704, "base_value": 0.36, "pct": false}, {"stat": "pickup_radius", "name": "자석", "value": 28.8, "base_value": 22.0, "pct": false}]}
 	var weapon_candidate := {
 		"slot": "weapon", "rarity": "epic", "name": "폭풍의 창", "gear_id": "preview-weapon-candidate", "lvl": 0,
-		"weapon_kind": "spear", "element": "ice",
+		"element": "ice",
 		"affixes": [{"stat": "damage_mult", "name": "공격력", "value": 0.145, "base_value": 0.145, "pct": true}, {"stat": "area_mult", "name": "범위", "value": 0.11, "base_value": 0.11, "pct": true}]}
 	var armor_candidate := {
 		"slot": "armor", "rarity": "rare", "name": "얼어붙은 로브", "gear_id": "preview-armor-candidate", "lvl": 0,
@@ -4831,10 +4831,6 @@ const GEAR_NOUNS := {
 	"armor": ["갑옷", "로브", "비늘갑주", "망토"],
 	"trinket": ["반지", "부적", "목걸이", "인장"]}
 const GEAR_ADJ := ["맹독의", "불타는", "얼어붙은", "강철의", "고대의", "저주받은", "빛나는", "심연의"]
-# 장비 무기 명사 → 실제 전투 무기 키. 무기 슬롯 장비가 캐릭터 주무기(weapon1)를 대체한다.
-# ponytail: 무기 비주얼은 속성별 변형이 없어 '얼어붙은 지팡이'도 혼탄 이펙트다. 데미지 상성은 정확.
-const GEAR_NOUN_ATTACK := {
-	"검": "cleave", "도끼": "axe", "지팡이": "soul_bolt", "단검": "knife", "창": "spear"}
 # 장비 접두어 → 속성. 무기 슬롯 장비의 이 속성이 곧 내 공격 속성이 된다(상성 판정).
 const GEAR_ADJ_ELEMENT := {
 	"맹독의": "dark", "불타는": "fire", "얼어붙은": "ice", "강철의": "phys",
@@ -5614,10 +5610,6 @@ func _normalize_persistent_gear(it: Dictionary) -> Dictionary:
 	# 속성 백필: 구 세이브·프리뷰 장비는 element가 없으니 이름 접두어로 보완.
 	if str(normalized.get("element", "")).is_empty():
 		normalized["element"] = GEAR_ADJ_ELEMENT.get(str(normalized.get("name", "")).split(" ")[0], "phys")
-	# (구) 세이브에 남은 weapon_kind는 읽지 않는다 — 장비는 전부 패시브가 됐다.
-	if false:
-		var parts: PackedStringArray = str(normalized.get("name", "")).split(" ")
-		normalized["weapon_kind"] = GEAR_NOUN_ATTACK.get(parts[1] if parts.size() > 1 else "", "")
 	var affixes: Array = []
 	for raw_affix in normalized.get("affixes", []):
 		if not (raw_affix is Dictionary):
