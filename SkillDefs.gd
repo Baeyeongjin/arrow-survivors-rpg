@@ -134,8 +134,48 @@ const ROLE := {
 }
 
 
+# 역할 한 줄 설명. 카드·도감·툴팁이 전부 desc 를 쓰므로 여기 한 곳에만 적으면 된다.
+const ROLE_DESC := {
+	"setup": "적에게 [%s] 상태를 남긴다",
+	"payoff": "[%s] 걸린 적에게 쓰면 터진다 — %s",
+	"guard": "자신을 지킨다",
+}
+
+# 상태를 터뜨렸을 때 무슨 일이 벌어지는지. 배수가 아니라 규칙이다.
+const PAYOFF_DESC := {
+	"burn": "불이 주변으로 옮겨붙는다", "chill": "얼어붙어 완전히 멈춘다",
+	"drain": "처치하면 이 스킬이 즉시 돌아온다", "mend": "회피가 즉시 돌아온다",
+	"push": "적을 한 점으로 끌어당긴다", "pierce": "돌풍이 남아 적을 묶는다",
+	"stun": "주변 적도 함께 기절한다", "chain": "사슬이 5명까지 이어진다",
+	"execute": "체력 35% 이하면 즉사시킨다",
+}
+
+
 static func role_of(archetype: String) -> String:
 	return str(ROLE.get(archetype, "setup"))
+
+
+# 이 스킬이 콤보에서 무슨 역할인지 한 줄로. effect 는 캐릭터 원소의 상태 키.
+static func role_line(archetype: String, effect: String) -> String:
+	var role := role_of(archetype)
+	var status_name := str(EFFECT_NAME.get(effect, effect))
+	if role == "payoff":
+		return str(ROLE_DESC["payoff"]) % [status_name, str(PAYOFF_DESC.get(effect, ""))]
+	if role == "setup":
+		return str(ROLE_DESC["setup"]) % status_name
+	return str(ROLE_DESC["guard"])
+
+
+# 원소를 모르는 자리(도감)용 역할 한 줄. 상태 이름 없이 역할만 말한다.
+const ROLE_LABEL := {
+	"setup": "적에게 원소 상태를 남긴다 (콤보 시작)",
+	"payoff": "상태 걸린 적에게 쓰면 터진다 (콤보 마무리)",
+	"guard": "자신을 지킨다",
+}
+
+
+static func role_label(archetype: String) -> String:
+	return str(ROLE_LABEL.get(role_of(archetype), ""))
 
 
 static func archetype_keys() -> Array:
@@ -171,7 +211,10 @@ static func build(archetype: String, element: String, level: int = 1) -> Diction
 	base["cd"] = float(base["cd"]) * haste
 	base["effect"] = str(trait_row["effect"])
 	base["name"] = "%s %s" % [str(trait_row["name"]), str(base["name"])]
-	base["desc"] = "%s · %s" % [str(base["desc"]), str(trait_row["desc"])]
+	base["role"] = role_of(archetype)
+	base["desc"] = "%s · %s\n%s" % [
+		str(base["desc"]), str(trait_row["desc"]),
+		role_line(archetype, str(trait_row["effect"]))]
 	base["fx"] = FxMatrix.resolve(str(base["form"]), elem, bool(base.get("heavy", false)))
 	return base
 

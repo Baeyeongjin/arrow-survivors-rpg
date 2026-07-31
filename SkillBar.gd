@@ -70,6 +70,11 @@ func _draw_slot(x: float, entry: Dictionary) -> void:
 		var w := _font.get_string_size(secs, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
 		draw_string(_font, Vector2(x + (SLOT - w) * 0.5, SLOT * 0.62), secs,
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1.0, 0.94, 0.72))
+	elif bool(entry.get("primed", false)):
+		# 터뜨릴 대상이 사거리 안에 있다. 준비됨보다 한 단계 더 밝게 + 두껍게 —
+		# 이 신호가 없으면 플레이어가 콤보의 존재 자체를 모른 채 쿨마다 누르게 된다.
+		draw_rect(rect, Color(1.0, 0.42, 0.30, 0.30))
+		draw_rect(rect, Color(1.0, 0.55, 0.35, 1.0), false, 3.0)
 	else:
 		# 준비됨: 테두리를 밝혀 알린다.
 		draw_rect(rect, Color(0.95, 0.86, 0.48, 0.85), false, 2.0)

@@ -1786,6 +1786,16 @@ func _autoshot() -> void:
 		_toggle_pause()
 	if "--pause" in OS.get_cmdline_user_args():
 		_toggle_pause()
+	# --levelup : 레벨업 카드 3장을 띄운 채 캡처. 설명 줄이 늘어날 때마다 카드가
+	# 넘치는지 눈으로 봐야 해서(버튼 높이 92px 고정) 전용 플래그를 둔다.
+	if "--levelup" in OS.get_cmdline_user_args():
+		if state == State.PAUSED:
+			_toggle_pause()
+		pending_levelups = 1
+		_start_levelup()
+		# 카드 등장 애니(알파 0 -> 1, 장당 0.07초 시차)가 끝나기를 기다린다.
+		# 안 기다리면 2·3번 카드가 투명한 채로 찍혀 "카드가 1장만 뜬다"로 오해한다.
+		await get_tree().create_timer(0.6, true, false, true).timeout
 	await get_tree().process_frame
 	await get_tree().process_frame
 	var img := get_viewport().get_texture().get_image()
@@ -7868,10 +7878,15 @@ func _refresh_skill_hud() -> void:
 		# 아이콘은 그 스킬이 실제로 쓰는 이펙트의 첫 프레임이다. 별도 아이콘 아트를
 		# 만들지 않아도 슬롯과 화면에 터지는 것이 같은 그림이라 바로 연결된다.
 		var icon: Texture2D = Assets.tex(_skill_icon_path(archetype))
+		var cd_left := float(skill_cds.get(slot, 0.0))
 		entries.append({
 			"key": label, "name": nm, "icon": icon,
-			"cd": float(skill_cds.get(slot, 0.0)),
+			"cd": cd_left,
 			"cd_max": maxf(0.001, float(def.get("cd", 1.0)) * (player.cooldown_mult if player else 1.0)),
+			# 터뜨릴 대상이 사거리 안에 있으면 슬롯을 밝힌다. 이게 없으면
+			# 플레이어가 콤보의 존재 자체를 모른 채 쿨마다 누르게 된다.
+			"primed": cd_left <= 0.0 and str(def.get("role", "")) == "payoff"
+				and _has_primed_target(float(def.get("range", 0.0)) + float(def.get("radius", 0.0))),
 		})
 	if skill_bar:
 		skill_bar.slots = entries
@@ -7881,6 +7896,21 @@ func _refresh_skill_hud() -> void:
 	if skill_hud_label:
 		skill_hud_label.text = "     ".join(names) if not names.is_empty() \
 			else "레벨업으로 스킬을 배우세요"
+
+
+# 사거리 안에 상태 걸린 적이 있나. 매 프레임 도는 검사라 첫 명중에서 바로 끊는다.
+func _has_primed_target(reach: float) -> bool:
+	if player == null or reach <= 0.0:
+		return false
+	var r2 := reach * reach
+	for e in _enemies_and_boss():
+		if not is_instance_valid(e) or not ("status" in e):
+			continue
+		if str(e.status) == "":
+			continue
+		if player.position.distance_squared_to((e as Node2D).position) <= r2:
+			return true
+	return false
 
 
 # 궁극 게이지 바 갱신 (가볍게 — 처치마다 호출)
@@ -10087,11 +10117,14 @@ func _build_ui(s: Vector2) -> void:
 
 	# 뱀서식: 세로 리스트 행 (아이콘 왼쪽 + 이름·레벨·설명). 카드형 대신.
 	var row_w := 680.0
-	var row_h := 92.0
+	# 스킬 카드는 4줄이다: 이름 / 효과·원소 / 콤보 역할 / 장착 슬롯.
+	# 92px일 때 마지막 줄이 잘렸다. 108px + 간격 118로 늘리면 마지막 카드 바닥이
+	# 534라 아래 리롤·스킵·밴(556)과 안 겹친다.
+	var row_h := 108.0
 	var row_x := s.x / 2.0 - row_w / 2.0
 	for i in 3:
 		var b := Button.new()
-		b.position = Vector2(row_x, 200 + i * 104)
+		b.position = Vector2(row_x, 190 + i * 118)
 		b.size = Vector2(row_w, row_h)
 		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		b.expand_icon = true
@@ -11602,9 +11635,12 @@ func _make_skill_codex_card(archetype: String, seen: bool) -> Control:
 		Vector2(122, 29), Vector2(300, 34), 17,
 		Color(1.0, 0.78, 0.38) if seen else Color(0.66, 0.6, 0.76))
 	var slot_text := "기본 공격 (좌클릭)" if str(def.get("slot", "")) == "basic" else "Q/E/R/F 장착"
-	var body := "%s\n%s · 쿨다운 %.1f초" % [str(def["desc"]), slot_text, float(def.get("cd", 0.0))] \
+	# 도감은 원소 중립이라 상태 이름 없는 역할 문구를 쓴다. 이게 없으면 콤보가
+	# 게임 안 어디에도 설명되지 않는다.
+	var body := "%s\n%s\n%s · 쿨다운 %.1f초" % [str(def["desc"]),
+		SkillDefs.role_label(archetype), slot_text, float(def.get("cd", 0.0))] \
 		if seen else "아직 배우지 못한 스킬"
-	_ui_card_label(card, body, Vector2(122, 64), Vector2(300, 60), 13, Color(0.76, 0.82, 0.92))
+	_ui_card_label(card, body, Vector2(122, 60), Vector2(300, 68), 13, Color(0.76, 0.82, 0.92))
 	return card
 
 
