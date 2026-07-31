@@ -141,35 +141,19 @@ func _initialize() -> void:
 	_expect(biter.can_damage_player(Vector2(biter._visible_radius() * 0.5, 0.0), hero_radius),
 		"몸이 겹쳤는데 타격 판정이 안 들어옴")
 
-	# 6) 무적 표시는 링이 아니라 몸 틴트다. 하얀 원이 다시 생기면 안 된다.
-	var tinted = PlayerScript.new()
-	tinted.invuln = 0.0
-	tinted.dodge_t = 0.0
-	_expect(tinted._invuln_tint() == Color.WHITE, "평소에 몸 보정이 걸림")
-	tinted.dodge_t = 0.1
-	var dodge_tint: Color = tinted._invuln_tint()
-	_expect(dodge_tint.a < 1.0 and dodge_tint.b > dodge_tint.r,
-		"회피 중 몸이 시안·반투명으로 표시되지 않음: %s" % dodge_tint)
-	# 피격 무적: 남은 시간에 따라 깜빡여야 한다(켜짐·꺼짐이 모두 나타난다).
-	tinted.dodge_t = 0.0
-	var seen_bright := false
-	var seen_dim := false
-	for step in 40:
-		tinted.invuln = 0.6 - float(step) * 0.015
-		if tinted.invuln <= 0.0:
-			break
-		var blink: Color = tinted._invuln_tint()
-		if blink.a > 0.9:
-			seen_bright = true
-		elif blink.a < 0.6:
-			seen_dim = true
-	_expect(seen_bright and seen_dim, "피격 무적 중 몸이 깜빡이지 않음")
+	# 6) 피격 표시는 캐릭터 주위 하얀 원이 아니어야 한다(사장님 보고).
+	#    지금은 몸을 붉게 물들이는 방식이고, 링은 플레이어가 직접 쓴 회피에만 남는다.
+	var player_source := FileAccess.get_file_as_string("res://Player.gd").replace("\r\n", "\n")
+	_expect(not "Color(1, 1, 1, 0.7)" in player_source,
+		"피격 무적 하얀 링이 되살아났다")
+	_expect("dodge_t > 0.0 and invuln > 0.0" in player_source,
+		"회피 무적 링 조건이 사라졌다 — 회피는 남은 무적을 읽을 수 있어야 한다")
+	_expect("hurt_flash" in player_source, "피격 시 몸을 물들이는 표현이 없다")
 
 	# 7) 도끼 조준: 표적이 없으면 바라보는 방향을 쓴다. 예전에는 항상 위로만 던졌다.
 	_expect(MainScript.AXE_LOFT > 0.0, "도끼 포물선 성분이 사라짐")
 
 	biter.free()
-	tinted.free()
 
 	grunt.free()
 	archer.free()

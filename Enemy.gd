@@ -105,12 +105,13 @@ func _visible_radius() -> float:
 	return radius * SPRITE_SCALE * 0.5
 
 
-# 근접 타격 판정 거리. 예전에는 radius + 30(정예 +50)이라 일반 몹이 몸이 닿기 30px 전에
-# 때렸다. 예고 부채꼴을 그리던 시절에는 그 여유가 화면에 보여서 납득됐지만, 전조를 모션으로
-# 바꾼 뒤에는 "안 닿았는데 맞고 밀려나는" 것으로만 남았다(사장님 보고). 넉백까지 붙어 더 도드라졌다.
-# 보이는 몸 반경 기준으로 되잡아 타격 순간이 시각적 접촉과 맞게 한다.
+# 피해 범위는 눈에 보이는 스프라이트를 기준으로 잡는다.
+# 예전에는 radius + 30(정예 50)이라 반경 18 기준 48px까지 닿았는데, 스프라이트 반폭은
+# radius * SPRITE_SCALE / 2 = 22px뿐이었다. 보이는 몸의 2배가 넘는 곳까지 맞았고,
+# 예고 이펙트(_draw_attack_warning)까지 제거된 뒤로는 그 범위를 읽을 방법도 없었다.
+# 이제 스프라이트 반폭에 무기 길이만 더한다.
 func _melee_reach() -> float:
-	return _visible_radius() + (14.0 if elite else 8.0)
+	return _visible_radius() + (18.0 if elite else 10.0)
 
 
 func _ranged_windup_duration() -> float:
