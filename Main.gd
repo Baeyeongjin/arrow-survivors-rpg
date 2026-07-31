@@ -582,7 +582,6 @@ var xp_bar: ProgressBar
 var ult_bar: ProgressBar        # 궁극기 충전 게이지 (하단 중앙)
 var ult_bar_label: Label        # "Q 궁극기" / "READY!"
 var ult_gauge := 0.0            # 0~1, 처치로 충전 → Q로 발동
-var skill_e_cd := 0.0           # 현재 주무기 E 액티브 남은 쿨다운
 var skill_hud_label: Label      # 스킬 이름 줄 (아이콘 아래)
 var skill_bar: SkillBar         # Q/E/R/F 아이콘 + 쿨다운 슬롯바
 # 장비 시스템 (Phase 3): 3슬롯 + 등급별 랜덤 어픽스
@@ -1967,9 +1966,6 @@ func _physics_process(delta: float) -> void:
 	if state != State.PLAYING:
 		return
 
-	# 능동 스킬 쿨다운 감소 + HUD 갱신
-	if skill_e_cd > 0.0:
-		skill_e_cd = maxf(0.0, skill_e_cd - delta)
 	_refresh_skill_hud()
 
 	var enemies := get_tree().get_nodes_in_group("enemies")
@@ -2893,7 +2889,6 @@ func on_pickup(kind: String) -> void:
 			# "아껴뒀다 쓰는 자원"이라 위기 해제의 주체가 플레이어 조작으로 남는다.
 			for slot in skill_cds.keys():
 				skill_cds[slot] = 0.0
-			skill_e_cd = 0.0
 			_flash(Color(0.62, 0.42, 0.92, 0.34))
 			play_sfx("levelup", -9.0)
 			_spawn_proc_fx("ring", player.position, 96.0, Color(0.72, 0.50, 1.0), 0.42)
@@ -2982,7 +2977,7 @@ func on_hell_fissure_sealed(fissure: Node2D) -> void:
 		player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.05)
 		if _has_gear_special("sealkeeper"):
 			player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.08)
-			skill_e_cd = maxf(0.0, skill_e_cd - 2.5)
+			_reduce_skill_cds(2.5)
 	_spawn_proc_fx("shatter", fissure.position, 82.0, Color(0.55, 0.90, 1.0), 0.55)
 	_spawn_proc_fx("ring", fissure.position, 118.0, Color(0.55, 0.90, 1.0), 0.48)
 	for i in 4:
@@ -3342,7 +3337,7 @@ func _glacier_hearth_echo_on_light() -> void:
 	if not _has_gear_special("hearth_echo"):
 		return
 	glacier_chill = maxf(0.0, glacier_chill - 30.0)
-	skill_e_cd = maxf(0.0, skill_e_cd - 2.5)
+	_reduce_skill_cds(2.5)
 
 
 func _glacier_objective_damage_multiplier() -> float:
@@ -3501,7 +3496,7 @@ func on_void_anchor_stabilized(anchor: Node2D) -> void:
 	if player:
 		player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.05)
 	if _has_gear_special("anchor_echo"):
-		skill_e_cd = maxf(0.0, skill_e_cd - 2.5)
+		_reduce_skill_cds(2.5)
 	_spawn_proc_fx("shatter", anchor.position, 88.0, Color(0.78, 0.56, 1.0), 0.50)
 	_spawn_proc_fx("ring", anchor.position, 136.0, Color(0.72, 0.46, 1.0), 0.54)
 	for i in 4:
@@ -3672,7 +3667,7 @@ func on_castle_gate_opened(gate: Node2D) -> void:
 		player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.06)
 	if _has_gear_special("commanders_seal"):
 		player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.08)
-		skill_e_cd = maxf(0.0, skill_e_cd - 2.5)
+		_reduce_skill_cds(2.5)
 	var fx_pos: Vector2 = gate.position if gate != null else WORLD * 0.5
 	_spawn_proc_fx("shatter", fx_pos, 92.0, Color(1.0, 0.78, 0.36), 0.52)
 	_spawn_proc_fx("ring", fx_pos, 140.0, Color(1.0, 0.66, 0.28), 0.50)
@@ -5066,7 +5061,7 @@ func _roll_castle_gear(force_epic: bool = false, slot_override: String = "") -> 
 
 # 혼령의 메아리: 정예 처치 시 E 재사용 단축 + 궁극기 게이지 소량 충전.
 func _grave_echo_on_elite() -> void:
-	skill_e_cd = maxf(0.0, skill_e_cd - 1.5)
+	_reduce_skill_cds(1.5)
 	ult_gauge = minf(1.0, ult_gauge + 0.05)
 	_refresh_ult_bar()
 
@@ -7416,7 +7411,6 @@ func _start_game(d: Dictionary) -> void:
 	cheat_invincible = false
 	run_gold = 0
 	ult_gauge = 0.0
-	skill_e_cd = 0.0
 	player.dodge_t = 0.0
 	player.dodge_cd = 0.0
 	player.invuln = 0.0
@@ -7863,9 +7857,21 @@ func _continue_abyss() -> void:
 # Q/E/R/F 슬롯 상태를 한 줄로. 쿨다운이 도는 슬롯은 남은 초를 보여 준다.
 # 빈 슬롯은 "-"로 자리만 지켜 4칸이 항상 같은 위치에 있게 한다 — 위치가 흔들리면
 # 전투 중에 눈으로 못 찾는다.
+# Q/E/R/F 쿨다운을 한꺼번에 줄인다. 층 목표 보상·장비 특수효과가 부른다.
+# (예전엔 이 보상들이 skill_e_cd 라는 죽은 변수를 깎아 아무 일도 안 했다)
+func _reduce_skill_cds(seconds: float) -> void:
+	for slot in skill_cds.keys():
+		skill_cds[slot] = maxf(0.0, float(skill_cds[slot]) - seconds)
+	_refresh_skill_hud()
+
+
 func _refresh_skill_hud() -> void:
 	var names: Array[String] = []
 	var entries: Array = []
+	# 상태 걸린 적 검사는 프레임당 한 번만. 슬롯마다 적 전체를 훑으면 몹 300마리에서
+	# 프레임당 배열 2개 + 거리검사 600회가 된다(이 게임은 내장 GPU 랙으로 몹 수를
+	# 이미 한 번 내렸다). 가장 가까운 거리 하나만 구해 슬롯마다 비교한다.
+	var primed_dist := _nearest_primed_dist()
 	for slot in SkillDefs.SLOT_KEYS:
 		var label := str(SkillDefs.SLOT_LABEL.get(slot, str(slot).to_upper()))
 		var archetype := str(skill_slots.get(slot, ""))
@@ -7886,7 +7892,7 @@ func _refresh_skill_hud() -> void:
 			# 터뜨릴 대상이 사거리 안에 있으면 슬롯을 밝힌다. 이게 없으면
 			# 플레이어가 콤보의 존재 자체를 모른 채 쿨마다 누르게 된다.
 			"primed": cd_left <= 0.0 and str(def.get("role", "")) == "payoff"
-				and _has_primed_target(float(def.get("range", 0.0)) + float(def.get("radius", 0.0))),
+				and primed_dist <= float(def.get("range", 0.0)) + float(def.get("radius", 0.0)),
 		})
 	if skill_bar:
 		skill_bar.slots = entries
@@ -7898,19 +7904,19 @@ func _refresh_skill_hud() -> void:
 			else "레벨업으로 스킬을 배우세요"
 
 
-# 사거리 안에 상태 걸린 적이 있나. 매 프레임 도는 검사라 첫 명중에서 바로 끊는다.
-func _has_primed_target(reach: float) -> bool:
-	if player == null or reach <= 0.0:
-		return false
-	var r2 := reach * reach
-	for e in _enemies_and_boss():
-		if not is_instance_valid(e) or not ("status" in e):
+# 가장 가까운 "상태 걸린 적"까지의 거리. 없으면 INF.
+# 그룹을 직접 돌아 배열을 새로 만들지 않는다 — 매 프레임 도는 경로다.
+func _nearest_primed_dist() -> float:
+	if player == null:
+		return INF
+	var best := INF
+	for e in get_tree().get_nodes_in_group("enemies"):
+		if not is_instance_valid(e) or str(e.status) == "":
 			continue
-		if str(e.status) == "":
-			continue
-		if player.position.distance_squared_to((e as Node2D).position) <= r2:
-			return true
-	return false
+		best = minf(best, player.position.distance_to((e as Node2D).position))
+	if boss and is_instance_valid(boss) and "status" in boss and str(boss.status) != "":
+		best = minf(best, player.position.distance_to(boss.position))
+	return best
 
 
 # 궁극 게이지 바 갱신 (가볍게 — 처치마다 호출)
