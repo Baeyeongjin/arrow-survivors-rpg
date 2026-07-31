@@ -897,7 +897,8 @@ var ult_bar: ProgressBar        # 궁극기 충전 게이지 (하단 중앙)
 var ult_bar_label: Label        # "Q 궁극기" / "READY!"
 var ult_gauge := 0.0            # 0~1, 처치로 충전 → Q로 발동
 var skill_e_cd := 0.0           # 현재 주무기 E 액티브 남은 쿨다운
-var skill_hud_label: Label      # E 스킬과 Space 회피 상태 표시
+var skill_hud_label: Label      # 스킬 이름 줄 (아이콘 아래)
+var skill_bar: SkillBar         # Q/E/R/F 아이콘 + 쿨다운 슬롯바
 # 장비 시스템 (Phase 3): 3슬롯 + 등급별 랜덤 어픽스
 var equipped := {"weapon": {}, "armor": {}, "trinket": {}}   # 슬롯 → 아이템 딕셔너리
 var _equip_applied := {}        # stat → 현재 player에 적용된 총량 (교체 시 diff 제거용)
@@ -1170,9 +1171,10 @@ func _autoshot() -> void:
 				if str(candidate.get("key", "")) == requested_char:
 					sel_char = candidate
 					break
-		elif arg.begins_with("--active-preview="):
-			var requested_active := arg.trim_prefix("--active-preview=")
-			if WEAPON_ACTIVE_DEFS.has(requested_active):
+		elif arg.begins_with("--skill-preview="):
+			# 스킬 아키타입 하나를 실제 렌더로 검수한다(slash/burst/field/ward/nova/ruin/aegis/bolt).
+			var requested_active := arg.trim_prefix("--skill-preview=")
+			if SkillDefs.ARCHETYPES.has(requested_active):
 				active_preview = requested_active
 		elif arg.begins_with("--hell-preview="):
 			var requested_hell := arg.trim_prefix("--hell-preview=")
@@ -1197,24 +1199,6 @@ func _autoshot() -> void:
 		elif arg.begins_with("--stress-stage="):
 			# --stress-test를 어느 던전에서 잴지. 지형마다 도형 수가 달라 경로찾기 비용이 다르다.
 			sel_stage = clampi(int(arg.trim_prefix("--stress-stage=")), 1, FINAL_STAGE)
-	if active_preview != "":
-		var preview_weapon_kind := str({
-			"sword": "cleave", "axe": "axe", "staff": "soul_bolt",
-			"dagger": "knife", "spear": "spear",
-		}[active_preview])
-		var preview_element := str({
-			"sword": "phys", "axe": "fire", "staff": "fire",
-			"dagger": "dark", "spear": "ice",
-		}[active_preview])
-		var preview_active_def: Dictionary = WEAPON_ACTIVE_DEFS[active_preview]
-		var preview_loadout: Dictionary = (meta.get("loadout", {}) as Dictionary).duplicate(true)
-		preview_loadout["weapon"] = {
-			"slot": "weapon", "rarity": "epic", "name": "검수용 %s" % str(preview_active_def["name"]),
-			"gear_id": "active-preview-%s" % active_preview, "lvl": 0, "affixes": [],
-			"weapon_kind": preview_weapon_kind, "element": preview_element,
-			"icon": str(preview_active_def["icon"]),
-		}
-		meta["loadout"] = preview_loadout
 	if hell_preview != "":
 		sel_stage = HELL_STAGE
 	if grave_preview != "":
@@ -1331,7 +1315,7 @@ func _autoshot() -> void:
 		get_tree().quit()
 		return
 
-	# --active-preview=<sword|axe|staff|dagger|spear>: E 스킬과 HUD를 실제 렌더로 검수한다.
+	# --skill-preview=<아키타입>: 스킬 하나와 HUD를 실제 렌더로 검수한다.
 	if active_preview != "":
 		if state == State.PAUSED:
 			_toggle_pause()
@@ -1347,9 +1331,10 @@ func _autoshot() -> void:
 		for i in 11:
 			var spawn_pos := impact_center
 			match active_preview:
-				"axe":
+				"nova", "ward":
+					# 자기 중심 스킬은 플레이어를 둘러싸야 판정이 보인다.
 					spawn_pos = player.position + Vector2.from_angle(TAU * i / 11.0) * 125.0
-				"staff":
+				"burst", "ruin", "field", "aegis":
 					spawn_pos = impact_center + Vector2.from_angle(TAU * i / 11.0) * 68.0
 				_:
 					var lane := float(i - 5) * 18.0
@@ -1362,18 +1347,13 @@ func _autoshot() -> void:
 				preview_enemy.hp = 5000.0
 				preview_enemy.max_hp = 5000.0
 		await get_tree().process_frame
-		match active_preview:
-			"sword":
-				_fire_sword_active(Vector2.RIGHT)
-			"axe":
-				_fire_axe_active()
-			"staff":
-				_fire_staff_active(impact_center)
-			"dagger":
-				_fire_dagger_active(Vector2.RIGHT)
-			"spear":
-				_fire_spear_active(Vector2.RIGHT)
-		skill_e_cd = _weapon_active_cooldown()
+		# 커서가 없는 자동 캡처라 조준을 오른쪽으로 고정한다.
+		player._last_dir = Vector2.RIGHT
+		skill_levels[active_preview] = SkillDefs.MAX_SKILL_LEVEL
+		skill_slots["q"] = active_preview
+		var preview_def := skill_def(active_preview)
+		if not preview_def.is_empty():
+			_execute_skill(preview_def)
 		_refresh_skill_hud()
 		# 숨긴 GUI 창은 Windows에서 1 FPS로 스로틀될 수 있다. 짧은 FX가 한 프레임 만에
 		# 사라지지 않도록 중간 프레임에 고정해 실제 모양을 안정적으로 캡처한다.
@@ -8537,15 +8517,40 @@ func _continue_abyss() -> void:
 #  일시정지 (ESC)
 # ---------------------------------------------------------------------
 # E 스킬과 Space 회피 HUD 갱신 (준비=체크, 쿨=남은 초)
+# Q/E/R/F 슬롯 상태를 한 줄로. 쿨다운이 도는 슬롯은 남은 초를 보여 준다.
+# 빈 슬롯은 "-"로 자리만 지켜 4칸이 항상 같은 위치에 있게 한다 — 위치가 흔들리면
+# 전투 중에 눈으로 못 찾는다.
 func _refresh_skill_hud() -> void:
-	if skill_hud_label == null:
-		return
-	var active_def := _current_weapon_active_def()
-	var active_label := str(active_def.get("name", "무기 스킬"))
-	var et := "E %s 준비" % active_label if skill_e_cd <= 0.0 else "E %s %.1f" % [active_label, skill_e_cd]
-	var dodge_cd := player.dodge_cd if player else 0.0
-	var st := "Space 회피 준비" if dodge_cd <= 0.0 else "Space 회피 %.1f" % dodge_cd
-	skill_hud_label.text = "%s     %s" % [et, st]
+	var names: Array[String] = []
+	var entries: Array = []
+	for slot in SkillDefs.SLOT_KEYS:
+		var label := str(SkillDefs.SLOT_LABEL.get(slot, str(slot).to_upper()))
+		var archetype := str(skill_slots.get(slot, ""))
+		if archetype == "":
+			entries.append({"key": label, "name": "", "icon": null, "cd": 0.0, "cd_max": 1.0})
+			continue
+		var def := skill_def(archetype)
+		var nm := str(def.get("name", archetype))
+		names.append("%s %s" % [label, nm])
+		# 아이콘은 그 스킬이 실제로 쓰는 이펙트의 첫 프레임이다. 별도 아이콘 아트를
+		# 만들지 않아도 슬롯과 화면에 터지는 것이 같은 그림이라 바로 연결된다.
+		var icon: Texture2D = null
+		var fx := str(def.get("fx", ""))
+		if fx != "":
+			icon = Assets.tex("res://assets/anim/%s/2.png" % fx)
+		entries.append({
+			"key": label, "name": nm, "icon": icon,
+			"cd": float(skill_cds.get(slot, 0.0)),
+			"cd_max": maxf(0.001, float(def.get("cd", 1.0)) * (player.cooldown_mult if player else 1.0)),
+		})
+	if skill_bar:
+		skill_bar.slots = entries
+		skill_bar.dodge_cd = player.dodge_cd if player else 0.0
+		skill_bar.dodge_max = Player.DODGE_COOLDOWN
+		skill_bar.queue_redraw()
+	if skill_hud_label:
+		skill_hud_label.text = "     ".join(names) if not names.is_empty() \
+			else "레벨업으로 스킬을 배우세요"
 
 
 # 궁극 게이지 바 갱신 (가볍게 — 처치마다 호출)
@@ -8555,11 +8560,12 @@ func _refresh_ult_bar() -> void:
 	ult_bar.value = ult_gauge
 	if ult_bar_label:
 		var un := str(ULT_NAME.get(_char_ult(), "궁극기"))
+		# Q는 이제 스킬 슬롯이다. 궁극기는 마우스 우클릭으로 옮겼다.
 		if ult_gauge >= 1.0:
-			ult_bar_label.text = "Q  %s  READY" % un
+			ult_bar_label.text = "우클릭  %s  READY" % un
 			ult_bar_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.5))
 		else:
-			ult_bar_label.text = "Q  %s  %d%%" % [un, int(ult_gauge * 100.0)]
+			ult_bar_label.text = "우클릭  %s  %d%%" % [un, int(ult_gauge * 100.0)]
 			ult_bar_label.add_theme_color_override("font_color", Color(0.85, 0.8, 0.95))
 
 
@@ -8618,19 +8624,6 @@ func _current_weapon_active_def() -> Dictionary:
 		for key in variant:
 			active_def[key] = variant[key]
 	return active_def
-
-
-func _weapon_active_cooldown() -> float:
-	var active_def := _current_weapon_active_def()
-	var cooldown_mult := player.cooldown_mult if player else 1.0
-	return maxf(1.0, float(active_def.get("cd", 6.0)) * cooldown_mult)
-
-
-func _active_skill_element() -> String:
-	var equipped_weapon: Dictionary = equipped.get("weapon", {})
-	return str(equipped_weapon.get("element", _char_skill_element()))
-
-
 func _skill_aim_direction() -> Vector2:
 	if player == null:
 		return Vector2.RIGHT
@@ -8648,203 +8641,11 @@ func _skill_target_point(max_range: float = 520.0) -> Vector2:
 	if stage_layout:
 		target = stage_layout.nearest_walkable(target, 4.0)
 	return target
-
-
-func _weapon_active_damage(base_damage: float, melee: bool) -> float:
-	var role_mult := char_melee if melee else char_ranged
-	var run_scale := 1.0 + minf(time_survived / 600.0, 3.0)
-	return base_damage * player.damage_mult * role_mult * run_scale
-
-
 func _damage_active_target(target, damage: float, element: String, crit: bool = false) -> void:
 	if target is Boss:
 		target.take_damage(damage, crit, element)
 	else:
 		target.take_damage(damage, crit, false, element)
-func _fire_sword_active(dir: Vector2) -> void:
-	var element := _active_skill_element()
-	var col: Color = ELEMENT_COL.get(element, Color.WHITE)
-	var reach := 180.0 * _area_scale()
-	var damage := _weapon_active_damage(108.0, true)
-	var blood_variant: bool = equipped.get("weapon", {}).is_empty() and _primary_weapon_kind() == "blood_sword"
-	var blood_heal := 0.0
-	player.invuln = maxf(player.invuln, 0.42)
-	player.play_attack()
-	for target in _enemies_and_boss():
-		if not is_instance_valid(target):
-			continue
-		var to: Vector2 = (target as Node2D).position - player.position
-		if to.length() <= reach + float(target.radius) and to.normalized().dot(dir) > 0.22:
-			_damage_active_target(target, damage, element)
-			if blood_variant:
-				blood_heal += damage * 0.06
-			if target.has_method("shove"):
-				target.shove(player.position, 240.0)
-	if blood_heal > 0.0:
-		player.hp = minf(player.max_hp, player.hp + minf(blood_heal, player.max_hp * 0.12))
-	_break_near(player.position + dir * reach * 0.45, reach * 0.75, damage)
-	_spawn_proc_fx("cleave", player.position, reach, col, 0.34, dir, player.position + dir * reach)
-	play_sfx("shoot", -7.0, 0.08)
-	shake_t = maxf(shake_t, 0.12)
-
-
-# 도끼 — 파쇄 강타: 주변을 확실히 비우는 느리고 강한 군중 제어기.
-func _fire_axe_active() -> void:
-	var element := _active_skill_element()
-	var col: Color = ELEMENT_COL.get(element, Color(0.9, 0.65, 0.3))
-	var radius := 172.0 * _area_scale()
-	var damage := _weapon_active_damage(152.0, true)
-	player.play_attack()
-	for target in _enemies_and_boss():
-		if not is_instance_valid(target):
-			continue
-		if player.position.distance_to((target as Node2D).position) <= radius + float(target.radius):
-			_damage_active_target(target, damage, element)
-			if target.has_method("apply_slow"):
-				target.apply_slow(0.72, 1.8)
-			if target.has_method("shove"):
-				target.shove(player.position, 330.0)
-	_break_near(player.position, radius, damage)
-	_spawn_proc_fx("ring", player.position, radius, col, 0.46)
-	_spawn_proc_fx("burst", player.position, radius * 0.7, col, 0.32)
-	spawn_fx_form("zone", player.position, radius * 0.95)
-	play_sfx("ult", -9.0, 0.10)
-	shake_t = maxf(shake_t, 0.22)
-
-
-# 지팡이 — 원소 폭발: 같은 조작이어도 장비 접두 속성에 따라 부가효과가 바뀐다.
-func _fire_staff_active(target_override: Vector2 = Vector2.ZERO) -> void:
-	var element := _active_skill_element()
-	var col: Color = ELEMENT_COL.get(element, Color(0.65, 0.85, 1.0))
-	var character_weapon: bool = equipped.get("weapon", {}).is_empty()
-	var primary_kind := _primary_weapon_kind()
-	var target_point := target_override if target_override != Vector2.ZERO else _skill_target_point()
-	if character_weapon and primary_kind == "aura":
-		target_point = player.position
-	var radius := 118.0 * _area_scale()
-	var damage := _weapon_active_damage(126.0, false)
-	if element == "fire":
-		damage *= 1.15
-	elif element == "holy":
-		player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.06)
-	player.play_attack()
-	for target in _enemies_and_boss():
-		if not is_instance_valid(target):
-			continue
-		if target_point.distance_to((target as Node2D).position) <= radius + float(target.radius):
-			_damage_active_target(target, damage, element)
-			if element == "ice" and target.has_method("apply_slow"):
-				target.apply_slow(0.62, 2.4)
-			elif element == "dark" and target.has_method("apply_slow"):
-				target.apply_slow(0.38, 1.8)
-			elif element == "phys" and target.has_method("shove"):
-				target.shove(target_point, 190.0)
-	_break_near(target_point, radius, damage)
-	_spawn_proc_fx("ring", target_point, radius, col, 0.42)
-	_spawn_proc_fx("burst", target_point, radius * 0.72, col, 0.36)
-	match element:
-		"fire":
-			spawn_fx_form("impact", target_point, radius * 1.25)
-		"ice":
-			spawn_fx_form("impact", target_point, radius * 1.35)
-		"holy":
-			spawn_fx_form("impact", target_point, radius * 1.35)
-		"dark":
-			spawn_fx_form("zone", target_point, radius * 1.35)
-		_:
-			spawn_fx_form("zone", target_point, radius * 1.15)
-	play_sfx("ult", -10.0, 0.08)
-	shake_t = maxf(shake_t, 0.14)
-
-
-# 단검 — 그림자 난무: 좁은 부채꼴에 고유 치명타 보정을 가진 단검을 쏟아낸다.
-func _fire_dagger_active(dir: Vector2) -> void:
-	var element := _active_skill_element()
-	var col: Color = ELEMENT_COL.get(element, Color(0.85, 0.9, 1.0))
-	var shots := 7 + mini(player.amount, 3)
-	var damage := _weapon_active_damage(27.0, false)
-	var primary_kind := _primary_weapon_kind()
-	player.play_attack()
-	for i in shots:
-		var dagger := Arrow.new()
-		dagger.damage = damage
-		dagger.pierce = 0
-		dagger.radius = 6.0
-		dagger.crit_chance = 0.55
-		dagger.crit_mult = 2.2
-		match primary_kind:
-			"spread_shot":
-				dagger.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
-				dagger.sprite_path = "res://assets/items/icon_spreadshot.png"
-				dagger.scale_mul = 0.85
-			"arrow":
-				dagger.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
-				dagger.sprite_path = "res://assets/items/arrow.png"
-			"venom":
-				dagger.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
-				dagger.sprite_path = "res://assets/items/icon_venom.png"
-			"boomerang":
-				dagger.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
-				dagger.sprite_path = "res://assets/items/icon_boomerang.png"
-				dagger.spin = 20.0
-			"chakram":
-				dagger.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
-				dagger.sprite_path = "res://assets/items/icon_chakram.png"
-				dagger.spin = 22.0
-			_:
-				dagger.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
-				dagger.sprite_path = "res://assets/items/sword.png"
-				dagger.spin = 24.0
-				dagger.scale_mul = 0.95
-		dagger.trail = true
-		dagger.trail_col = col
-		dagger.life = 0.92 * char_range
-		dagger.position = player.position + Vector2(randf_range(-5.0, 5.0), randf_range(-5.0, 5.0))
-		var spread := (float(i) - float(shots - 1) / 2.0) * 0.105
-		dagger.velocity = dir.rotated(spread + randf_range(-0.025, 0.025)) * 920.0
-		add_child(dagger)
-	_spawn_proc_fx("burst", player.position + dir * 22.0, 42.0, col, 0.20, dir)
-	play_sfx("shoot", -10.0, 0.06)
-	shake_t = maxf(shake_t, 0.07)
-
-
-# 창 — 돌파 찌르기: 짧은 무적 돌진 뒤 일직선의 적을 모두 관통한다.
-func _fire_spear_active(dir: Vector2) -> void:
-	var element := _active_skill_element()
-	var col: Color = ELEMENT_COL.get(element, Color(0.8, 0.9, 1.0))
-	var ice_variant: bool = equipped.get("weapon", {}).is_empty() and _primary_weapon_kind() == "ice_lance"
-	var lunge_target := player.position + dir * 78.0
-	if stage_layout:
-		lunge_target = stage_layout.resolve_move(player.position, lunge_target, player.radius)
-	else:
-		lunge_target.x = clampf(lunge_target.x, player.radius, player.world_size.x - player.radius)
-		lunge_target.y = clampf(lunge_target.y, player.radius, player.world_size.y - player.radius)
-	player.position = lunge_target
-	player.invuln = maxf(player.invuln, 0.24)
-	player.play_attack()
-	var spear := Arrow.new()
-	spear.damage = _weapon_active_damage(146.0, false)
-	spear.pierce = 99
-	spear.radius = 11.0
-	spear.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
-	spear.sprite_path = "res://assets/items/icon_icelance.png" if ice_variant else "res://assets/items/icon_spear.png"
-	spear.scale_mul = 1.65
-	spear.trail = true
-	spear.trail_col = col
-	if ice_variant:
-		spear.slow_amount = 0.58
-		spear.slow_time = 2.2
-		spear.fx_hit = FxMatrix.resolve("impact", _fx_element())
-	spear.life = 1.05 * char_range
-	spear.position = player.position
-	spear.velocity = dir * 980.0
-	add_child(spear)
-	_spawn_proc_fx("slash", player.position, 92.0, col, 0.22, dir, player.position + dir * 92.0)
-	play_sfx("dash", -8.0, 0.08)
-	shake_t = maxf(shake_t, 0.11)
-
-
-# 궁극기: 화면 전역 대형 폭발 (능동 스킬 Phase 1). 게이지 소모.
 func _fire_ultimate() -> void:
 	if state != State.PLAYING or player == null:
 		return
@@ -9171,6 +8972,23 @@ func _skill_nova(def: Dictionary, damage: float, effect: String) -> void:
 	play_sfx("hit", -10.0, 0.1)
 
 
+# take_damage 시그니처가 대상마다 다르다. Enemy는 (d, crit, dot, element) 4인자,
+# Boss는 (d, crit, element) 3인자, Breakable은 (d, crit) 2인자다. 스킬은 이 셋을 다
+# 때리므로 여기 한 곳에서 분기한다. 예전엔 무기마다 자기가 아는 대상만 때려서 문제가
+# 드러나지 않았는데, 스킬이 광역으로 전부 훑으면서 터졌다(실제 렌더에서 잡음).
+func _deal_damage(target, amount: float, crit: bool, element: String) -> void:
+	if target is Enemy:
+		target.take_damage(amount, crit, false, element)
+	elif target is Boss:
+		target.take_damage(amount, crit, element)
+	elif target.has_method("take_damage"):
+		# 던전 목표물(화로·균열)은 Enemy와 같은 4인자다. 나머지는 2인자로 떨어진다.
+		if target.has_method("progress_ratio") or target.has_method("is_completed"):
+			target.take_damage(amount, crit, false, element)
+		else:
+			target.take_damage(amount, crit)
+
+
 # 원소 규칙을 적중에 덧붙인다. 배수가 아니라 규칙이라 여기서만 처리한다.
 func _hit_with_effect(target, damage: float, effect: String, push_dir: Vector2) -> void:
 	var dealt := damage
@@ -9178,7 +8996,7 @@ func _hit_with_effect(target, damage: float, effect: String, push_dir: Vector2) 
 		# 처형: 빈사 상태의 적에게 추가 피해. 잡몹 정리 속도를 올린다.
 		if float(target.hp) <= float(target.max_hp) * 0.25:
 			dealt *= 1.6
-	target.take_damage(dealt, true, attack_element)
+	_deal_damage(target, dealt, true, attack_element)
 	match effect:
 		"burn":
 			if target.has_method("apply_slow"):
@@ -9225,7 +9043,7 @@ func _chain_to_nearby(from_target, damage: float, count: int) -> void:
 			continue
 		if origin.distance_to((e as Node2D).position) > 150.0:
 			continue
-		e.take_damage(damage, false, attack_element)
+		_deal_damage(e, damage, false, attack_element)
 		spawn_fx_form("impact", (e as Node2D).position, 40.0)
 		hits += 1
 
@@ -10575,12 +10393,17 @@ func _build_ui(s: Vector2) -> void:
 	ult_bar_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	ult_bar_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	hud.add_child(ult_bar_label)
-	# 현재 무기 E 이름 / Space 회피 상태 표시 (궁극 바 위)
+	# Q/E/R/F 스킬바 (궁극 바 위). 아이콘 + 쿨다운 덮개 + 남은 초를 함께 보여 준다.
+	skill_bar = SkillBar.new()
+	skill_bar.size = Vector2(SkillBar.SLOT * 5.0 + SkillBar.GAP * 4.0, SkillBar.SLOT)
+	skill_bar.position = Vector2(s.x / 2.0 - skill_bar.size.x * 0.5, s.y - 108)
+	hud.add_child(skill_bar)
+	# 스킬 이름 한 줄 (아이콘만으로는 뭘 배웠는지 기억이 안 난다)
 	skill_hud_label = Label.new()
-	skill_hud_label.position = Vector2(s.x / 2.0 - 240, s.y - 54)
-	skill_hud_label.size = Vector2(480, 18)
+	skill_hud_label.position = Vector2(s.x / 2.0 - 260, s.y - 56)
+	skill_hud_label.size = Vector2(520, 18)
 	skill_hud_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	skill_hud_label.add_theme_font_size_override("font_size", 12)
+	skill_hud_label.add_theme_font_size_override("font_size", 11)
 	skill_hud_label.add_theme_constant_override("outline_size", 3)
 	skill_hud_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	skill_hud_label.add_theme_color_override("font_color", Color(0.7, 0.95, 1.0))
