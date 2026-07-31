@@ -67,18 +67,10 @@ var _death_t := 0.0
 
 # 현재 방향에 맞는 모션 프레임 (없으면 south 폴백). 서(w)는 동(e)을 반전해 씀.
 func _mframes(motion: String) -> Array:
-	var key: String = _stage_data.get("key", "corvius_1")
-	var base := "res://assets/anim/%s_%s" % [key, motion]
-	var suf := ""
-	if _dir == "n":
-		suf = "_n"
-	elif _dir == "e" or _dir == "w":
-		suf = "_e"
-	if suf != "":
-		var f: Array = Assets.frames(base + suf)
-		if f.size() > 0:
-			return f
-	return Assets.frames(base)
+	# 1방향 + 좌우 반전이 확정 아트 파이프라인이다(전면 재생산 때 결정).
+	# 예전 4방향 시절의 _n/_e 폴더 조회가 남아 있었는데, 그 폴더는 하나도 없어서
+	# 모든 프레임 선택마다 빈 조회만 하고 폴백했다. _dir 는 반전 판정에만 쓴다.
+	return Assets.frames("res://assets/anim/%s_%s" % [_stage_data.get("key", "corvius_1"), motion])
 
 
 func play_attack() -> void:
@@ -188,7 +180,6 @@ func set_stage(s: int) -> void:
 		stages_data = GameConfig.char_stages("corvius")
 	stage = clamp(s, 0, stages_data.size() - 1)
 	# 외형·애니는 항상 기본(0단계) 고정 — 레벨업 시 겉모습 진화 없음(능력치만 강화).
-	# 4방향 애니가 기본 외형에만 있으므로 이렇게 하면 항상 작동.
 	_stage_data = stages_data[0]
 	radius = BASE_RADIUS * float(_stage_data["scale"])
 	# 진화 능력치 강화 (단계 상승분만 반영, 중복 방지)
@@ -279,7 +270,7 @@ func _draw() -> void:
 	if aura.a > 0.0:
 		draw_circle(Vector2.ZERO, r + 8.0, aura)
 
-	# 애니메이션 프레임 선택: 사망 > 피격 > 대시 > 공격 > 걷기 > 대기 (4방향 대응)
+	# 애니메이션 프레임 선택: 사망 > 피격 > 대시 > 공격 > 걷기 > 대기 (1방향 + 좌우 반전)
 	var tex: Texture2D = null
 	if _dying:
 		var fd: Array = _mframes("death")

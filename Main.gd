@@ -555,7 +555,6 @@ var fx_level := 2          # 이펙트 강도 0=끔 1=약함 2=보통 3=화려�
 var shake_enabled := true  # 화면 흔들림 (옵션)
 var _dmgnum := 0   # 활성 데미지 숫자 개수 (대량 피격 시 성능 상한)
 var ui_overlay: CanvasLayer   # 룰렛 등 런타임 오버레이 부착용
-var postfx: PostFX            # 레트로 후처리(레버2) — F4로 프리셋 순환
 var flash_overlay: FlashOverlay   # 레벨업·진화 화면 플래시
 var _slowmo_until := 0        # 슬로우모션 종료 시각(ms, 실시간)
 var skill_label: Label
@@ -8541,10 +8540,6 @@ func _unhandled_input(event: InputEvent) -> void:
 		if perf_label:
 			perf_label.visible = show_perf
 		get_viewport().set_input_as_handled()
-	# F4: 레트로 도트 후처리 프리셋 순환 (원본 → 640p → 480p → 427p)
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F4:
-		if postfx:
-			postfx.cycle()
 		get_viewport().set_input_as_handled()
 
 
@@ -9809,11 +9804,9 @@ func _refresh_extraction_panel() -> void:
 # ---------------------------------------------------------------------
 func _build_ui(s: Vector2) -> void:
 	# 레트로 후처리(레버2): 월드(layer0) 위, HUD 아래에 얹어 월드만 픽셀화. 기본 OFF.
-	postfx = PostFX.new()
-	add_child(postfx)
 
 	var hud := CanvasLayer.new()
-	hud.layer = 2   # PostFX(1) 위 → HUD는 항상 선명
+	hud.layer = 2
 	add_child(hud)
 
 	# ─ 뱀서식 HUD ─

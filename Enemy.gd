@@ -70,8 +70,6 @@ var is_split := false    # 분열로 생성된 새끼 (재분열 방지)
 # setup()에서 한 번만 해석하는 스프라이트 캐시 (_draw의 매 프레임 문자열 생성 제거).
 var _frames_attack: Array = []
 var _frames_walk: Array = []
-var _frames_walk_n: Array = []
-var _frames_walk_e: Array = []
 var _sprite_tex: Texture2D = null
 # 죽음 연출 (스쿼시→팝→페이드). 죽는 순간 잠깐 살아있는 상태로 애니 재생 후 소멸.
 var _dying := false
@@ -312,8 +310,6 @@ func setup(t: Dictionary, time: float) -> void:
 	var akey := key if sprite.is_empty() else sprite.get_file().get_basename()
 	_frames_attack = Assets.frames("res://assets/anim/%s_attack" % akey)
 	_frames_walk = Assets.frames("res://assets/anim/%s_walk" % akey)
-	_frames_walk_n = Assets.frames("res://assets/anim/%s_walk_n" % akey)
-	_frames_walk_e = Assets.frames("res://assets/anim/%s_walk_e" % akey)
 	_sprite_tex = Assets.tex(sprite)
 	if _sprite_tex == null:
 		_sprite_tex = Assets.tex("res://assets/enemies/%s.png" % key)
@@ -701,12 +697,9 @@ func _draw() -> void:
 	elif _attacking and _frames_attack.size() > 0:
 		tex = _frames_attack[int(_atk_t * 12.0) % _frames_attack.size()]
 	if tex == null:
-		# 걷기 4방향 (없으면 south 폴백, 서=동 반전)
+		# 걷기: 1방향 + 좌우 반전 (확정 아트 파이프라인). 예전 4방향 분기가 남아
+		# 있었지만 _walk_n/_walk_e 폴더는 하나도 없어 항상 이 폴백만 탔다.
 		var fw: Array = _frames_walk
-		if _dir == "n" and _frames_walk_n.size() > 0:
-			fw = _frames_walk_n
-		elif (_dir == "e" or _dir == "w") and _frames_walk_e.size() > 0:
-			fw = _frames_walk_e
 		if fw.size() > 0:
 			# 속도 연동 재생: 느린 몹은 어슬렁, 빠른 몹은 종종걸음 (7프레임으로도 자연스러운 보행)
 			var wfps: float = 9.0 * clamp(speed / 55.0, 0.7, 1.55)
