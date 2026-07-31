@@ -32,7 +32,6 @@ var crit_mult := 2.0        # 치명타 피해 배수 (광전사의 인장)
 
 var radius := BASE_RADIUS
 var invuln := 0.0           # 피격 무적 시간
-var magnet_t := 0.0         # 자석 아이템 버프 남은 시간
 var slow_t := 0.0           # 빙결 둔화 남은 시간 (아이스 퀸)
 var environment_speed_mult := 1.0   # 빙하 누적 냉기처럼 환경이 주는 비누적 이동 배수
 var dodge_t := 0.0          # 공용 회피 이동 남은 시간
@@ -45,7 +44,7 @@ var _dodge_dir := Vector2(0, -1)
 var moving := false   # 이번 프레임 이동 여부 (스폰 편향용 — 도망칠 틈)
 
 func current_pickup_radius() -> float:
-	return pickup_radius + (220.0 if magnet_t > 0.0 else 0.0)
+	return pickup_radius
 var world_size := Vector2(2400, 2400)   # Main이 설정
 var stage_layout = null    # 독립 맵 이동 가능 영역 (Main이 런 시작 시 설정)
 
@@ -205,8 +204,6 @@ func _process(delta: float) -> void:
 		invuln = maxf(0.0, invuln - delta)
 	if dodge_cd > 0.0:
 		dodge_cd = maxf(0.0, dodge_cd - delta)
-	if magnet_t > 0.0:
-		magnet_t = maxf(0.0, magnet_t - delta)
 	var eff_speed := speed * clampf(environment_speed_mult, 0.25, 1.0) * (0.55 if slow_t > 0.0 else 1.0)
 	if dodge_t > 0.0:
 		# 프레임이 크게 끊겨도 총 회피 거리가 DODGE_DISTANCE를 넘지 않게 남은 시간만 적분한다.
@@ -344,9 +341,6 @@ func _draw() -> void:
 	# 읽을 수 있어야 하기 때문이다. 피격 무적은 위의 붉은 플래시로 대신한다.
 	if dodge_t > 0.0 and invuln > 0.0:
 		draw_arc(Vector2.ZERO, r + 5.0, 0.0, TAU, 24, Color(0.45, 0.9, 1.0, 0.9), 2.0)
-	# 자석 버프 표시 (흡수 범위 링)
-	if magnet_t > 0.0:
-		draw_arc(Vector2.ZERO, current_pickup_radius(), 0.0, TAU, 48, Color(0.7, 0.5, 1.0, 0.35), 2.0)
 	# 자동공격 사거리. 표적이 없어 무기가 멈춰 있을 때만 또렷하게 그려서
 	# "왜 안 쏘는지"를 알려 주고, 전투 중에는 거의 안 보이게 죽인다.
 	if attack_range > 0.0:

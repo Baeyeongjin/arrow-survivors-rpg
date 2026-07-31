@@ -272,7 +272,7 @@ static func stages() -> Array:
 		{"name": "묘지",   "boss": "boss_1", "boss_name": "묘지 수호자", "tint": Color(0.70, 0.70, 0.78),
 			"element": "phys", "boss_weak": "",
 			"rule": "영혼 봉인비 3곳 점령 · 2:30 무덤 기사 · 묘지 수호자 영혼 방패",
-			"field_passives": ["armor", "wings", "magnet", "spinach"],
+			"field_passives": ["armor", "wings", "heart", "spinach"],
 			"props": ["res://assets/props/s1_a.png", "res://assets/props/s1_b.png"]},
 		{"name": "지옥",   "boss": "boss_2", "boss_name": "화염 군주", "tint": Color(0.85, 0.55, 0.50),
 			"element": "fire", "boss_weak": "ice",

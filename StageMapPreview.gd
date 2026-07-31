@@ -9,7 +9,7 @@ var reveal_names := false
 
 const RELIC_NAMES := {
 	"spinach": "시금치", "armor": "갑옷", "wings": "날개", "tome": "빈 마도서",
-	"candela": "촛대", "heart": "공허의 심장", "magnet": "자석돌", "tomato": "토마토",
+	"candela": "촛대", "heart": "공허의 심장", "tomato": "토마토",
 	"duplicator": "복제의 룬", "spellbinder": "봉인의 서", "crown": "왕관",
 	"stone_mask": "돌가면", "clover": "네잎클로버", "keen_eye": "매의 눈",
 	"berserker": "광전사의 인장", "vitality": "생명력", "iron_will": "강철의지",

@@ -199,7 +199,7 @@ const ACHIEVEMENTS := [
 # 업적 달성 시 다음 런부터 자동 적용되는 영구 유물. 별도 슬롯을 차지하지 않는다.
 const RELIC_DEFS := [
 	{"key":"yellow_sign", "name":"노란 표식", "desc":"도감의 모든 진화·유니온 재료 공개", "unlock":"survivor", "icon_key":"clover", "icon":"res://assets/items/relic_yellow_sign.png"},
-	{"key":"milky_map", "name":"은하 지도", "desc":"일시정지 화면에 플레이어·남은 유물 지도 표시", "unlock":"first_win", "icon_key":"magnet", "icon":"res://assets/items/relic_milky_map.png"},
+	{"key":"milky_map", "name":"은하 지도", "desc":"일시정지 화면에 플레이어·남은 유물 지도 표시", "unlock":"first_win", "icon_key":"clover", "icon":"res://assets/items/relic_milky_map.png"},
 	{"key":"great_gospel", "name":"위대한 복음", "desc":"매 런 시작 무기 +1레벨", "unlock":"no_revive", "icon_key":"tome", "icon":"res://assets/items/relic_great_gospel.png"},
 	{"key":"witch_tear", "name":"마녀의 눈물", "desc":"저주 +12% · 경험치·골드 +12%", "unlock":"slayer", "icon_key":"skull", "icon":"res://assets/items/relic_witch_tear.png"},
 	{"key":"black_chalice", "name":"검은 성배", "desc":"모든 피해에 흡혈 1.5% 부여", "unlock":"legend_weapon", "icon_key":"heart", "icon":"res://assets/items/relic_black_chalice.png"},
@@ -207,7 +207,7 @@ const RELIC_DEFS := [
 	{"key":"golden_mask", "name":"황금 가면", "desc":"골드 획득 +15%", "unlock":"rich", "icon_key":"stone_mask", "icon":"res://assets/items/relic_golden_mask.png"},
 	{"key":"metaglio", "name":"강철 문장", "desc":"방어력 +1 · 재생 +0.25/초", "unlock":"hard_clear", "icon_key":"armor", "icon":"res://assets/items/relic_metaglio.png"},
 	{"key":"abyss_eye", "name":"심연의 눈", "desc":"경험치 획득 +10%", "unlock":"evolved", "icon_key":"tome", "icon":"res://assets/items/relic_abyss_eye.png"},
-	{"key":"soul_lantern", "name":"영혼 등불", "desc":"자석 범위 +30", "unlock":"knife_thrower", "icon_key":"magnet", "icon":"res://assets/items/relic_soul_lantern.png"},
+	{"key":"soul_lantern", "name":"영혼 등불", "desc":"자석 범위 +30", "unlock":"knife_thrower", "icon_key":"wings", "icon":"res://assets/items/relic_soul_lantern.png"},
 	{"key":"fallen_halo", "name":"타락한 광륜", "desc":"이동속도 +8%", "unlock":"abyss", "icon_key":"wings", "icon":"res://assets/items/relic_fallen_halo.png"},
 	{"key":"hungry_heart", "name":"굶주린 심장", "desc":"최대 체력 +15%", "unlock":"combo_master", "icon_key":"heart", "icon":"res://assets/items/relic_hungry_heart.png"},
 ]
@@ -254,7 +254,6 @@ const PICON := {
 	"tome": "res://assets/items/icon_tome.png",
 	"candela": "res://assets/items/icon_candela.png",
 	"heart": "res://assets/items/icon_voidheart.png",
-	"magnet": "res://assets/items/magnet.png",
 	"tomato": "res://assets/items/icon_tomato.png",
 	"duplicator": "res://assets/items/icon_clone.png",
 	"spellbinder": "res://assets/items/icon_spellbinder.png",
@@ -2834,7 +2833,7 @@ func _random_floor_item() -> String:
 	# RPG 정리(사장님 결정): 바닥 아이템은 "자원 보충" 2종만 남긴다.
 	# 로저리(화면 전멸)와 시계(4초 전체 정지)는 우연히 위기를 무효화해, 사거리 제한과
 	# 몬스터 상향으로 만든 압박을 확률로 지웠다. 자석 버프 픽업은 빼되 자석 범위 자체는
-	# 자석돌 패시브·영혼 등불 유물·메타 성장(pickup_radius)이 계속 담당한다.
+	# 영혼 등불 유물·메타 성장(pickup_radius)이 계속 담당한다(자석돌 패시브도 제거됨).
 	#   하트 = 체력 자원 / 기력 물약 = 스킬 자원
 	return "heart" if randf() < 0.60 else "potion"
 
@@ -4023,7 +4022,7 @@ func _open_bonus_chest() -> void:
 	for i in count:
 		if opts.is_empty():
 			run_gold += 20
-			rewards.append({"icon": Assets.tex(PICON.get("magnet", "")), "name": "골드 +20"})
+			rewards.append({"icon": Assets.tex(PICON.get("clover", "")), "name": "골드 +20"})
 			continue
 		var c: Dictionary = _weighted_choice(opts)   # 보유 무기/패시브 우대(2.4배) — 레벨업과 동일
 		(c["act"] as Callable).call()
@@ -6943,7 +6942,6 @@ func _passive_defs() -> Dictionary:
 		"tome": {"name": "빈 마도서", "desc": "쿨다운 -8%"},
 		"candela": {"name": "촛대", "desc": "범위 +12%"},
 		"heart": {"name": "공허의 심장", "desc": "최대체력 +25"},
-		"magnet": {"name": "자석돌", "desc": "자석 범위 +25"},
 		"tomato": {"name": "토마토", "desc": "재생 +0.8/초"},
 		"duplicator": {"name": "복제의 룬", "desc": "투사체 +1 (뱀서 핵심)"},
 		"spellbinder": {"name": "봉인의 서", "desc": "효과 범위 +12%"},
@@ -6975,8 +6973,6 @@ func _add_passive(key: String) -> void:
 		"heart":
 			player.max_hp += 25.0
 			player.hp += 25.0
-		"magnet":
-			player.pickup_radius += 25.0
 		"tomato":
 			player.regen += 0.8
 		"duplicator":
