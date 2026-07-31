@@ -3,6 +3,7 @@ extends SceneTree
 const MainScript = preload("res://Main.gd")
 const PlayerScript = preload("res://Player.gd")
 const ArrowScript = preload("res://Arrow.gd")
+const FxMatrixScript = preload("res://FxMatrix.gd")
 
 var failed := false
 
@@ -105,25 +106,30 @@ func _initialize() -> void:
 	_expect("그림자 난무" in hud.text and "Space 회피" in hud.text,
 		"전투 HUD에 현재 무기 E 이름과 회피가 함께 보여야 함")
 
-	# 같은 고속 난사 문법이라도 캐릭터 시작 무기는 자기 투사체를 유지한다.
+	# 투사체 아트는 이제 무기 이름이 아니라 캐릭터 원소가 정한다(FxMatrix bolt 형태).
+	# 그래서 "총탄이냐 단검이냐"가 아니라 "발수"와 "캐릭터 원소 투사체냐"를 검증한다.
 	game.equipped = {"weapon": {}, "armor": {}, "trinket": {}}
 	game.sel_char = {"key": "django", "weapon": "spread_shot"}
 	game._sfx_cd["shoot"] = INF
 	game._fire_dagger_active(Vector2.RIGHT)
+	var django_bolt := FxMatrixScript.resolve_path("bolt", game._fx_element())
 	var bullet_count := 0
 	for child in game.get_children():
-		if child is Arrow and child.anim_dir == "res://assets/anim/proj_bullet":
+		if child is Arrow and child.anim_dir == django_bolt:
 			bullet_count += 1
-	_expect(bullet_count == 7, "장고의 속사 난무는 단검 대신 총탄 7발을 사용해야 함")
+	_expect(bullet_count == 7, "장고의 속사 난무는 7발이어야 함 (실제 %d)" % bullet_count)
 
 	game.sel_char = {"key": "isolde", "weapon": "ice_lance"}
 	game._sfx_cd["dash"] = INF
 	game._fire_spear_active(Vector2.RIGHT)
+	var isolde_bolt := FxMatrixScript.resolve_path("bolt", game._fx_element())
+	_expect(isolde_bolt != django_bolt,
+		"장고(물리)와 이졸데(냉기)의 투사체 아트가 같다 — 캐릭터 원소 구분이 안 됨")
 	var found_ice_lance := false
 	for child in game.get_children():
-		if child is Arrow and child.anim_dir == "res://assets/anim/proj_icelance":
+		if child is Arrow and child.anim_dir == isolde_bolt:
 			found_ice_lance = child.slow_amount > 0.0
-	_expect(found_ice_lance, "이졸데의 빙하 돌진은 둔화가 붙은 얼음창 투사체를 사용해야 함")
+	_expect(found_ice_lance, "이졸데의 빙하 돌진은 둔화가 붙은 냉기 투사체를 사용해야 함")
 
 	# 투사체 고유 치명타 수치가 실제 명중 계산에 반영되는지 검증한다.
 	var projectile = ArrowScript.new()

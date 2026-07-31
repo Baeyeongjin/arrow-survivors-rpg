@@ -1162,7 +1162,15 @@ func _autoshot() -> void:
 	var void_preview := ""
 	var castle_preview := ""
 	for arg in args:
-		if arg.begins_with("--active-preview="):
+		if arg.begins_with("--preview-char="):
+			# 이펙트가 캐릭터 원소를 따라간다는 것을 실제 렌더로 비교하기 위한 개발 옵션.
+			# 같은 스킬을 캐릭터만 바꿔 찍으면 색·형태가 달라져야 한다.
+			var requested_char := arg.trim_prefix("--preview-char=")
+			for candidate in GameConfig.characters():
+				if str(candidate.get("key", "")) == requested_char:
+					sel_char = candidate
+					break
+		elif arg.begins_with("--active-preview="):
 			var requested_active := arg.trim_prefix("--active-preview=")
 			if WEAPON_ACTIVE_DEFS.has(requested_active):
 				active_preview = requested_active
@@ -2935,7 +2943,7 @@ func _fire_storm_bow() -> void:
 		a.damage = dmg
 		a.pierce = 99
 		a.radius = 9.0
-		a.anim_dir = "res://assets/anim/proj_tempest"
+		a.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 		a.life = 2.0 * char_range
 		a.position = player.position
 		a.velocity = basedir.rotated((i - 2.5) * 0.16) * 720.0
@@ -2957,8 +2965,8 @@ func _fire_frostfire() -> void:
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if is_instance_valid(e) and pos.distance_to(e.position) <= rad and e.has_method("apply_slow"):
 			e.apply_slow(0.55, 2.2)
-	spawn_fx("fx_meteorshower", pos, rad * 1.6)
-	spawn_fx("fx_absolzero", pos, rad * 1.4)
+	spawn_fx_form("impact", pos, rad * 1.6)
+	spawn_fx_form("impact", pos, rad * 1.4)
 
 
 func _fire_cyclone() -> void:
@@ -2974,7 +2982,7 @@ func _fire_cyclone() -> void:
 	for objective in _combat_objectives():
 		if is_instance_valid(objective) and player.position.distance_to(objective.position) <= rad + objective.radius:
 			objective.take_damage(dmg)
-	spawn_fx("fx_whirl", player.position, rad * 2.0)
+	spawn_fx_form("zone", player.position, rad * 2.0)
 
 
 func _fire_plague_bomb() -> void:
@@ -2987,7 +2995,7 @@ func _fire_plague_bomb() -> void:
 	for e in get_tree().get_nodes_in_group("enemies"):
 		if is_instance_valid(e) and pos.distance_to(e.position) <= rad and e.has_method("apply_slow"):
 			e.apply_slow(0.55, 3.0)
-	spawn_fx("fx_plague", pos, rad * 1.7)
+	spawn_fx_form("zone", pos, rad * 1.7)
 
 
 func _fire_divine_storm() -> void:
@@ -3023,7 +3031,7 @@ func _fire_blade_dance() -> void:
 	for objective in _combat_objectives():
 		if is_instance_valid(objective) and player.position.distance_to(objective.position) <= rad + objective.radius:
 			objective.take_damage(dmg)
-	spawn_fx("fx_inferno", player.position, rad * 2.0)
+	spawn_fx_form("zone", player.position, rad * 2.0)
 
 
 # 숨겨진 무기: 칼 던지기 (업적 「칼을 던지면 되네?」 해금)
@@ -3046,9 +3054,9 @@ func _fire_knife() -> void:
 		a.spin = 22.0   # 회전하며 날아가는 단검
 		a.scale_mul = 0.9
 		if evo:
-			a.anim_dir = "res://assets/anim/proj_thousandknife"
+			a.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 		else:
-			a.anim_dir = "res://assets/anim/proj_knife"
+			a.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 		a.life = 1.4 * char_range
 		a.position = player.position + Vector2(randf_range(-6, 6), randf_range(-6, 6))
 		a.velocity = dir.rotated((i - (n - 1) / 2.0) * 0.16 + randf_range(-0.08, 0.08)) * 900.0
@@ -3076,10 +3084,10 @@ func _fire_fireball() -> void:
 			meteor.trail = true
 			meteor.trail_col = Color(1.0, 0.26, 0.06)
 			meteor.visual_kind = "meteor"
-			meteor.anim_dir = "res://assets/anim/proj_meteor"
+			meteor.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 			meteor.explode_radius = (68.0 + lv * 8.0) * _area_scale() * WPN_AREA
 			meteor.explode_damage = dmg * 0.72
-			meteor.fx_hit = "fx_meteorshower"
+			meteor.fx_hit = FxMatrix.resolve("impact", _fx_element())
 			meteor.fx_hit_size = meteor.explode_radius * 1.8
 			meteor.position = player.position
 			meteor.velocity = dir.rotated((shot_i - 1) * 0.18) * (520.0 + shot_i * 35.0)
@@ -3091,7 +3099,7 @@ func _fire_fireball() -> void:
 	a.pierce = 0
 	a.life = 1.5 * char_range
 	a.trail = true
-	a.anim_dir = "res://assets/anim/proj_fireball"
+	a.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 	a.upright = true   # 불꽃은 회전 없이 일렁이는 프레임 애니로 (진행방향 회전 시 어색)
 	a.sprite_path = "res://assets/items/icon_fireball.png"
 	a.explode_radius = (56.0 + lv * 7.0) * _area_scale() * WPN_AREA * (1.5 if evo else 1.0)
@@ -3101,7 +3109,7 @@ func _fire_fireball() -> void:
 		a.slow_amount = 0.3
 		a.slow_time = 1.2
 		a.explode_radius *= 1.3
-	a.fx_hit = "fx_meteorshower" if evo else "fx_explosion"   # 진화: 운석우
+	a.fx_hit = FxMatrix.resolve("impact", _fx_element())   # 진화: 운석우
 	a.fx_hit_size = a.explode_radius * 2.0
 	a.position = player.position
 	a.velocity = dir * 560.0
@@ -3127,7 +3135,7 @@ func _fire_boomerang() -> void:
 		a.life = 2.2 * char_range   # 나갔다 돌아올 시간 확보
 		a.trail = true
 		a.boomerang = true          # 던져서 되돌아오는 궤도 (뱀서식)
-		a.anim_dir = "res://assets/anim/proj_scythe" if evo else "res://assets/anim/proj_boomerang"
+		a.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 		a.sprite_path = "res://assets/items/icon_boomerang.png"
 		a.position = player.position
 		a.velocity = dir.rotated((i - (n - 1) / 2.0) * 0.35) * 620.0
@@ -3179,10 +3187,10 @@ func _fire_chakram() -> void:
 		a.bounce = 3 + int(lv / 2.0) + (3 if evo else 0)   # 튕김 횟수 (레벨업으로 증가)
 		a.radius = 8.0
 		a.sprite_path = "res://assets/items/icon_chakram.png"
-		a.anim_dir = "res://assets/anim/proj_chakram"   # 회전 원반 프레임 애니
+		a.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())   # 회전 원반 프레임 애니
 		a.spin = 16.0   # 빙글빙글 회전 날붙이
 		a.scale_mul = 1.3
-		a.fx_hit = "fx_hit"   # 차크람: 기본 타격 스파크 (쌍검 모양 fx_xslash는 원반에 안 맞아 되돌림)
+		a.fx_hit = FxMatrix.resolve("impact", _fx_element())   # 차크람: 기본 타격 스파크 (쌍검 모양 fx_xslash는 원반에 안 맞아 되돌림)
 		a.life = 2.4 * char_range
 		a.position = player.position
 		a.velocity = basedir.rotated((i - (n - 1) / 2.0) * 0.4) * 520.0
@@ -3206,7 +3214,7 @@ func _fire_spear() -> void:
 		a.pierce = 99
 		a.radius = 9.0
 		a.sprite_path = "res://assets/items/icon_spear.png"
-		a.anim_dir = "res://assets/anim/proj_spear"
+		a.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 		a.scale_mul = 1.4
 		a.trail = true
 		a.trail_col = Color(0.8, 0.9, 1.0)
@@ -3261,7 +3269,7 @@ func _fire_flamethrower() -> void:
 		a.sprite_path = "res://assets/items/icon_flamethrower.png"
 		a.trail = true
 		a.trail_col = Color(1.0, 0.5, 0.1)
-		a.fx_hit = "fx_explosion"
+		a.fx_hit = FxMatrix.resolve("impact", _fx_element())
 		a.life = 0.42 * char_range   # 근거리
 		a.position = player.position
 		a.velocity = basedir.rotated(off) * randf_range(360.0, 520.0)
@@ -3290,11 +3298,11 @@ func _fire_ice_lance() -> void:
 		a.slow_amount = 0.4
 		a.slow_time = 1.4
 		a.sprite_path = "res://assets/items/icon_icelance.png"
-		a.anim_dir = "res://assets/anim/proj_icelance"
+		a.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 		a.scale_mul = 1.2
 		a.trail = true
 		a.trail_col = Color(0.6, 0.85, 1.0)
-		a.fx_hit = "fx_frost"
+		a.fx_hit = FxMatrix.resolve("impact", _fx_element())
 		a.life = 1.5 * char_range
 		a.position = player.position + perp * lane * spacing   # 벽처럼 옆으로 벌려 배치
 		a.velocity = basedir * 700.0                            # 전부 같은 방향 = 벽이 전진
@@ -3318,7 +3326,7 @@ func _fire_crossbow() -> void:
 		a.pierce = 99
 		a.radius = 10.0
 		a.sprite_path = "res://assets/items/icon_crossbow.png"
-		a.anim_dir = "res://assets/anim/proj_crossbow"
+		a.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 		a.scale_mul = 1.3
 		a.trail = true
 		a.trail_col = Color(0.85, 0.9, 0.7)
@@ -3344,10 +3352,10 @@ func _fire_holy_cross() -> void:
 		a.radius = 8.0
 		a.homing = 6.0
 		a.sprite_path = "res://assets/items/icon_holycross.png"
-		a.anim_dir = "res://assets/anim/proj_holycross"   # 회전 성십자 프레임 애니
+		a.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())   # 회전 성십자 프레임 애니
 		a.spin = 10.0
 		a.scale_mul = 1.15
-		a.fx_hit = "fx_holy"
+		a.fx_hit = FxMatrix.resolve("impact", _fx_element())
 		a.life = 0.9 * char_range   # 짧게: 슉 쏘고 사라짐
 		a.position = player.position
 		a.velocity = _seek_dir(i, basedir, targets) * 620.0
@@ -3373,7 +3381,7 @@ func _fire_poison_cloud() -> void:
 		var z := VoidZone.new()
 		# 반경 하향 (Lv8 기준 144 → 100). 크기 대신 중첩 독으로 "머무를 이유"를 만든다.
 		z.radius = (44.0 + lv * 7.0) * _area_scale() * WPN_AREA
-		z.anim_dir = "res://assets/anim/zone_poison"
+		z.anim_dir = FxMatrix.resolve_path("zone", _fx_element())
 		z.dps = dmg
 		z.pull = 0.0
 		z.col = Color(0.36, 0.58, 0.30)   # 형광 초록 → 탁한 늪색
@@ -3423,7 +3431,7 @@ func _fire_spread_shot() -> void:
 		a.pierce = 1   # 관통 2→1
 		a.radius = 7.0
 		a.sprite_path = "res://assets/items/icon_spreadshot.png"
-		a.anim_dir = "res://assets/anim/proj_bullet"
+		a.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 		a.trail = true
 		a.trail_col = Color(1.0, 0.85, 0.4)
 		a.life = 0.6 * char_range   # 사거리 재하향 (근~중거리 산탄)
@@ -3449,12 +3457,12 @@ func _fire_soul_bolt() -> void:
 		a.pierce = 1 + int(lv / 3.0)
 		a.radius = 8.0
 		a.sprite_path = "res://assets/items/icon_soulbolt.png"
-		a.anim_dir = "res://assets/anim/proj_soulbolt"
+		a.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 		a.upright = true   # 혼탄 에너지는 회전 없이 맥동
 		a.scale_mul = 1.2
 		a.trail = true
 		a.trail_col = Color(0.5, 0.9, 0.7)
-		a.fx_hit = "fx_arcane"   # 혼탄: 유령 마력 (뼈나선/유도해골과 구분)
+		a.fx_hit = FxMatrix.resolve("impact", _fx_element())   # 혼탄: 유령 마력 (뼈나선/유도해골과 구분)
 		a.life = 1.6 * char_range
 		a.position = player.position
 		a.velocity = dir * 620.0
@@ -3480,12 +3488,12 @@ func _fire_holy_beam() -> void:
 			a.pierce = 99
 			a.radius = 11.0
 			a.sprite_path = "res://assets/items/icon_holybeam.png"
-			a.anim_dir = "res://assets/anim/proj_holybeam"
+			a.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 			a.upright = true   # 성광선 빛기둥은 회전 없이 맥동
 			a.scale_mul = 1.5
 			a.trail = true
 			a.trail_col = Color(1.0, 0.95, 0.7)
-			a.fx_hit = "fx_judgment"   # 성광선: 심판의 빛 (성십자와 구분)
+			a.fx_hit = FxMatrix.resolve("impact", _fx_element())   # 성광선: 심판의 빛 (성십자와 구분)
 			a.life = 1.4 * char_range
 			a.position = player.position + (d as Vector2) * (18.0 * j)
 			a.velocity = (d as Vector2) * 780.0
@@ -3508,10 +3516,10 @@ func _fire_bone_spiral() -> void:
 		a.radius = 8.0
 		a.homing = 6.5
 		a.sprite_path = "res://assets/items/icon_bonespiral.png"
-		a.anim_dir = "res://assets/anim/proj_bonespiral"   # 회전 뼈나선 프레임 애니
+		a.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())   # 회전 뼈나선 프레임 애니
 		a.spin = 13.0
 		a.scale_mul = 1.2
-		a.fx_hit = "fx_shadowstorm"   # 뼈나선: 죽음의 폭풍 (혼탄/유도해골과 구분)
+		a.fx_hit = FxMatrix.resolve("impact", _fx_element())   # 뼈나선: 죽음의 폭풍 (혼탄/유도해골과 구분)
 		a.life = 0.95 * char_range   # 짧게
 		a.position = player.position
 		a.velocity = _seek_dir(i, basedir, targets) * 600.0
@@ -3569,11 +3577,11 @@ func _fire_axe() -> void:
 		a.pierce = 4 + int(lv / 2.0)
 		a.radius = 11.0
 		a.sprite_path = "res://assets/items/icon_axe.png"
-		a.anim_dir = "res://assets/anim/proj_axe"
+		a.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 		a.spin = 18.0   # 빙글빙글 도는 도끼
 		a.scale_mul = 1.4
 		a.gravity = 900.0   # 포물선 낙하
-		a.fx_hit = "fx_explosion"   # 도끼: 육중한 강타 폭발 (검 모양 fx_slash는 도끼에 안 맞아 되돌림)
+		a.fx_hit = FxMatrix.resolve("impact", _fx_element())   # 도끼: 육중한 강타 폭발 (검 모양 fx_slash는 도끼에 안 맞아 되돌림)
 		a.life = 1.8 * char_range
 		a.position = player.position
 		a.velocity = aim * randf_range(430.0, 520.0) + Vector2(0.0, -AXE_LOFT)
@@ -3595,12 +3603,12 @@ func _fire_homing_skull() -> void:
 		a.radius = 8.0
 		a.homing = 8.0
 		a.sprite_path = "res://assets/items/icon_homingskull.png"
-		a.anim_dir = "res://assets/anim/proj_homingskull"
+		a.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 		a.upright = true   # 유도해골은 회전 없이 부유
 		a.scale_mul = 1.25
 		a.trail = true
 		a.trail_col = Color(0.5, 1.0, 0.6)
-		a.fx_hit = "fx_shadow"
+		a.fx_hit = FxMatrix.resolve("impact", _fx_element())
 		a.life = 2.4 * char_range
 		a.position = player.position
 		a.velocity = Vector2.from_angle(ang) * 340.0
@@ -3623,9 +3631,9 @@ func _fire_thorn_burst() -> void:
 		a.radius = 9.0
 		a.homing = 7.0
 		a.sprite_path = "res://assets/items/icon_thornburst.png"
-		a.anim_dir = "res://assets/anim/proj_thornburst"   # 회전 가시 고리 프레임 애니
+		a.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())   # 회전 가시 고리 프레임 애니
 		a.spin = 20.0
-		a.fx_hit = "fx_quake_spike"   # 땅가시(Foozle Earth_Spike)
+		a.fx_hit = FxMatrix.resolve("impact", _fx_element())   # 땅가시(Foozle Earth_Spike)
 		a.life = 0.7 * char_range
 		a.position = player.position
 		a.velocity = _seek_dir(i, basedir, targets) * 600.0
@@ -3673,9 +3681,9 @@ func _fire_frost_ring() -> void:
 		a.slow_amount = 0.45
 		a.slow_time = 1.6
 		a.sprite_path = "res://assets/items/icon_frostring.png"
-		a.anim_dir = "res://assets/anim/proj_frostring"   # 회전 얼음 고리 프레임 애니
+		a.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())   # 회전 얼음 고리 프레임 애니
 		a.spin = 12.0
-		a.fx_hit = "fx_absolzero"   # 서리고리: 절대영도 (얼음창과 구분)
+		a.fx_hit = FxMatrix.resolve("impact", _fx_element())   # 서리고리: 절대영도 (얼음창과 구분)
 		a.life = 0.85 * char_range   # 짧게
 		a.position = player.position
 		a.velocity = _seek_dir(i, basedir, targets) * 560.0
@@ -3727,7 +3735,7 @@ func _fire_blood_sword() -> void:
 		df.max_life = df.life
 		add_child(df)
 	_break_near(player.position + dir * rad * 0.5, rad * 0.7, dmg)
-	spawn_fx("fx_cleave_blood", player.position, rad * 1.55, dir.angle() + SLASH_ART_FIX, 24.0)
+	spawn_fx_form("slash", player.position, rad * 1.55, dir.angle() + SLASH_ART_FIX, 24.0)
 	player.play_attack()
 	play_sfx("shoot", -12.0, 0.08)
 
@@ -3750,10 +3758,10 @@ func _fire_venom() -> void:
 		a.life = 1.5 * char_range
 		a.trail = true
 		a.sprite_path = "res://assets/items/icon_venom.png"
-		a.anim_dir = "res://assets/anim/proj_venom"
+		a.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 		a.slow_amount = 0.5 if evo else 0.35
 		a.slow_time = 1.6
-		a.fx_hit = "fx_plague" if evo else "fx_poison"
+		a.fx_hit = FxMatrix.resolve("impact", _fx_element())
 		a.fx_hit_size = 66.0
 		# 조합 「맹독 화염」: 명중 시 화염 폭발 추가
 		if combos.has("venom_fire"):
@@ -3839,7 +3847,7 @@ func _fire_excalibur() -> void:
 	a.life = 1.4 * char_range
 	a.trail = true
 	a.sprite_path = "res://assets/items/icon_excalibur.png"
-	a.anim_dir = "res://assets/anim/proj_excalibur"
+	a.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 	a.explode_radius = (50.0 + lv * 6.0) * _area_scale() * WPN_AREA
 	a.explode_damage = (18.0 + lv * 6.0) * player.damage_mult * char_ranged
 	a.fx_hit = "bolt"   # 벼락창: 코드 지그재그 낙뢰 (fx_thunder 기둥 아트 폐기)
@@ -3875,7 +3883,7 @@ func _fire_void_orb() -> void:
 # 3점사: 최근접 적에게 3연발 빠른 탄
 # 총구 화염 이펙트 (픽셀 애니 + 즉시 도형 플래시)
 func _muzzle(pos: Vector2, dir: Vector2, size: float = 44.0) -> void:
-	spawn_fx("fx_gunburst", pos, size, dir.angle())
+	spawn_fx_form("cast", pos, size, dir.angle())
 	var fx := Effect.new()
 	fx.kind = "burst"
 	fx.position = pos
@@ -3905,7 +3913,7 @@ func _fire_cleave() -> void:
 			e.take_damage(dmg)
 	# 검기 모션: tbbk 도트 크레센트. 조준 방향으로 호를 그으며 벤다.
 	_break_near(player.position + dir * rad * 0.5, rad * 0.7, dmg)   # 검기 범위 내 파괴물도 부숨
-	spawn_fx("fx_cleave", player.position, rad * 1.55, dir.angle() + SLASH_ART_FIX, 24.0)
+	spawn_fx_form("slash", player.position, rad * 1.55, dir.angle() + SLASH_ART_FIX, 24.0)
 	player.play_attack()
 	play_sfx("shoot", -12.0, 0.08)
 
@@ -3973,12 +3981,12 @@ func _fire_arrow() -> void:
 			if is_instance_valid(tgt):
 				dir = ((tgt as Node2D).position - player.position).normalized()
 		if evo:
-			a.anim_dir = "res://assets/anim/proj_tempest"
+			a.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 			a.visual_kind = "tempest"
 			a.trail = true
 			a.trail_col = Color(0.3, 0.85, 1.0)
 		else:
-			a.anim_dir = "res://assets/anim/proj_arrow"
+			a.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 			a.visual_kind = "arrow"
 		a.radius = 6.0
 		if lv >= MAX_WLEVEL or evo:
@@ -3995,7 +4003,7 @@ func _fire_arrow() -> void:
 		if combos.has("arrow_fireball"):
 			a.explode_radius = max(a.explode_radius, 34.0)
 			a.explode_damage = max(a.explode_damage, dmg * 0.5)
-			a.fx_hit = "fx_explosion"
+			a.fx_hit = FxMatrix.resolve("impact", _fx_element())
 			a.fx_hit_size = 52.0
 		a.life = 1.1 * char_range   # 짧게: 조준→슉→소멸
 		a.position = player.position
@@ -4026,7 +4034,7 @@ func _fire_lightning() -> void:
 				e.apply_slow(0.4, 1.5)
 			if evo:
 				_spawn_proc_fx("bolt", e.position, 64.0, Color(0.45, 0.9, 1.0), 0.22, Vector2.ZERO, previous_pos)
-				spawn_fx("fx_chainimpact", e.position, 46.0)
+				spawn_fx_form("impact", e.position, 46.0)
 				previous_pos = e.position
 			else:
 				_spawn_bolt(e.position)
@@ -4050,17 +4058,17 @@ func _fire_frost() -> void:
 			if is_instance_valid(e):
 				e.apply_slow(0.5, st)
 				if fx_count < 6:
-					spawn_fx("fx_absolzero" if evo else "fx_frost", e.position, 52.0)
+					spawn_fx_form("impact", e.position, 52.0)
 					if evo:
 						_spawn_proc_fx("shatter", e.position, 48.0, Color(0.62, 0.9, 1.0), 0.34)
-						spawn_fx("fx_glacialshatter", e.position, 48.0)
+						spawn_fx_form("impact", e.position, 48.0)
 					fx_count += 1
 	if boss and is_instance_valid(boss) and player.position.distance_to(boss.position) <= rad:
 		boss.take_damage(dmg)
-		spawn_fx("fx_absolzero" if evo else "fx_frost", boss.position, 80.0)
+		spawn_fx_form("impact", boss.position, 80.0)
 		if evo:
 			_spawn_proc_fx("shatter", boss.position, 68.0, Color(0.62, 0.9, 1.0), 0.34)
-			spawn_fx("fx_glacialshatter", boss.position, 68.0)
+			spawn_fx_form("impact", boss.position, 68.0)
 	for objective in _combat_objectives():
 		if is_instance_valid(objective) and player.position.distance_to(objective.position) <= rad + objective.radius:
 			objective.take_damage(dmg)
@@ -4221,6 +4229,23 @@ func _break_near(pos: Vector2, rad: float, dmg: float) -> void:
 
 
 # 프레임 애니메이션 이펙트 스폰 (프레임 없으면 무시 → 기존 도형 이펙트 유지)
+# 이펙트 원소는 캐릭터가 정한다(사장님 결정: "이펙트들은 캐릭터 기준으로").
+# 그래서 같은 캐릭터는 어떤 무기를 들어도 항상 자기 색으로 싸운다.
+# 전투 상성(attack_element)은 별개다 — 던전 약점·저항 설계가 거기 걸려 있어 건드리지 않았다.
+func _fx_element() -> String:
+	return FxMatrix.normalize_element(_char_skill_element())
+
+
+# 형태로 이펙트를 부른다. 무기는 형태만 고르고 실제 아트는 캐릭터 원소가 결정한다.
+# heavy=true는 궁극기·보스 패턴처럼 "큰 거다"를 알려야 할 때만.
+func spawn_fx_form(form: String, pos: Vector2, size_px: float = 72.0, rot: float = 0.0,
+		fps: float = 16.0, stretch: Vector2 = Vector2.ONE, heavy: bool = false) -> void:
+	var name := FxMatrix.resolve(form, _fx_element(), heavy)
+	if name == "":
+		return
+	spawn_fx(name, pos, size_px, rot, fps, stretch)
+
+
 func spawn_fx(dir_name: String, pos: Vector2, size_px: float = 72.0, rot: float = 0.0,
 		fps: float = 16.0, stretch: Vector2 = Vector2.ONE) -> void:
 	if fx_level == 0:
@@ -4929,7 +4954,7 @@ func apply_hell_boss_damage(amount: float, source: Vector2) -> bool:
 func hell_boss_slam(origin: Vector2, radius: float, damage: float) -> void:
 	_spawn_proc_fx("ring", origin, radius, Color(1.0, 0.25, 0.05), 0.46)
 	_spawn_proc_fx("burst", origin, radius * 0.48, Color(1.0, 0.68, 0.14), 0.34)
-	spawn_fx("fx_quake_spike", origin, radius * 1.15)
+	spawn_fx_form("zone", origin, radius * 1.15)
 	shake_t = maxf(shake_t, 0.28)
 	if player and player.position.distance_to(origin) <= radius + player.radius:
 		apply_hell_boss_damage(damage, origin)
@@ -5063,7 +5088,7 @@ func grave_boss_fan(origin: Vector2, aim_dir: Vector2, count: int, damage: float
 func grave_boss_explosion(origin: Vector2, radius: float, damage: float) -> void:
 	_spawn_proc_fx("ring", origin, radius, Color(0.55, 0.45, 0.90), 0.44)
 	_spawn_proc_fx("burst", origin, radius * 0.5, Color(0.75, 0.60, 1.0), 0.34)
-	spawn_fx("fx_quake_spike", origin, radius * 1.1)
+	spawn_fx_form("zone", origin, radius * 1.1)
 	shake_t = maxf(shake_t, 0.26)
 	if player and player.invuln <= 0.0 and player.position.distance_to(origin) <= radius + player.radius:
 		apply_grave_boss_damage(damage, origin)
@@ -5297,7 +5322,7 @@ func glacier_boss_ring(origin: Vector2, radius: float, width: float, damage: flo
 func glacier_boss_eruption(origin: Vector2, radius: float, damage: float) -> void:
 	_spawn_proc_fx("ring", origin, radius, Color(0.48, 0.76, 1.0), 0.44)
 	_spawn_proc_fx("shatter", origin, radius * 0.62, Color(0.72, 0.94, 1.0), 0.38)
-	spawn_fx("fx_absolzero", origin, radius * 1.2)
+	spawn_fx_form("impact", origin, radius * 1.2)
 	shake_t = maxf(shake_t, 0.26)
 	if player and player.position.distance_to(origin) <= radius + player.radius:
 		apply_glacier_boss_damage(damage, origin, 16.0)
@@ -5997,7 +6022,7 @@ func _chest_fanfare(count: int) -> void:
 	add_child(burst)
 	# 최고 등급엔 신성 폭발 이펙트까지
 	if tier >= 3:
-		spawn_fx("fx_divine", player.position, 300.0)
+		spawn_fx_form("ward", player.position, 132.0)
 	_event_banner("[보물] 보물 상자!" if tier < 3 else "[보물] 대박 보물!")
 
 
@@ -8723,7 +8748,7 @@ func _evolve_primary(kind: String) -> void:
 	play_sfx("levelup", -4.0)
 	shake_t = max(shake_t, 0.2)
 	if player:
-		spawn_fx("fx_divine", player.position, 300.0)
+		spawn_fx_form("ward", player.position, 132.0)
 	_grant_ach("legend_weapon")
 	_flash(Color(1.0, 1.0, 0.95, 0.62))   # 진화 화이트 플래시
 
@@ -8975,7 +9000,7 @@ func _try_evolve_from_chest() -> bool:
 	stage_banner_t = 2.6
 	play_sfx("levelup", -4.0)
 	shake_t = max(shake_t, 0.2)
-	spawn_fx("fx_divine", player.position, 300.0)
+	spawn_fx_form("ward", player.position, 132.0)
 	_grant_ach("legend_weapon")
 	_flash(Color(1.0, 1.0, 0.95, 0.62))   # 진화 화이트 플래시
 	_show_chest_roulette(WICON.get(kind, ""), "무기 진화", EVO_RECIPE[kind]["name"])
@@ -8998,7 +9023,7 @@ func _try_union_from_chest() -> bool:
 			stage_banner_t = 2.6
 			play_sfx("levelup", -4.0)
 			shake_t = max(shake_t, 0.2)
-			spawn_fx("fx_divine", player.position, 320.0)
+			spawn_fx_form("ward", player.position, 140.0)
 			_grant_ach("legend_weapon")
 			_flash(Color(0.75, 0.9, 1.0, 0.62))   # 유니온 블루 플래시
 			_show_chest_roulette(u.get("icon", ""), "유니온 합체", u["name"])
@@ -9648,7 +9673,7 @@ func _game_over() -> void:
 		for e in get_tree().get_nodes_in_group("enemies"):
 			if is_instance_valid(e) and player.position.distance_to(e.position) < 260.0:
 				e.queue_free()
-		spawn_fx("fx_divine", player.position, 360.0)
+		spawn_fx_form("ward", player.position, 150.0)
 		var fx := Effect.new()
 		fx.kind = "ring"
 		fx.position = player.position
@@ -10151,7 +10176,7 @@ func _fire_axe_active() -> void:
 	_break_near(player.position, radius, damage)
 	_spawn_proc_fx("ring", player.position, radius, col, 0.46)
 	_spawn_proc_fx("burst", player.position, radius * 0.7, col, 0.32)
-	spawn_fx("fx_quake_spike", player.position, radius * 0.95)
+	spawn_fx_form("zone", player.position, radius * 0.95)
 	play_sfx("ult", -9.0, 0.10)
 	shake_t = maxf(shake_t, 0.22)
 
@@ -10188,15 +10213,15 @@ func _fire_staff_active(target_override: Vector2 = Vector2.ZERO) -> void:
 	_spawn_proc_fx("burst", target_point, radius * 0.72, col, 0.36)
 	match element:
 		"fire":
-			spawn_fx("fx_explosion", target_point, radius * 1.25)
+			spawn_fx_form("impact", target_point, radius * 1.25)
 		"ice":
-			spawn_fx("fx_absolzero", target_point, radius * 1.35)
+			spawn_fx_form("impact", target_point, radius * 1.35)
 		"holy":
-			spawn_fx("fx_judgment", target_point, radius * 1.35)
+			spawn_fx_form("impact", target_point, radius * 1.35)
 		"dark":
-			spawn_fx("fx_plague", target_point, radius * 1.35)
+			spawn_fx_form("zone", target_point, radius * 1.35)
 		_:
-			spawn_fx("fx_quake_spike", target_point, radius * 1.15)
+			spawn_fx_form("zone", target_point, radius * 1.15)
 	play_sfx("ult", -10.0, 0.08)
 	shake_t = maxf(shake_t, 0.14)
 
@@ -10218,25 +10243,25 @@ func _fire_dagger_active(dir: Vector2) -> void:
 		dagger.crit_mult = 2.2
 		match primary_kind:
 			"spread_shot":
-				dagger.anim_dir = "res://assets/anim/proj_bullet"
+				dagger.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 				dagger.sprite_path = "res://assets/items/icon_spreadshot.png"
 				dagger.scale_mul = 0.85
 			"arrow":
-				dagger.anim_dir = "res://assets/anim/proj_arrow"
+				dagger.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 				dagger.sprite_path = "res://assets/items/arrow.png"
 			"venom":
-				dagger.anim_dir = "res://assets/anim/proj_venom"
+				dagger.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 				dagger.sprite_path = "res://assets/items/icon_venom.png"
 			"boomerang":
-				dagger.anim_dir = "res://assets/anim/proj_boomerang"
+				dagger.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 				dagger.sprite_path = "res://assets/items/icon_boomerang.png"
 				dagger.spin = 20.0
 			"chakram":
-				dagger.anim_dir = "res://assets/anim/proj_chakram"
+				dagger.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 				dagger.sprite_path = "res://assets/items/icon_chakram.png"
 				dagger.spin = 22.0
 			_:
-				dagger.anim_dir = "res://assets/anim/proj_knife"
+				dagger.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 				dagger.sprite_path = "res://assets/items/sword.png"
 				dagger.spin = 24.0
 				dagger.scale_mul = 0.95
@@ -10270,7 +10295,7 @@ func _fire_spear_active(dir: Vector2) -> void:
 	spear.damage = _weapon_active_damage(146.0, false)
 	spear.pierce = 99
 	spear.radius = 11.0
-	spear.anim_dir = "res://assets/anim/proj_icelance" if ice_variant else "res://assets/anim/proj_spear"
+	spear.anim_dir = FxMatrix.resolve_path("bolt", _fx_element())
 	spear.sprite_path = "res://assets/items/icon_icelance.png" if ice_variant else "res://assets/items/icon_spear.png"
 	spear.scale_mul = 1.65
 	spear.trail = true
@@ -10278,7 +10303,7 @@ func _fire_spear_active(dir: Vector2) -> void:
 	if ice_variant:
 		spear.slow_amount = 0.58
 		spear.slow_time = 2.2
-		spear.fx_hit = "fx_frost"
+		spear.fx_hit = FxMatrix.resolve("impact", _fx_element())
 	spear.life = 1.05 * char_range
 	spear.position = player.position
 	spear.velocity = dir * 980.0
