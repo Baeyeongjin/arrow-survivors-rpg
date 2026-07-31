@@ -2260,22 +2260,25 @@ func _process(delta: float) -> void:
 	if player.regen > 0.0:
 		player.hp = min(player.max_hp, player.hp + player.regen * delta)
 
-	# 쿨다운 무기 발동 (뱀서식: 기본공격 없음 — 시작무기가 캐릭터 정체성)
-	# 자동공격이 사거리 무제한이라 화면 밖 적까지 알아서 처리해 게임이 쉬웠다(사장님 피드백).
-	# 사거리 안에 표적이 들어와야만 발사하고, 발사가 곧 공격 모션이므로 모션 게이트도 같이 걸린다.
-	var target_in_range := _target_in_attack_range()
+	# 전투 조작: 자동공격을 걷어내고 마우스 좌클릭 기본공격 + Q/E/R/F 스킬로 바꿨다.
+	# 조준이 플레이어 손에 있으므로 "사거리 안에 표적이 있는가" 게이트는 필요 없다 —
+	# 빗나가는 것도 플레이어 책임이다. 사거리는 투사체 수명으로만 제한한다.
 	player.attack_range = _attack_range()
-	player.attack_range_idle = not target_in_range
-	for kind in wtimer.keys():
-		wtimer[kind] -= delta
-		if wtimer[kind] <= 0.0:
-			if not target_in_range:
-				# 쿨다운은 다 찼지만 사거리 안에 쏠 것이 없다. 쿨다운을 새로 돌리지 않고
-				# 대기시켜, 표적이 들어오는 순간 바로 첫 발이 나가게 한다.
-				continue
-			_fire_weapon(kind)
-			_weapon_muzzle(kind)   # 발사 순간 무기별 섬광
-			wtimer[kind] = _weapon_cooldown(kind)
+	player.attack_range_idle = false
+	if basic_cd > 0.0:
+		basic_cd = maxf(0.0, basic_cd - delta)
+	for slot in skill_cds.keys():
+		if float(skill_cds[slot]) > 0.0:
+			skill_cds[slot] = maxf(0.0, float(skill_cds[slot]) - delta)
+	if ward_timer > 0.0:
+		ward_timer = maxf(0.0, ward_timer - delta)
+		if ward_timer <= 0.0 and player:
+			player.armor = maxf(0.0, player.armor - 4.0)   # 보호 스킬 종료
+	# 누르고 있으면 계속 나간다. 클릭 연타를 강요하지 않는다.
+	if basic_cd <= 0.0 and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		var basic := skill_def(SkillDefs.basic_archetype())
+		if not basic.is_empty() and _execute_skill(basic):
+			basic_cd = float(basic["cd"]) * player.cooldown_mult
 
 	# 진행 (시간 기반) / 보스
 	if map_stage == HELL_STAGE:
@@ -4811,13 +4814,16 @@ func on_pickup(kind: String) -> void:
 			add_child(hfx)
 			_event_banner("[회복] 통닭 — 체력 완전 회복")
 		"potion":
-			# 기력 물약: E 무기 스킬 쿨다운을 즉시 비운다. 우연히 위기를 지우는 대신
+			# 기력 물약: Q/E/R/F 스킬 쿨다운을 전부 비운다. 우연히 위기를 지우는 대신
 			# "아껴뒀다 쓰는 자원"이라 위기 해제의 주체가 플레이어 조작으로 남는다.
+			for slot in skill_cds.keys():
+				skill_cds[slot] = 0.0
 			skill_e_cd = 0.0
 			_flash(Color(0.62, 0.42, 0.92, 0.34))
 			play_sfx("levelup", -9.0)
 			_spawn_proc_fx("ring", player.position, 96.0, Color(0.72, 0.50, 1.0), 0.42)
-			_event_banner("[기력] 물약 — 무기 스킬 재사용 준비 완료")
+			_event_banner("[기력] 물약 — 모든 스킬 재사용 준비 완료")
+			_refresh_skill_hud()
 		_:
 			# chest: 회복 + 골드 → 진화 조건 충족 무기 있으면 진화, 없으면 보너스 카드
 			player.hp = min(player.max_hp, player.hp + 15.0)
@@ -8760,35 +8766,38 @@ func _card_options() -> Array:
 
 	# (조합은 유니온으로 대체 — 레벨업 카드가 아니라 두 무기 만렙 후 보스 상자에서 합체)
 
-	# 2) 무기 레벨업 / 신규
-	var wcap := _weapon_time_cap()   # 무기 레벨 시간 소프트캡 (10분에 Lv8)
-	for kind in ALL_WEAPONS:
-		if weapons.has(kind):
-			var lv: int = weapons[kind]
-			if lv < MAX_WLEVEL and lv + 1 <= wcap:
-				var k1: String = kind
-				# 무기별 레벨업 명세 (뱀서식: 이 레벨에 실제 오르는 능력)
-				var udesc := _weapon_lv_desc(kind, lv + 1)
-				# MAX 도달 강화면 진화 조건을 우선 안내
-				if lv + 1 >= MAX_WLEVEL:
-					var h := _evo_hint(kind)
-					if h != "":
-						udesc = h
-				opts.append({"r": "rare", "t": "w", "key": kind, "owned": true, "title": "%s Lv%d" % [WNAMES[kind], lv + 1],
-					"desc": udesc, "icon": WICON.get(kind, ""),
-					"act": func() -> void: _upgrade_weapon(k1)})
-		elif weapons.size() < MAX_WEAPONS:
-			if not (kind in POOL_WEAPONS):
-				continue   # 뱀서식 핵심 20종만 신규 카드로 제안 (겹치는 무기 제거)
-			if UNLOCK_WEAPONS.has(kind) and not meta.get("ach", {}).get(UNLOCK_WEAPONS[kind], false):
-				continue   # 해금 무기 — 해당 업적 달성 필요
-			# 빌드 강제: 무기 4개 이상 보유 시 새 무기는 25% 확률로만 제시
-			if weapons.size() >= FREE_WEAPON_SLOTS and randf() > 0.25:
+	# 2) 스킬 습득 / 강화
+	# 무기 22종 카드를 걷어내고 캐릭터 원소의 스킬로 바꿨다(사장님 결정: 무기는 스탯,
+	# 스킬은 캐릭터). 기본 공격은 처음부터 갖고 시작하므로 카드에 안 나온다.
+	var element := _player_element()
+	for archetype in SkillDefs.learnable(element):
+		var arch: String = str(archetype)
+		var level := int(skill_levels.get(arch, 0))
+		if level >= SkillDefs.MAX_SKILL_LEVEL:
+			continue
+		var def := SkillDefs.build(arch, element, maxi(1, level + 1))
+		if def.is_empty():
+			continue
+		var icon := "res://assets/anim/%s/0.png" % str(def.get("fx", ""))
+		if level > 0:
+			opts.append({"r": "rare", "t": "sk", "key": arch, "owned": true,
+				"title": "%s Lv%d" % [str(def["name"]), level + 1],
+				"desc": "피해 +22%% · 쿨다운 -6%%", "icon": icon,
+				"act": func() -> void: learn_skill(arch)})
+		else:
+			# 슬롯이 다 찼는데 새 스킬을 배우면 장착이 안 돼 아무것도 못 한다.
+			# 빈 슬롯이 있을 때만 신규 스킬을 제시한다.
+			var has_free := false
+			for slot in SkillDefs.SLOT_KEYS:
+				if str(skill_slots.get(slot, "")) == "":
+					has_free = true
+					break
+			if not has_free:
 				continue
-			var k2: String = kind
-			opts.append({"r": "rare", "t": "w", "key": kind, "new": true, "title": "[신규 무기] " + WNAMES[kind],
-				"desc": _weapon_desc(kind), "icon": WICON.get(kind, ""),
-				"act": func() -> void: _add_weapon(k2)})
+			opts.append({"r": "epic", "t": "sk", "key": arch, "new": true,
+				"title": "[신규 스킬] " + str(def["name"]),
+				"desc": str(def["desc"]), "icon": icon,
+				"act": func() -> void: learn_skill(arch)})
 
 	# 3) 패시브 아이템 레벨업 / 신규
 	var pdefs := _passive_defs()
@@ -9580,6 +9589,13 @@ func _start_game(d: Dictionary) -> void:
 	combos = {}
 	unions = {}
 	mastery_picks = {}   # M2: 이번 런 숙련 갈림길 미선택 상태로 초기화
+	# 스킬 초기화. 기본 공격은 처음부터 Lv1로 가지고 시작하고 슬롯을 쓰지 않는다.
+	# 나머지 7종은 레벨업 카드로 배운다.
+	skill_levels = {SkillDefs.basic_archetype(): 1}
+	skill_slots = {"q": "", "e": "", "r": "", "f": ""}
+	skill_cds = {"q": 0.0, "e": 0.0, "r": 0.0, "f": 0.0}
+	basic_cd = 0.0
+	ward_timer = 0.0
 	reaper_warned = false
 	_boss_is_objective = false
 	hell_fissures_spawned = 0
@@ -10431,6 +10447,277 @@ func _ult_reap(base: float, elem: String, col: Color) -> void:
 	_spawn_proc_fx("burst", player.position, 240.0, col.lightened(0.3), 0.5)
 
 
+# ─── 스킬 시스템 (마우스 조준 + Q/E/R/F) ──────────────────────────────
+# 자동공격·무기 22종·진화·숙련 트리를 걷어내고 액션 RPG 조작으로 바꿨다(사장님 결정).
+#   WASD 이동 · 마우스 좌클릭 기본공격 · Q/E/R/F 스킬 · Space 회피
+# 스킬은 SkillDefs의 아키타입 8종 × 캐릭터 원소 9종으로 만들어진다.
+# 이펙트는 FxMatrix가 아키타입의 form + 캐릭터 원소로 자동 결정한다.
+const SKILL_KEYCODES := {
+	KEY_Q: "q", KEY_E: "e", KEY_R: "r", KEY_F: "f",
+}
+# 기본 공격은 누르고 있으면 계속 나간다. 클릭 연타를 강요하지 않는다.
+const BASIC_ATTACK_HOLD := true
+
+var skill_slots := {"q": "", "e": "", "r": "", "f": ""}   # 슬롯 -> 아키타입 키
+var skill_levels := {}          # 아키타입 키 -> 레벨(1~5)
+var skill_cds := {"q": 0.0, "e": 0.0, "r": 0.0, "f": 0.0}
+var basic_cd := 0.0
+var ward_timer := 0.0        # 보호 스킬 남은 시간
+
+
+func _player_element() -> String:
+	return SkillDefs.element_of(str(sel_char.get("key", "")))
+
+
+# 이 캐릭터의 스킬 정의. 레벨은 배운 만큼.
+func skill_def(archetype: String) -> Dictionary:
+	if archetype == "":
+		return {}
+	return SkillDefs.build(archetype, _player_element(),
+		int(skill_levels.get(archetype, 1)))
+
+
+func has_skill(archetype: String) -> bool:
+	return skill_levels.has(archetype)
+
+
+# 스킬을 배우거나 한 단계 올린다. 레벨업 카드가 부른다.
+func learn_skill(archetype: String) -> void:
+	if not SkillDefs.ARCHETYPES.has(archetype):
+		return
+	if skill_levels.has(archetype):
+		skill_levels[archetype] = mini(SkillDefs.MAX_SKILL_LEVEL,
+			int(skill_levels[archetype]) + 1)
+	else:
+		skill_levels[archetype] = 1
+		# 빈 슬롯이 있으면 바로 장착한다. 4칸이 다 차면 교체는 사장님 몫(인벤토리)이다.
+		for slot in SkillDefs.SLOT_KEYS:
+			if str(skill_slots.get(slot, "")) == "":
+				skill_slots[slot] = archetype
+				break
+	_refresh_skill_hud()
+
+
+func _cast_skill_slot(slot: String) -> bool:
+	if player == null or not skill_cds.has(slot):
+		return false
+	if float(skill_cds[slot]) > 0.0:
+		return false
+	var archetype := str(skill_slots.get(slot, ""))
+	if archetype == "" or not has_skill(archetype):
+		return false
+	var def := skill_def(archetype)
+	if def.is_empty():
+		return false
+	if not _execute_skill(def):
+		return false
+	skill_cds[slot] = float(def["cd"]) * player.cooldown_mult
+	_grave_requiem_on_cast()   # 장송의 무기: 전조 중인 보스/정예 공격 취소
+	_refresh_skill_hud()
+	return true
+
+
+# 스킬 판정 위치. 사거리 안이면 커서 그대로, 밖이면 사거리 끝으로 자른다.
+func _skill_target(def: Dictionary) -> Vector2:
+	var reach := float(def.get("range", 0.0))
+	if reach <= 0.0:
+		return player.position
+	var to := player.aim_point() - player.position
+	if to.length() <= reach:
+		return player.position + to
+	return player.position + to.normalized() * reach
+
+
+# 아키타입 8종의 실제 동작. 무기별 함수 40개가 여기로 접혔다.
+func _execute_skill(def: Dictionary) -> bool:
+	var element := str(def["element"])
+	var effect := str(def["effect"])
+	var damage := float(def["dmg"]) * player.damage_mult * 26.0
+	var aim := player.aim_dir()
+	var target := _skill_target(def)
+	var source := telemetry_push_damage_source("skill:%s" % str(def["archetype"]))
+	player._face_direction(aim)
+	player.play_attack()
+	match str(def["archetype"]):
+		"bolt":
+			_skill_bolt(def, aim, damage, effect)
+		"slash":
+			_skill_slash(def, aim, damage, effect)
+		"burst":
+			_skill_burst(def, target, damage, effect)
+		"field":
+			_skill_field(def, target, damage, element)
+		"ward":
+			_skill_ward(def)
+		"nova":
+			_skill_nova(def, damage, effect)
+		"ruin":
+			_skill_burst(def, target, damage, effect)
+		"aegis":
+			_skill_field(def, target, damage, element)
+		_:
+			telemetry_restore_damage_source(source)
+			return false
+	telemetry_restore_damage_source(source)
+	return true
+
+
+func _skill_bolt(def: Dictionary, aim: Vector2, damage: float, effect: String) -> void:
+	var shots := 1 + player.amount
+	for i in shots:
+		var spread := 0.0 if shots == 1 else (float(i) - float(shots - 1) * 0.5) * 0.12
+		var a := Arrow.new()
+		a.position = player.position
+		a.velocity = aim.rotated(spread) * 560.0
+		a.damage = damage
+		a.radius = float(def.get("radius", 11.0))
+		a.pierce = 1 + (2 if effect == "pierce" else 0)
+		a.life = float(def["range"]) / 560.0 * 1.35
+		a.anim_dir = FxMatrix.resolve_path("bolt", str(def["element"]))
+		a.fx_hit = FxMatrix.resolve("impact", str(def["element"]))
+		a.crit_chance = player.crit_chance + (0.20 if effect == "execute" else 0.0)
+		a.crit_mult = player.crit_mult
+		if effect == "chill":
+			a.slow_amount = 0.35
+			a.slow_time = 2.5
+		add_child(a)
+	spawn_fx_form("cast", player.position, 52.0, aim.angle())
+	play_sfx("shoot", -14.0, 0.08)
+
+
+func _skill_slash(def: Dictionary, aim: Vector2, damage: float, effect: String) -> void:
+	var reach := float(def["range"])
+	var half := float(def.get("arc", 1.5)) * 0.5
+	for e in _enemies_and_boss():
+		if not is_instance_valid(e):
+			continue
+		var to: Vector2 = (e as Node2D).position - player.position
+		if to.length() > reach + float(e.radius):
+			continue
+		if to.length_squared() > 0.01 and absf(aim.angle_to(to.normalized())) > half:
+			continue
+		_hit_with_effect(e, damage, effect, aim)
+	_break_near(player.position + aim * reach * 0.5, reach * 0.7, damage)
+	spawn_fx_form("slash", player.position + aim * reach * 0.45, reach * 1.3, aim.angle())
+	play_sfx("hit", -12.0, 0.1)
+
+
+func _skill_burst(def: Dictionary, target: Vector2, damage: float, effect: String) -> void:
+	var radius := float(def["radius"])
+	var heavy := bool(def.get("heavy", false))
+	for e in _enemies_and_boss():
+		if not is_instance_valid(e):
+			continue
+		if (e as Node2D).position.distance_to(target) > radius + float(e.radius):
+			continue
+		_hit_with_effect(e, damage, effect, ((e as Node2D).position - target).normalized())
+	_break_near(target, radius, damage)
+	spawn_fx_form("impact", target, radius * 1.15, 0.0, 16.0, Vector2.ONE, heavy)
+	shake_t = maxf(shake_t, 0.22 if heavy else 0.12)
+	play_sfx("hit", -8.0 if heavy else -12.0, 0.12)
+
+
+func _skill_field(def: Dictionary, target: Vector2, damage: float, element: String) -> void:
+	var z := VoidZone.new()
+	z.position = target
+	z.radius = float(def["radius"])
+	z.dps = damage * 0.55
+	z.life = float(def.get("duration", 4.5))
+	z.pull = 0.0
+	z.col = Color(ELEMENT_COL.get(element, Color(0.8, 0.8, 0.9)))
+	z.anim_dir = FxMatrix.resolve_path("zone", element, bool(def.get("heavy", false)))
+	z.outline = false
+	add_child(z)
+	spawn_fx_form("zone", target, float(def["radius"]) * 1.1, 0.0, 14.0, Vector2.ONE,
+		bool(def.get("heavy", false)))
+	play_sfx("levelup", -16.0, 0.1)
+
+
+func _skill_ward(def: Dictionary) -> void:
+	var duration := float(def.get("duration", 5.0))
+	player.invuln = maxf(player.invuln, 0.35)
+	player.armor += 4.0
+	ward_timer = duration
+	spawn_fx_form("ward", player.position, float(def["radius"]), 0.0, 12.0)
+	play_sfx("levelup", -10.0)
+
+
+func _skill_nova(def: Dictionary, damage: float, effect: String) -> void:
+	var radius := float(def["radius"])
+	for e in _enemies_and_boss():
+		if not is_instance_valid(e):
+			continue
+		var to: Vector2 = (e as Node2D).position - player.position
+		if to.length() > radius + float(e.radius):
+			continue
+		_hit_with_effect(e, damage, effect, to.normalized())
+		if e.has_method("shove"):
+			e.shove(player.position, 260.0)
+	_break_near(player.position, radius, damage)
+	spawn_fx_form("cast", player.position, radius * 1.2, 0.0)
+	shake_t = maxf(shake_t, 0.16)
+	play_sfx("hit", -10.0, 0.1)
+
+
+# 원소 규칙을 적중에 덧붙인다. 배수가 아니라 규칙이라 여기서만 처리한다.
+func _hit_with_effect(target, damage: float, effect: String, push_dir: Vector2) -> void:
+	var dealt := damage
+	if effect == "execute" and "hp" in target and "max_hp" in target:
+		# 처형: 빈사 상태의 적에게 추가 피해. 잡몹 정리 속도를 올린다.
+		if float(target.hp) <= float(target.max_hp) * 0.25:
+			dealt *= 1.6
+	target.take_damage(dealt, true, attack_element)
+	match effect:
+		"burn":
+			if target.has_method("apply_slow"):
+				_apply_burn(target, damage * 0.22)
+		"chill":
+			if target.has_method("apply_slow"):
+				target.apply_slow(0.35, 2.5)
+		"drain":
+			if player:
+				player.hp = minf(player.max_hp, player.hp + dealt * 0.12)
+		"mend":
+			if player:
+				player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.01)
+		"push":
+			if target.has_method("shove"):
+				target.shove(player.position, 220.0)
+			if target.has_method("apply_slow"):
+				target.apply_slow(0.25, 0.8)
+		"stun":
+			if target.has_method("apply_slow"):
+				target.apply_slow(1.0, 0.7)
+		"chain":
+			_chain_to_nearby(target, dealt * 0.45, 2)
+
+
+# 화상: 짧은 지속 피해. 전용 노드를 만들지 않고 작은 장판 한 장으로 대신한다.
+func _apply_burn(target, dps: float) -> void:
+	var z := VoidZone.new()
+	z.position = (target as Node2D).position
+	z.radius = 26.0
+	z.dps = dps
+	z.life = 3.0
+	z.pull = 0.0
+	z.outline = false
+	z.col = Color(1.0, 0.5, 0.2)
+	add_child(z)
+
+
+func _chain_to_nearby(from_target, damage: float, count: int) -> void:
+	var origin: Vector2 = (from_target as Node2D).position
+	var hits := 0
+	for e in _enemies_and_boss():
+		if hits >= count or not is_instance_valid(e) or e == from_target:
+			continue
+		if origin.distance_to((e as Node2D).position) > 150.0:
+			continue
+		e.take_damage(damage, false, attack_element)
+		spawn_fx_form("impact", (e as Node2D).position, 40.0)
+		hits += 1
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	# I: 인벤토리 토글. 인벤 열린 상태에서 ESC도 닫기.
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -10442,18 +10729,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			_toggle_inventory()
 			get_viewport().set_input_as_handled()
 			return
-	# Q: 궁극기 발동 (게이지 가득 찼을 때만, 플레이 중)
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_Q:
-		if state == State.PLAYING and ult_gauge >= 1.0:
-			_fire_ultimate()
-			get_viewport().set_input_as_handled()
-	# E: 현재 주무기 아키타입 액티브 / Space: 이동 방향 회피
-	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_E:
-		if state == State.PLAYING and skill_e_cd <= 0.0:
-			if _fire_weapon_active():
-				skill_e_cd = _weapon_active_cooldown()
-				_grave_requiem_on_cast()   # 장송의 무기: 전조 중인 보스/정예 공격 취소
+	# Q/E/R/F: 스킬 슬롯. W는 WASD 이동과 겹쳐 쓰지 않는다.
+	if event is InputEventKey and event.pressed and not event.echo:
+		var slot: String = str(SKILL_KEYCODES.get(event.keycode, ""))
+		if slot != "" and state == State.PLAYING:
+			if _cast_skill_slot(slot):
 				get_viewport().set_input_as_handled()
+				return
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_SPACE:
 		if state == State.PLAYING and player and player.try_dodge():
 			play_sfx("dash", -10.0, 0.08)

@@ -112,6 +112,21 @@ func _movement_input() -> Vector2:
 	return v.normalized() if v != Vector2.ZERO else Vector2.ZERO
 
 
+# 마우스 커서의 월드 좌표. 자동조준을 걷어내고 조준을 플레이어 손에 돌려준다.
+# 카메라 줌·흔들림이 걸려 있어 화면 좌표를 그대로 쓰면 어긋나므로 캔버스 역변환을 쓴다.
+func aim_point() -> Vector2:
+	var vp := get_viewport()
+	if vp == null:
+		return position + _last_dir * 100.0
+	return vp.get_canvas_transform().affine_inverse() * vp.get_mouse_position()
+
+
+# 커서를 향하는 단위 벡터. 커서가 캐릭터 위에 겹쳐 있으면 마지막 방향을 유지한다.
+func aim_dir() -> Vector2:
+	var to := aim_point() - position
+	return to.normalized() if to.length_squared() > 4.0 else _last_dir
+
+
 func _face_direction(dir: Vector2) -> void:
 	if dir == Vector2.ZERO:
 		return
