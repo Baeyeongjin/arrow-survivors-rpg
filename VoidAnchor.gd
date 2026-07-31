@@ -44,6 +44,13 @@ func is_stabilized() -> bool:
 	return _stabilized
 
 
+# 콤보 보상: 닻 근처에서 상태를 터뜨리면 안정화가 당겨진다 (payoff 요구).
+# 점령형 목표라 피해 배수 대신 시간을 준다.
+func combo_boost(seconds: float) -> void:
+	if not _stabilized:
+		progress = minf(duration, progress + seconds)
+
+
 func progress_ratio() -> float:
 	return clampf(progress / maxf(0.001, duration), 0.0, 1.0)
 

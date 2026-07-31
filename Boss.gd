@@ -4,6 +4,13 @@ extends Node2D
 const SPRITE := "res://assets/boss/boss.png"
 
 var _flash_t := 0.0   # 피격 흰 플래시 남은 시간
+# 껍질 페이즈: 체력 66%·33%에서 굳는다. 받는 피해 20%, 상태를 "터뜨려야" 깨진다.
+# 몹의 껍질 특성과 같은 문법 — 보스전에서도 콤보가 축이 되게 한다.
+# 굳은 동안 이동이 빨라져(x1.45) 가만히 버티는 게 아니라 몰아붙인다.
+var _shell := false
+var _shell_thresholds: Array = [0.66, 0.33]
+const SHELL_MULT := 0.20
+const SHELL_HASTE := 1.45
 # 원소 상태(콤보). setup 스킬이 바르고 payoff 스킬이 소비한다.
 # 표시는 몸 색 하나로만 — 머리 위 아이콘 같은 걸 얹으면 난전에서 화면이 안 보인다.
 var status := ""
@@ -254,6 +261,14 @@ func configure_castle_final(gates_opened: int) -> void:
 
 func _process(delta: float) -> void:
 	_anim_t += delta
+	# 껍질 진입: 체력이 문턱을 넘으면 굳는다. 피해 경로가 층마다 달라
+	# take_damage 안이 아니라 여기서 비율만 본다 — 어느 경로로 깎여도 걸린다.
+	if not _shell and _shell_thresholds.size() > 0 \
+			and hp <= max_hp * float(_shell_thresholds[0]):
+		_shell = true
+		_shell_thresholds.pop_front()
+		move_speed *= SHELL_HASTE
+		self_modulate = _status_modulate()
 	if _flash_t > 0.0:
 		_flash_t -= delta
 		if _flash_t <= 0.0:
@@ -740,6 +755,10 @@ func mark_status(kind: String, time: float, col: Color) -> void:
 
 # 상태를 꺼내 쓰고 지운다. 없으면 "".
 func consume_status() -> String:
+	if _shell and status != "":
+		# 껍질이 깨진다. 가속도 되돌린다 — 다음 문턱에서 다시 굳는다.
+		_shell = false
+		move_speed /= SHELL_HASTE
 	var k := status
 	status = ""
 	status_t = 0.0
@@ -760,7 +779,11 @@ func tick_status(delta: float) -> void:
 			self_modulate = _status_modulate()
 
 func _status_modulate() -> Color:
-	return Color(1, 1, 1).lerp(status_col, 0.55) if status != "" else Color(1, 1, 1)
+	if status != "":
+		return Color(1, 1, 1).lerp(status_col, 0.55)
+	if _shell:
+		return Color(0.42, 0.44, 0.50)   # 굳음: 몹의 경화·껍질과 같은 무채색 신호
+	return Color(1, 1, 1)
 
 
 func take_damage(d: float, _crit: bool = true, element: String = "") -> void:
@@ -771,6 +794,8 @@ func take_damage(d: float, _crit: bool = true, element: String = "") -> void:
 	_flash_t = 0.14
 	self_modulate = Color(7, 7, 8)
 	var m := get_parent()
+	if _shell:
+		d *= SHELL_MULT
 	# 상성: 공격 속성 미지정이면 플레이어 공격 속성 사용. 약점 ×1.5 / 저항 ×0.6.
 	var elem := element
 	if elem == "" and m and "attack_element" in m:

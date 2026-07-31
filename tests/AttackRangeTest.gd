@@ -68,10 +68,10 @@ func _initialize() -> void:
 	var tier: Dictionary = GameConfigScript.enemy_tiers()[0]
 	var mob = EnemyScript.new()
 	mob.setup(tier, 0.0)
-	var expected_hp: float = 12.0 * float(tier["hp_mult"]) * 2.8
+	var expected_hp: float = 12.0 * float(tier["hp_mult"]) * 3.3   # 3차 상향과 동기
 	_expect(is_equal_approx(mob.hp, expected_hp),
 		"몬스터 체력 x2.8 상향 미적용: %.2f (기대 %.2f)" % [mob.hp, expected_hp])
-	var expected_touch: float = 10.0 * float(tier.get("dmg_mult", 1.0)) * 1.75
+	var expected_touch: float = 10.0 * float(tier.get("dmg_mult", 1.0)) * 2.0
 	_expect(is_equal_approx(mob.touch_damage, expected_touch),
 		"접촉 피해 x1.75 상향 미적용: %.2f (기대 %.2f)" % [mob.touch_damage, expected_touch])
 	# max_hp는 setup이 아니라 Main._make_enemy가 런 보정까지 끝낸 뒤 세팅한다(HP바 비율용).

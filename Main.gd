@@ -8467,6 +8467,11 @@ func _payoff(target, primed: String, dealt: float) -> void:
 			if "hp" in target and "max_hp" in target:
 				if float(target.hp) > 0.0 and float(target.hp) <= float(target.max_hp) * 0.35:
 					_deal_damage(target, float(target.hp) + 1.0, true, attack_element)
+	# 공허 닻: 근처(220px)에서 터뜨리면 안정화 +1.5초. 점령형 목표를 콤보와 잇는다.
+	for anchor in get_tree().get_nodes_in_group("void_anchors"):
+		if is_instance_valid(anchor) and anchor.has_method("combo_boost") \
+				and at.distance_to(anchor.position) <= 220.0:
+			anchor.combo_boost(1.5)
 	# 터뜨림 연출: 그 원소의 무거운 이펙트 한 번. 크기는 판정 그대로 둔다.
 	spawn_fx_form("impact", at, 92.0, 0.0, 18.0, Vector2.ONE, true)
 	play_sfx("ult", -12.0, 0.06)

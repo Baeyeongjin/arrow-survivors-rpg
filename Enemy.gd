@@ -281,11 +281,12 @@ func setup(t: Dictionary, time: float) -> void:
 	# 처리하는 시간이 길어져 HP바가 의미를 갖는다.
 	# 2차 상향(사장님 "아직도 너무 쉬움"): 체력 x2.2 -> x2.8, 접촉 피해 x1.45 -> x1.75.
 	# 자동공격 사거리 제한(Main.ATTACK_RANGE_BASE)과 함께 적용해 "몰려오는 걸 다 못 막는다"를 만든다.
-	hp = (12.0 + time * 0.055) * float(t["hp_mult"]) * 2.8
+	# 3차 상향(사장님 "모든 몬스터 좀더 강하게"): 체력 x2.8 -> x3.3, 접촉 x1.75 -> x2.0.
+	hp = (12.0 + time * 0.055) * float(t["hp_mult"]) * 3.3
 	# 느린 적/빠른 적 차이를 끝까지 보존한다. 과거엔 10분 이후 대부분 상한 90에 붙었다.
 	speed = min(96.0, (26.0 + time * 0.028) * float(t["speed_mult"]))
 	# 30분 접촉 피해 기본값 약 24. 플레이어 방어·난이도 체력으로 생존 차이를 만든다.
-	touch_damage = (10.0 + time * 0.008) * float(t.get("dmg_mult", 1.0)) * 1.75
+	touch_damage = (10.0 + time * 0.008) * float(t.get("dmg_mult", 1.0)) * 2.0
 	behavior = t.get("behavior", "")
 	combo_trait = str(t.get("combo_trait", ""))
 	# 스폰 직후부터 굳어 보여야 한다. 첫 피격 때 색이 바뀌면 "왜 안 아프지"를

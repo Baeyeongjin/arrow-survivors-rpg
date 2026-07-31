@@ -56,7 +56,44 @@ func damage_multiplier_for(element: String) -> float:
 
 
 # Enemy.take_damage와 같은 호출 형태를 받아 투사체·범위기·E·궁극기에 그대로 연결한다.
+
+# 원소 상태(콤보). Enemy와 같은 계약이라 스킬 코드가 목표물을 구분하지 않는다.
+var status := ""
+var status_t := 0.0
+var status_col := Color(1, 1, 1)
+
+
+func mark_status(kind: String, time: float, col: Color) -> void:
+	if kind == "":
+		return
+	status = kind
+	status_t = maxf(status_t, time)
+	status_col = col
+	self_modulate = Color(1, 1, 1).lerp(col, 0.45)
+
+
+func consume_status() -> String:
+	var k := status
+	status = ""
+	status_t = 0.0
+	self_modulate = Color(1, 1, 1)
+	return k
+
+
+func tick_status(delta: float) -> void:
+	if status_t <= 0.0:
+		return
+	status_t -= delta
+	if status_t <= 0.0:
+		status = ""
+		self_modulate = Color(1, 1, 1)
+
+
 func take_damage(damage: float, crit: bool = false, _dot: bool = false, element: String = "") -> void:
+	# 화로 점화 가속: 원소 상태가 걸려 있으면 2배로 달아오른다 (setup 보상).
+	# 지옥 균열은 벌(30%)로 요구하고 여기는 상(200%)으로 권한다 — 같은 문법, 다른 압력.
+	if status != "":
+		damage *= 2.0
 	if _lit or damage <= 0.0:
 		return
 	var main := get_parent()
@@ -106,6 +143,7 @@ func _light(notify_main: bool) -> void:
 
 
 func _process(delta: float) -> void:
+	tick_status(delta)
 	_anim_t += delta
 	if _hit_t > 0.0:
 		_hit_t -= delta

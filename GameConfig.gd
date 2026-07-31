@@ -318,6 +318,7 @@ static func hell_midboss_tier() -> Dictionary:
 		"name": "용암 집행자", "key": "hell_enforcer", "shape": "demon",
 		"color": Color(1.0, 0.30, 0.10), "hp_mult": 4.8, "speed_mult": 0.92,
 		"xp": 18, "radius": 27.0, "behavior": "charge",
+		"combo_trait": "shell",
 		"sprite": "res://assets/enemies/demon.png", "weak": "ice", "resist": "fire",
 	}
 
@@ -333,12 +334,14 @@ static func graveyard_elite_tier() -> Dictionary:
 	}
 
 
+# 중간보스 5종 전원 껍질(combo_trait shell): 상태를 터뜨려야 5초 무방비.
 # M5-A 묘지 중간보스 전용 티어. 일반 웨이브에 섞지 않아 2:30 무덤 기사 전투를 보장한다.
 static func graveyard_midboss_tier() -> Dictionary:
 	return {
 		"name": "무덤 기사", "key": "tomb_knight", "shape": "demon",
 		"color": Color(0.55, 0.70, 0.88), "hp_mult": 4.4, "speed_mult": 0.96,
 		"xp": 16, "radius": 26.0, "behavior": "charge",
+		"combo_trait": "shell",
 		"sprite": "res://assets/enemies/dark_knight.png", "weak": "", "resist": "",
 	}
 
@@ -359,6 +362,7 @@ static func glacier_midboss_tier() -> Dictionary:
 		"name": "빙벽 골렘", "key": "icewall_golem", "shape": "orc",
 		"color": Color(0.48, 0.72, 0.98), "hp_mult": 5.2, "speed_mult": 0.78,
 		"xp": 20, "radius": 29.0, "behavior": "charge",
+		"combo_trait": "shell",
 		"sprite": "res://assets/enemies/frost_golem.png", "weak": "fire", "resist": "ice",
 	}
 
@@ -379,6 +383,7 @@ static func void_midboss_tier() -> Dictionary:
 		"name": "심연의 눈", "key": "abyss_oracle", "shape": "demon",
 		"color": Color(0.72, 0.42, 0.92), "hp_mult": 5.6, "speed_mult": 0.88,
 		"xp": 21, "radius": 27.0, "behavior": "ranged", "damage_source": "void_boss",
+		"combo_trait": "shell",
 		"sprite": "res://assets/enemies/eye_mass.png", "weak": "holy", "resist": "dark",
 	}
 
@@ -400,6 +405,7 @@ static func castle_midboss_tier() -> Dictionary:
 		"name": "흑기사 사령관", "key": "black_marshal", "shape": "orc",
 		"color": Color(0.52, 0.44, 0.56), "hp_mult": 5.4, "speed_mult": 0.90,
 		"xp": 20, "radius": 28.0, "behavior": "charge",
+		"combo_trait": "shell",
 		"sprite": "res://assets/enemies/dark_knight.png", "weak": "holy", "resist": "dark",
 	}
 
