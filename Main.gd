@@ -2261,6 +2261,9 @@ func _apply_arrow_hit(a, target) -> void:
 		df.life = 0.34
 		df.max_life = df.life
 		add_child(df)
+	if a.status_effect != "" and is_instance_valid(target) and target.has_method("mark_status"):
+		target.mark_status(a.status_effect, SkillDefs.PRIME_TIME,
+			SkillDefs.EFFECT_COL.get(a.status_effect, Color(1, 1, 1)))
 	if a.slow_amount > 0.0 and is_instance_valid(target) and target.has_method("apply_slow"):
 		target.apply_slow(a.slow_amount, a.slow_time)
 	if a.explode_radius > 0.0:
@@ -8204,9 +8207,22 @@ func _skill_target(def: Dictionary) -> Vector2:
 
 
 # 아키타입 8종의 실제 동작. 무기별 함수 40개가 여기로 접혔다.
+var _cast_role := "setup"   # 지금 시전 중인 스킬의 역할
+var _cast_slot := ""        # 지금 시전 중인 스킬이 꽂힌 슬롯 (흡혈 터뜨림이 쿨을 되돌린다)
+
+
+func _slot_of_archetype(archetype: String) -> String:
+	for slot in SkillDefs.SLOT_KEYS:
+		if str(skill_slots.get(slot, "")) == archetype:
+			return str(slot)
+	return ""
+
+
 func _execute_skill(def: Dictionary) -> bool:
 	var element := str(def["element"])
 	var effect := str(def["effect"])
+	# 이번 시전의 역할(setup/payoff)과 슬롯. _hit_with_effect 가 매 대상마다 읽는다.
+	# 인자로 줄줄이 넘기는 것보다 짧고, 시전은 한 번에 하나뿐이라 겹칠 일이 없다.
 	# 캐릭터의 근접·원거리 배수를 스킬 피해에 건다. 예전엔 무기 피해에만 걸려 있어서
 	# 무기를 걷어낸 뒤로 이 스탯이 캐릭터 선택창에만 표시되고 실제로는 아무 일도
 	# 안 하고 있었다. 판정 사거리로 갈라서(140px 이하 = 근접) 한 줄로 되살린다.
@@ -8215,6 +8231,8 @@ func _execute_skill(def: Dictionary) -> bool:
 	var aim := player.aim_dir()
 	var target := _skill_target(def)
 	var source := telemetry_push_damage_source("skill:%s" % str(def["archetype"]))
+	_cast_role = SkillDefs.role_of(str(def["archetype"]))
+	_cast_slot = _slot_of_archetype(str(def["archetype"]))
 	player._face_direction(aim)
 	player.play_attack()
 	match str(def["archetype"]):
@@ -8259,6 +8277,7 @@ func _skill_bolt(def: Dictionary, aim: Vector2, damage: float, effect: String) -
 		# 명중 이펙트는 일부러 안 붙인다. 초당 두세 번 맞히는 기본 공격에 폭발
 		# 스프라이트를 매번 띄우면 화면이 이펙트로 덮인다. 맞은 몬스터가 흰색으로
 		# 번쩍이는 것(Enemy._flash_t)과 데미지 숫자로 충분하다.
+		a.status_effect = effect   # 기본 공격이 setup 이다 — 이게 없으면 콤보가 안 돈다
 		a.crit_chance = player.crit_chance + (0.20 if effect == "execute" else 0.0)
 		a.crit_mult = player.crit_mult
 		if effect == "chill":
@@ -8309,6 +8328,18 @@ func _skill_burst(def: Dictionary, target: Vector2, damage: float, effect: Strin
 
 
 func _skill_field(def: Dictionary, target: Vector2, damage: float, element: String) -> void:
+	# 장판은 setup 이다. 깔리는 순간 범위 안의 적에게 상태를 발라 둔다 —
+	# 지속 피해만으로는 콤보 대상이 안 생겨 "깔고 터뜨린다"가 성립하지 않는다.
+	var mark := str(SkillDefs.ELEMENT_TRAITS.get(element, {}).get("effect", ""))
+	if mark != "":
+		for e in _enemies_and_boss():
+			if not is_instance_valid(e):
+				continue
+			if (e as Node2D).position.distance_to(target) > float(def["radius"]) + float(e.radius):
+				continue
+			if e.has_method("mark_status"):
+				e.mark_status(mark, SkillDefs.PRIME_TIME,
+					SkillDefs.EFFECT_COL.get(mark, Color(1, 1, 1)))
 	var z := VoidZone.new()
 	z.position = target
 	z.radius = float(def["radius"])
@@ -8369,12 +8400,22 @@ func _deal_damage(target, amount: float, crit: bool, element: String) -> void:
 
 # 원소 규칙을 적중에 덧붙인다. 배수가 아니라 규칙이라 여기서만 처리한다.
 func _hit_with_effect(target, damage: float, effect: String, push_dir: Vector2) -> void:
+	# payoff 스킬은 때리기 전에 상태를 꺼낸다. 꺼낸 뒤에 때려야 처치되는 적의
+	# 상태도 정상적으로 소비된다.
+	var primed := ""
+	if _cast_role == "payoff" and target.has_method("consume_status"):
+		primed = str(target.consume_status())
 	var dealt := damage
 	if effect == "execute" and "hp" in target and "max_hp" in target:
 		# 처형: 빈사 상태의 적에게 추가 피해. 잡몹 정리 속도를 올린다.
 		if float(target.hp) <= float(target.max_hp) * 0.25:
 			dealt *= 1.6
 	_deal_damage(target, dealt, true, attack_element)
+	if primed != "":
+		_payoff(target, primed, dealt)
+	elif _cast_role == "setup" and target.has_method("mark_status"):
+		target.mark_status(effect, SkillDefs.PRIME_TIME,
+			SkillDefs.EFFECT_COL.get(effect, Color(1, 1, 1)))
 	match effect:
 		"burn":
 			if target.has_method("apply_slow"):
@@ -8398,6 +8439,80 @@ func _hit_with_effect(target, damage: float, effect: String, push_dir: Vector2) 
 				target.apply_slow(1.0, 0.7)
 		"chain":
 			_chain_to_nearby(target, dealt * 0.45, 2)
+
+
+# 상태 터뜨림. 전부 "무슨 일이 벌어지는가"가 바뀐다 — 피해 배수는 하나도 없다.
+# (사장님 원칙: 범위·피해만 커지는 건 특수효과가 아니다)
+func _payoff(target, primed: String, dealt: float) -> void:
+	if not is_instance_valid(target):
+		return
+	var at: Vector2 = (target as Node2D).position
+	match primed:
+		"burn":
+			# 불이 옮겨붙는다. 터뜨린 적 주변 3명이 새로 화상 상태가 된다.
+			var lit := 0
+			for e in _enemies_and_boss():
+				if lit >= 3 or not is_instance_valid(e) or e == target:
+					continue
+				if at.distance_to((e as Node2D).position) > 150.0:
+					continue
+				if e.has_method("mark_status"):
+					e.mark_status("burn", SkillDefs.PRIME_TIME,
+						SkillDefs.EFFECT_COL["burn"])
+				_apply_burn(e, 6.0)
+				lit += 1
+		"chill":
+			# 얼어붙어 완전 정지. 둔화가 아니라 멈춘다.
+			if target.has_method("apply_slow"):
+				target.apply_slow(1.0, 1.4)
+		"stun":
+			# 충격이 퍼져 주변 적도 같이 기절한다.
+			for e in _enemies_and_boss():
+				if not is_instance_valid(e) or e == target:
+					continue
+				if at.distance_to((e as Node2D).position) > 130.0:
+					continue
+				if e.has_method("apply_slow"):
+					e.apply_slow(1.0, 0.7)
+		"drain":
+			# 처치했으면 그 스킬을 즉시 다시 쓴다. 몰이사냥이 이어진다.
+			if "hp" in target and float(target.hp) <= 0.0 and _cast_slot != "":
+				skill_cds[_cast_slot] = 0.0
+				_refresh_skill_hud()
+		"mend":
+			# 회피가 즉시 돌아온다. 공격이 곧 생존 자원이 된다.
+			if player:
+				player.dodge_cd = 0.0
+		"push":
+			# 밀어내는 대신 끌어당긴다. 흩어진 적을 한 점에 모은다.
+			for e in _enemies_and_boss():
+				if not is_instance_valid(e) or e == target:
+					continue
+				if at.distance_to((e as Node2D).position) > 170.0:
+					continue
+				if e.has_method("shove"):
+					e.shove(at + ((e as Node2D).position - at) * 2.0, 240.0)
+		"pierce":
+			# 돌풍이 남아 주변 적을 잠시 묶는다.
+			for e in _enemies_and_boss():
+				if not is_instance_valid(e) or e == target:
+					continue
+				if at.distance_to((e as Node2D).position) > 140.0:
+					continue
+				if e.has_method("apply_slow"):
+					e.apply_slow(0.85, 0.6)
+		"chain":
+			# 사슬이 길게 이어진다. 2명 -> 5명.
+			_chain_to_nearby(target, dealt * 0.4, 5)
+		"execute":
+			# 체력 35% 이하면 즉사. 배수가 아니라 선을 넘으면 죽는다.
+			if "hp" in target and "max_hp" in target:
+				if float(target.hp) > 0.0 and float(target.hp) <= float(target.max_hp) * 0.35:
+					_deal_damage(target, float(target.hp) + 1.0, true, attack_element)
+	# 터뜨림 연출: 그 원소의 무거운 이펙트 한 번. 크기는 판정 그대로 둔다.
+	spawn_fx_form("impact", at, 92.0, 0.0, 18.0, Vector2.ONE, true)
+	play_sfx("ult", -12.0, 0.06)
+	shake_t = maxf(shake_t, 0.16)
 
 
 # 화상: 짧은 지속 피해. 전용 노드를 만들지 않고 작은 장판 한 장으로 대신한다.

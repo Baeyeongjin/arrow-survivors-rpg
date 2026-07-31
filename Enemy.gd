@@ -18,6 +18,11 @@ var midboss := false # M3 지옥 세로 슬라이스: 용암 집행자 처치 �
 var weak := ""       # 약점 속성 (이 속성으로 맞으면 ×1.5). 빈 문자열=약점 없음
 var resist := ""     # 저항 속성 (이 속성으로 맞으면 ×0.6)
 
+# 원소 상태(콤보). setup 스킬이 바르고 payoff 스킬이 소비한다.
+# 표시는 몸 색 하나로만 — 머리 위 아이콘 같은 걸 얹으면 난전에서 화면이 안 보인다.
+var status := ""
+var status_t := 0.0
+var status_col := Color(1, 1, 1)
 # 둔화 상태
 var slow_factor := 1.0
 var slow_timer := 0.0
@@ -154,6 +159,43 @@ func _move_on_stage(target: Vector2, distance: float) -> void:
 	else:
 		position = position.move_toward(target, distance)
 
+
+# 상태를 바른다(덮어쓰기). 같은 상태를 다시 맞으면 시간만 갱신된다.
+func mark_status(kind: String, time: float, col: Color) -> void:
+	if kind == "":
+		return
+	status = kind
+	status_t = maxf(status_t, time)
+	status_col = col
+	if _flash_t <= 0.0:
+		self_modulate = _status_modulate()
+
+
+# 상태를 꺼내 쓰고 지운다. 없으면 "".
+func consume_status() -> String:
+	var k := status
+	status = ""
+	status_t = 0.0
+	if _flash_t <= 0.0:
+		self_modulate = Color(1, 1, 1)
+	return k
+
+
+# 상태 시간 감쇠. _process 에서 부르지만 따로 떼어 둔 건 검증 때문이다 —
+# _process 는 플레이어 조회 같은 씬 의존이 있어 단독으로 못 돌린다.
+func tick_status(delta: float) -> void:
+	if status_t <= 0.0:
+		return
+	status_t -= delta
+	if status_t <= 0.0:
+		status = ""
+		if _flash_t <= 0.0:
+			self_modulate = Color(1, 1, 1)
+
+func _status_modulate() -> Color:
+	return Color(1, 1, 1).lerp(status_col, 0.55) if status != "" else Color(1, 1, 1)
+
+
 func apply_slow(amount: float, time: float) -> void:
 	slow_factor = min(slow_factor, 1.0 - amount)
 	slow_timer = max(slow_timer, time)
@@ -274,7 +316,10 @@ func _process(delta: float) -> void:
 			_dmg_flush = 0.0
 	if _flash_t > 0.0:
 		_flash_t -= delta
-		self_modulate = Color(8, 8, 9) if _flash_t > 0.0 else Color(1, 1, 1)
+		# 플래시가 끝나면 흰색이 아니라 상태 색으로 돌아간다. 흰색으로 돌리면
+		# 맞을 때마다 상태 표시가 지워져 콤보 대상인지 알 수 없다.
+		self_modulate = Color(8, 8, 9) if _flash_t > 0.0 else _status_modulate()
+	tick_status(delta)
 	# 피격 스쿼시 펀치 진행 (그리기 갱신)
 	if _hit_t > 0.0:
 		_hit_t -= delta

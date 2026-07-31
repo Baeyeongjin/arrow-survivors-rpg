@@ -27,6 +27,7 @@ var trail := false                # 잔상 트레일 (스킬용)
 var trail_col := Color(1, 0.9, 0.5)  # 트레일 색 (무기별)
 var scale_mul := 1.0              # 스프라이트 크기 배수
 var anim_dir := ""                # 투사체 프레임 애니메이션 (assets/anim/<dir>)
+var status_effect := ""           # 명중 시 바를 원소 상태 (콤보 setup)
 var fx_hit := ""                  # 명중 시 스폰할 이펙트 애니 이름 (assets/anim/<fx_hit>)
 var fx_hit_size := 72.0           # 명중 이펙트 표시 크기
 var _age := 0.0

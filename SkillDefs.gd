@@ -109,6 +109,34 @@ const EFFECT_NAME := {
 	"pierce": "관통", "stun": "기절", "chain": "연쇄", "execute": "처형",
 }
 
+# 상태가 걸린 적의 몸 색. 도형 오버레이 대신 몸 색으로만 알린다(사장님 원칙).
+const EFFECT_COL := {
+	"burn": Color(1.0, 0.45, 0.15), "chill": Color(0.55, 0.85, 1.0),
+	"drain": Color(0.72, 0.42, 1.0), "mend": Color(1.0, 0.93, 0.55),
+	"push": Color(0.35, 0.70, 1.0), "pierce": Color(0.60, 1.0, 0.70),
+	"stun": Color(0.90, 0.72, 0.35), "chain": Color(1.0, 0.95, 0.40),
+	"execute": Color(0.95, 0.95, 1.0),
+}
+
+# 상태가 유지되는 시간. 이 안에 터뜨려야 콤보가 성립한다.
+# 짧으면 콤보가 안 잡히고 길면 아무 때나 눌러도 터져서 순서가 의미를 잃는다.
+const PRIME_TIME := 4.0
+
+# 스킬 역할. 7종이 전부 "때리기"라 뭘 골라도 결과가 같던 문제를 여기서 가른다.
+#   setup  : 원소 상태를 바른다 (넓게·자주 맞히는 것들)
+#   payoff : 상태 걸린 적에게 쓰면 규칙이 바뀐다 (단발 큰 한 방)
+#   guard  : 방어
+# 손이 "장판 깔고 -> 작렬"로 바뀌는 게 목적이다.
+const ROLE := {
+	"bolt": "setup", "swing": "setup", "slash": "setup", "field": "setup", "nova": "setup",
+	"burst": "payoff", "ruin": "payoff",
+	"ward": "guard", "aegis": "guard",
+}
+
+
+static func role_of(archetype: String) -> String:
+	return str(ROLE.get(archetype, "setup"))
+
 
 static func archetype_keys() -> Array:
 	return ARCHETYPES.keys()
