@@ -8400,9 +8400,16 @@ func _skill_field(def: Dictionary, target: Vector2, damage: float, element: Stri
 	z.radius = float(def["radius"])
 	z.dps = damage * 0.55
 	z.life = float(def.get("duration", 4.5))
-	# 숙련(장판): 지대가 적을 안으로 끌어당긴다. 흩어지는 적을 붙잡아 두는
-	# 지대가 되면서 "깔고 터뜨린다"의 앞 절반이 훨씬 잘 걸린다.
-	z.pull = 120.0 if bool(def.get("mastered", false)) else 0.0
+	# 회오리(heavy)는 끌어당김이 정체성이라 숙련과 무관하게 항상 켠다.
+	# 시전 순간의 1회 당김만으로는 자산(소용돌이)과 효과가 따로 놀았다.
+	# VoidZone 은 pull > 0 이면 매 프레임 적을 당기고 회전 오브도 그린다 — 이미 있던 기능이다.
+	#
+	# 일반 장판은 그대로 숙련에서만 열린다. 흩어지는 적을 붙잡아 두는 지대가 되면서
+	# "깔고 터뜨린다"의 앞 절반이 훨씬 잘 걸린다.
+	if bool(def.get("heavy", false)):
+		z.pull = 150.0 if bool(def.get("mastered", false)) else 110.0
+	else:
+		z.pull = 120.0 if bool(def.get("mastered", false)) else 0.0
 	z.col = Color(ELEMENT_COL.get(element, Color(0.8, 0.8, 0.9)))
 	z.anim_dir = FxMatrix.resolve_path("zone", element, bool(def.get("heavy", false)))
 	z.outline = false
