@@ -1855,6 +1855,11 @@ func _process(delta: float) -> void:
 	for slot in skill_cds.keys():
 		if float(skill_cds[slot]) > 0.0:
 			skill_cds[slot] = maxf(0.0, float(skill_cds[slot]) - delta)
+	# 가속의 각인 중첩 만료. 이어서 처치하지 못하면 통째로 풀린다.
+	if momentum_t > 0.0:
+		momentum_t = maxf(0.0, momentum_t - delta)
+		if momentum_t <= 0.0:
+			momentum_stacks = 0
 	if ward_timer > 0.0:
 		ward_timer = maxf(0.0, ward_timer - delta)
 		if ward_timer <= 0.0 and player:
@@ -2113,7 +2118,12 @@ func _physics_process(delta: float) -> void:
 			e.shove(player.position, 240.0)   # 몸박 넉백 (매 프레임 → 몸으로 막힘)
 		# 몸 자체는 서로 밀어내지만, 피해는 적이 예고한 타격의 활성 프레임에만 발생한다.
 		if not _touched and player.invuln <= 0.0 and e.can_damage_player(player.position, player.radius):
-			apply_player_damage(max(1.0, e.touch_damage - player.armor), "enemy_melee")
+			var melee_taken: float = max(1.0, e.touch_damage - player.armor)
+			apply_player_damage(melee_taken, "enemy_melee")
+			# 가시 갑주(전설 방어구): 근접으로 때린 적에게 받은 피해의 60%를 되돌린다.
+			# 근접 한정이라 원거리 적에게는 안 통한다 — 붙어 싸우는 빌드의 보상이다.
+			if _has_gear_special("thornmail") and is_instance_valid(e):
+				e.take_damage(melee_taken * 0.6, false, false, attack_element)
 			player.invuln = 0.6
 			player.play_hurt()
 			# 정예는 더 세게 민다. 로그라이크를 벗어난 뒤 "맞으면 밀린다"가 무게감을 만든다.
@@ -4084,6 +4094,9 @@ func _open_bonus_chest() -> void:
 	elif roll > 0.85:
 		count = 3      # 12%
 	# else 1 (85%)
+	# 탐욕의 봉인(전설 장신구): 개수 등급이 한 단계 오른다. 1 -> 3 -> 5.
+	if _has_gear_special("greed_seal") and randf() < 0.35:
+		count = 5 if count == 3 else 3
 	# 보물상자는 장비를 준다(사장님 결정). 필드 랜덤 드롭을 없앤 대신 장비 획득을
 	# 여기로 일원화한다. 상자를 여는 순간이 곧 "뭐가 나올까"가 되어야 한다.
 	# 패시브는 레벨업 카드가 이미 담당하므로 상자까지 겹칠 필요가 없다.
@@ -4101,6 +4114,8 @@ func _open_bonus_chest() -> void:
 		})
 	# 상자 골드 (뱀서식 "55.00" 연출용) — 실제 골드도 적립
 	var chest_gold := float(count) * randf_range(12.0, 30.0) * greed_mult
+	if _has_gear_special("greed_seal"):
+		chest_gold *= 2.0
 	run_gold += int(round(chest_gold))
 	_refresh_inventory_ui()
 	_update_ui()
@@ -4302,13 +4317,19 @@ func on_enemy_killed(e: Enemy) -> void:
 	# 정예 처치는 스킬 쿨을 짧게 되돌려 준다 (궁극기 게이지를 대체하는 처치 보상).
 	if e.elite:
 		_reduce_skill_cds(0.8)
+	# 가속의 각인(전설 무기): 처치가 곧 다음 공격을 앞당긴다. 잡몹도 포함이라
+	# 몰이 상황에서 눈덩이가 굴러가고, 5초 안에 못 이으면 그대로 풀린다.
+	if _has_gear_special("momentum"):
+		momentum_stacks = mini(momentum_stacks + 1, 5)
+		momentum_t = 5.0
 	# 필드 랜덤 장비 드롭 제거(사장님 결정). 장비는 보물상자로 일원화한다.
 	# 중간보스의 던전 전용 장비는 설계된 확정 보상이라 그대로 둔다.
 	# 왕좌 지휘관을 처치하면 마왕 보호막 게이트가 한 칸 열린다.
 	if str(e.tier.get("key", "")) == "throne_guard" \
 			and boss and is_instance_valid(boss) and boss.has_method("on_castle_guard_killed"):
 		boss.on_castle_guard_killed()
-	if e.elite and _has_gear_special("grave_echo"):
+	# 메아리 인장(전설)도 같은 훅을 쓴다. 효과가 같으므로 배관을 나누지 않는다.
+	if e.elite and (_has_gear_special("grave_echo") or _has_gear_special("echo_sigil")):
 		_grave_echo_on_elite()   # 혼령의 메아리: 정예 처치 시 E 재사용 단축 + 궁 게이지
 	if e.midboss:
 		run_gold += 30
@@ -4994,6 +5015,38 @@ const HELL_GEAR_SPECIALS := {
 	},
 }
 
+# 전설 전용 특수능력. 슬롯별로 하나씩 뽑는다.
+#
+# 전설이 '숫자가 3개 붙은 것'일 뿐이라는 문제를 여기서 푼다(사장님 지적).
+# 던전 전용 어픽스 15종은 이미 있었지만 중간보스 확정 보상으로만 나왔고,
+# 상자에서 나온 전설에는 아무 규칙도 안 붙었다.
+#
+# 던전 전용과 같은 원칙을 따른다 — 수치 누적이 아니라 규칙 변경이다.
+# 그리고 던전 기믹(화로 점화, 균열 봉인)에 묶이지 않아 어디서든 작동해야 한다.
+const LEGENDARY_GEAR_SPECIALS := {
+	"weapon": [
+		{"key": "executioner", "name": "처형자의 각인",
+			"desc": "체력 25% 이하인 적에게 주는 피해 2배"},
+		{"key": "momentum", "name": "가속의 각인",
+			"desc": "적 처치마다 5초간 공격 속도 +8% (최대 5중첩)"},
+	],
+	"armor": [
+		{"key": "second_wind", "name": "두 번째 숨",
+			"desc": "층마다 처음 치명 피해를 1 HP로 버티고 1.5초 무적"},
+		{"key": "thornmail", "name": "가시 갑주",
+			"desc": "근접 피격 시 가한 적에게 받은 피해의 60%를 되돌린다"},
+	],
+	"trinket": [
+		{"key": "echo_sigil", "name": "메아리 인장",
+			"desc": "정예 처치 시 스킬 재사용 2초 단축"},
+		# 골드 전역 배수(greed_mult)는 영구강화가 쓰는 메타 값이라 장비로 건드리면
+		# 장착·해제 때 누수가 난다. 상자 한 곳에서 완결되는 효과로 잡았다.
+		{"key": "greed_seal", "name": "탐욕의 봉인",
+			"desc": "보물상자 골드 2배 · 상자 보상 개수가 한 단계 오를 확률 35%"},
+	],
+}
+
+
 # M5-A 묘지 전용 어픽스. 수치 누적이 아니라 조작·생존 규칙을 바꾼다.
 const GRAVE_GEAR_SPECIALS := {
 	"weapon": {
@@ -5092,7 +5145,16 @@ func _roll_gear_for(slot: String, rarity: String) -> Dictionary:
 	# element: 접두어에서 결정. 무기 슬롯이면 이 속성이 곧 내 공격 속성.
 	# 장비는 전부 패시브다. 스탯(affixes)과 부여 속성(element)만 준다 —
 	# 무엇을 어떻게 쏘는지는 캐릭터의 원소와 스킬이 정한다.
-	return {"slot": slot, "rarity": rarity, "affixes": affs, "name": nm, "icon": GEAR_NOUN_ICON.get(noun, ""), "element": GEAR_ADJ_ELEMENT.get(adj, "phys"), "_found": true, "gear_id": _new_gear_id(), "lvl": 0}
+	var item := {"slot": slot, "rarity": rarity, "affixes": affs, "name": nm, "icon": GEAR_NOUN_ICON.get(noun, ""), "element": GEAR_ADJ_ELEMENT.get(adj, "phys"), "_found": true, "gear_id": _new_gear_id(), "lvl": 0}
+	# 전설에만 규칙을 바꾸는 특수능력을 붙인다. 그 전까지 전설은 접사가 3개인 것뿐이라
+	# 에픽(2개)과 종류가 아니라 양만 달랐다. 이름도 특수능력 이름으로 바꿔
+	# 인벤토리에서 한눈에 구분되게 한다.
+	if rarity == "legendary" and LEGENDARY_GEAR_SPECIALS.has(slot):
+		var special_pool: Array = LEGENDARY_GEAR_SPECIALS[slot]
+		var sp: Dictionary = (special_pool[randi() % special_pool.size()] as Dictionary).duplicate(true)
+		item["special"] = sp
+		item["name"] = str(sp["name"])
+	return item
 
 
 func _roll_hell_gear(force_epic: bool = false, slot_override: String = "") -> Dictionary:
@@ -5172,7 +5234,11 @@ func _grave_echo_on_elite() -> void:
 
 # 수의의 가호: 층마다 처음 치명 피해를 1 HP로 버티고 짧은 무적. 발동 시 true.
 func _grave_try_death_guard() -> bool:
-	if grave_shroud_used or not _has_gear_special("burial_shroud") or player == null:
+	# 두 번째 숨(전설)은 수의의 가호와 효과가 같다. 같은 1회 플래그를 공유해
+	# 둘을 겹쳐 껴도 층당 한 번만 발동한다 — 중첩하면 생존이 무너진다.
+	if grave_shroud_used or player == null:
+		return false
+	if not (_has_gear_special("burial_shroud") or _has_gear_special("second_wind")):
 		return false
 	grave_shroud_used = true
 	player.hp = 1.0
@@ -7576,6 +7642,9 @@ func _start_game(d: Dictionary) -> void:
 	skill_cds = {"q": 0.0, "e": 0.0, "r": 0.0, "f": 0.0}
 	basic_cd = 0.0
 	ward_timer = 0.0
+	# 가속 중첩도 층을 넘기면 푼다. 층 사이 이동 중에 유지되면 다음 층 시작이 공짜가 된다.
+	momentum_stacks = 0
+	momentum_t = 0.0
 	reaper_warned = false
 	_boss_is_objective = false
 	hell_fissures_spawned = 0
@@ -8038,6 +8107,8 @@ func _active_buff_text() -> String:
 		parts.append("보호 %.1f초" % ward_timer)
 	if player and player.slow_t > 0.0:
 		parts.append("둔화 %.1f초" % player.slow_t)
+	if momentum_stacks > 0:
+		parts.append("가속 %d중첩 %.1f초" % [momentum_stacks, momentum_t])
 	if parts.is_empty():
 		return ""
 	return "[지속] " + "  ·  ".join(parts)
@@ -8108,6 +8179,10 @@ var skill_levels := {}          # 아키타입 키 -> 레벨(1~5)
 var skill_cds := {"q": 0.0, "e": 0.0, "r": 0.0, "f": 0.0}
 var basic_cd := 0.0
 var ward_timer := 0.0        # 보호 스킬 남은 시간
+# 가속의 각인(전설 무기) 중첩. 스킬 쿨다운에 곱해지고 5초 안에 못 이으면 통째로 풀린다.
+# 부분 감소가 아니라 전부 잃는 쪽이 "이어가라"는 압박이 분명하다.
+var momentum_stacks := 0
+var momentum_t := 0.0
 
 
 func _player_element() -> String:
@@ -8225,7 +8300,8 @@ func _cast_skill_slot(slot: String) -> bool:
 		return false
 	if not _execute_skill(def):
 		return false
-	skill_cds[slot] = float(def["cd"]) * player.cooldown_mult
+	# 가속의 각인: 중첩당 8% 단축(최대 5중첩 = 40%). 처치를 이으면 손이 빨라진다.
+	skill_cds[slot] = float(def["cd"]) * player.cooldown_mult * (1.0 - 0.08 * momentum_stacks)
 	_grave_requiem_on_cast()   # 장송의 무기: 전조 중인 보스/정예 공격 취소
 	_refresh_skill_hud()
 	return true
@@ -8518,6 +8594,11 @@ func _skill_nova(def: Dictionary, damage: float, effect: String) -> void:
 # 때리므로 여기 한 곳에서 분기한다. 예전엔 무기마다 자기가 아는 대상만 때려서 문제가
 # 드러나지 않았는데, 스킬이 광역으로 전부 훑으면서 터졌다(실제 렌더에서 잡음).
 func _deal_damage(target, amount: float, crit: bool, element: String) -> void:
+	# 처형자의 각인(전설 무기): 빈사인 적을 확실히 끝낸다. 모든 피해가 이 한 곳을
+	# 지나므로 스킬마다 붙일 필요가 없다.
+	if _has_gear_special("executioner") and "hp" in target and "max_hp" in target:
+		if float(target.hp) <= float(target.max_hp) * 0.25:
+			amount *= 2.0
 	if target is Enemy:
 		target.take_damage(amount, crit, false, element)
 	elif target is Boss:
