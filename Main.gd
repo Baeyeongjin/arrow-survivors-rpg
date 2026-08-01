@@ -4960,10 +4960,15 @@ func _roll_rarity(bonus_luck: float = 0.0) -> String:
 # ── 장비 시스템 (Phase 3: 핵앤슬래시 드롭) ─────────────────────────────
 const EQUIP_SLOTS := ["weapon", "armor", "trinket"]
 const EQUIP_SLOT_NAME := {"weapon": "무기", "armor": "방어구", "trinket": "장신구"}
+# 명사 풀. 13종에서 늘렸다 — 등급이 3단계(레어·에픽·전설)인데 종류가 적으면
+# 다른 등급을 먹어도 같은 그림·같은 이름이라 새로 얻은 느낌이 안 났다(사장님 지적).
+# 아이콘 64종을 받아 슬롯별로 배정하고 명사를 거기 맞춰 늘렸다.
 const GEAR_NOUNS := {
-	"weapon": ["검", "도끼", "지팡이", "단검", "창"],
-	"armor": ["갑옷", "로브", "비늘갑주", "망토"],
-	"trinket": ["반지", "부적", "목걸이", "인장"]}
+	"weapon": ["검", "장검", "도끼", "전투도끼", "지팡이", "단검", "창", "미늘창",
+		"낫", "대낫", "망치", "전쟁망치", "석궁", "채찍", "부메랑", "횃불", "지팡이봉"],
+	"armor": ["갑옷", "로브", "비늘갑주", "망토", "건틀릿", "장갑", "심장석", "수호등"],
+	"trinket": ["반지", "부적", "목걸이", "인장", "메달", "성배", "가면", "왕관",
+		"마도서", "구슬", "유물", "깃털", "룬석", "결정"]}
 const GEAR_ADJ := ["맹독의", "불타는", "얼어붙은", "강철의", "고대의", "저주받은", "빛나는", "심연의"]
 # 장비 접두어 → 속성. 무기 슬롯 장비의 이 속성이 곧 내 공격 속성이 된다(상성 판정).
 const GEAR_ADJ_ELEMENT := {
@@ -4976,6 +4981,8 @@ const ELEMENT_COL := {
 const ELEMENT_NAME := {"phys": "물리", "fire": "화염", "ice": "냉기", "holy": "신성", "dark": "암흑"}
 const WEAK_MULT := 1.5     # 약점 히트 배수
 const RESIST_MULT := 0.6   # 저항 히트 배수
+# 명사 -> 아이콘. 기존 13종에 PixelLab 에서 받은 64종을 더했다.
+# 파일명 접두어가 슬롯을 뜻한다: gw_(무기) ga_(방어구) gt_(장신구).
 const GEAR_NOUN_ICON := {
 	"검": "res://assets/items/gear_sword.png", "도끼": "res://assets/items/gear_axe.png",
 	"지팡이": "res://assets/items/gear_staff.png", "단검": "res://assets/items/gear_dagger.png",
@@ -4983,7 +4990,20 @@ const GEAR_NOUN_ICON := {
 	"로브": "res://assets/items/gear_robe.png", "비늘갑주": "res://assets/items/gear_scale.png",
 	"망토": "res://assets/items/gear_cloak.png", "반지": "res://assets/items/gear_ring.png",
 	"부적": "res://assets/items/gear_amulet.png", "목걸이": "res://assets/items/gear_necklace.png",
-	"인장": "res://assets/items/gear_sigil.png"}
+	"인장": "res://assets/items/gear_sigil.png",
+	"장검": "res://assets/items/gw_sword_azure.png", "전투도끼": "res://assets/items/gw_axe_broad.png",
+	"미늘창": "res://assets/items/gw_glaive_gold.png", "낫": "res://assets/items/gw_scythe_green.png",
+	"대낫": "res://assets/items/gw_scythe_purple.png", "망치": "res://assets/items/gw_hammer_iron.png",
+	"전쟁망치": "res://assets/items/gw_hammer_rune.png", "석궁": "res://assets/items/gw_crossbow.png",
+	"채찍": "res://assets/items/gw_whip_crimson.png", "부메랑": "res://assets/items/gw_boomerang.png",
+	"횃불": "res://assets/items/gw_torch_flame.png", "지팡이봉": "res://assets/items/gw_staff_emerald.png",
+	"건틀릿": "res://assets/items/ga_gauntlet.png", "장갑": "res://assets/items/ga_gauntlet_pair.png",
+	"심장석": "res://assets/items/ga_heart.png", "수호등": "res://assets/items/ga_lantern_ward.png",
+	"메달": "res://assets/items/gt_sun_medal.png", "성배": "res://assets/items/gt_chalice.png",
+	"가면": "res://assets/items/gt_mask_gold.png", "왕관": "res://assets/items/gt_crown_thorn.png",
+	"마도서": "res://assets/items/gt_tome_arcane.png", "구슬": "res://assets/items/gt_orb_violet.png",
+	"유물": "res://assets/items/gt_idol_stone.png", "깃털": "res://assets/items/gt_wings_pale.png",
+	"룬석": "res://assets/items/gt_sigil_gold.png", "결정": "res://assets/items/gt_snowflake.png"}
 # 어픽스 풀: player의 가산형 스탯만 (교체 시 diff 제거가 깔끔한 필드).
 const GEAR_AFFIXES := [
 	{"stat": "damage_mult", "name": "공격력", "per": 0.06, "pct": true},
