@@ -7,6 +7,7 @@ extends SceneTree
 #  4) 코드에 이펙트 이름 하드코딩이 되살아나지 않았다.
 #  5) 캐릭터 11명의 원소가 전부 매트릭스가 아는 값이다.
 
+const SkillDefsScript = preload("res://SkillDefs.gd")
 const FxMatrixScript = preload("res://FxMatrix.gd")
 const GameConfigScript = preload("res://GameConfig.gd")
 
@@ -100,19 +101,33 @@ func _initialize() -> void:
 		_expect(not banned in main_source,
 			"이펙트 이름 하드코딩이 되살아났다: %s" % banned)
 
-	# 5) 캐릭터 원소 분산 검사는 제거했다 — 복구 필요.
+	# 5) 캐릭터 원소가 전부 매트릭스가 아는 값이고, 한쪽으로 몰리지 않아야 한다.
+	#    모르는 값이면 전부 phys로 떨어져 캐릭터 구분이 사라진다.
 	#
-	# 원래 Main.CHAR_SKILLS 의 element 를 읽어 "원소 8종 이상 · 한 원소에 2명 이하"를
-	# 강제했다. 캐릭터가 같은 색으로 싸우면 원소 9종 확장의 목적이 사라지기 때문이다.
-	# 그런데 8c49710(궁극기 시스템 제거)에서 CHAR_SKILLS 가 사라졌고,
-	# GameConfig.characters() 에도 element 필드가 없다. 원소를 어디서 정하는지
-	# 확인하지 못해 검사를 새로 쓰지 못했다.
-	#
-	# 틀린 검사를 넣느니 비워 둔다. 다음에 _fx_element() 가 무엇을 읽는지 확인해
-	# 그 출처를 기준으로 되살릴 것. 지금은 캐릭터 원소가 한쪽으로 몰려도 아무도 못 잡는다.
+	# 출처가 Main.CHAR_SKILLS 에서 SkillDefs.CHAR_ELEMENT 로 옮겨갔다
+	# (8c49710 궁극기 시스템 제거). _char_skill_element() -> SkillDefs.element_of()
+	# 가 실제 경로이므로 그 원본을 본다.
+	var char_elements: Dictionary = SkillDefsScript.CHAR_ELEMENT
+	_expect(char_elements.size() >= 5, "캐릭터 원소표가 비었다: %d" % char_elements.size())
+	var seen_elements := {}
+	var per_element := {}
+	for key in char_elements:
+		var element := str(char_elements[key])
+		_expect(element in FxMatrixScript.ELEMENTS,
+			"캐릭터 %s 의 원소 %s 를 매트릭스가 모른다" % [key, element])
+		seen_elements[element] = true
+		per_element[element] = int(per_element.get(element, 0)) + 1
+	# 원소가 몇 개 안 되면 캐릭터가 같은 색으로 싸운다 — 원소 9종 확장의 목적이 사라진다.
+	# 예전에는 dark 4명·phys 3명·ice 2명으로 11명 중 절반이 겹쳤다.
+	_expect(seen_elements.size() >= 7,
+		"캐릭터 원소가 %d종뿐 — 캐릭터별 이펙트 구분이 약하다" % seen_elements.size())
+	# 한 원소에 너무 몰리면 그만큼 캐릭터가 안 갈린다.
+	for el in per_element:
+		_expect(int(per_element[el]) <= 2,
+			"원소 %s 에 캐릭터가 %d명 몰렸다" % [el, int(per_element[el])])
 
 	if failed:
 		quit(1)
 		return
-	print("FX_MATRIX_OK combos=%d" % checked)
+	print("FX_MATRIX_OK combos=%d elements=%d" % [checked, seen_elements.size()])
 	quit(0)

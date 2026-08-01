@@ -94,10 +94,16 @@ func _initialize() -> void:
 
 	var game := MainScript.new()
 	var hud := Label.new()
+	var bar := SkillBar.new()
 	game.player = player
 	game.skill_hud_label = hud
+	game.skill_bar = bar
 	game._refresh_skill_hud()
-	if not _expect("Space 회피" in hud.text, "combat HUD must identify Space as dodge"):
+	# 회피 표시는 텍스트 줄에서 스킬바의 SPC 슬롯으로 옮겨갔다. 검증 의도는 그대로다 —
+	# 회피가 HUD 어딘가에 재사용 대기까지 함께 보여야 한다. 위치만 따라간다.
+	if not _expect(is_equal_approx(bar.dodge_max, PlayerScript.DODGE_COOLDOWN),
+			"combat HUD must show dodge cooldown (skill bar SPC slot)"):
+		bar.free()
 		hud.free()
 		game.free()
 		player.free()
