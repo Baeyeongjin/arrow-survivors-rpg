@@ -4,6 +4,9 @@ extends Node2D
 
 var radius := 140.0
 var dps := 20.0
+# 그림 크기 상한(px). Main.FX_MAX_SIZE 와 같은 값이다 — 지대는 Main 을 거치지 않고
+# 스스로 그리므로 여기 따로 둔다. 32px 캐릭터의 2배가 기준이다.
+const FX_MAX_SIZE := 66.0
 var pull := 70.0
 var life := 2.2
 var max_life := 2.2
@@ -78,7 +81,11 @@ func _draw() -> void:
 		var fr: Array = Assets.frames(anim_dir)
 		if fr.size() > 0:
 			var ft: Texture2D = fr[int(_t * 10.0) % fr.size()]
-			var w := radius * 2.1
+			# 그림 크기 상한. 지대는 spawn_fx_form 을 거치지 않고 여기서 직접 그려서
+			# Main.FX_MAX_SIZE 가 안 걸렸다 — 반경 148짜리 회오리가 radius*2.1 = 311px 로
+			# 64px 자산을 5배 가까이 늘려 화면을 덮었다.
+			# 판정 반경(아래 draw_arc)은 그대로 두고 그림만 묶는다.
+			var w: float = minf(radius * 2.1, FX_MAX_SIZE)
 			var pulse: float = 0.85 + 0.15 * sin(_t * 4.0)
 			# 반투명 (맵 가림 완화): 최대 ~0.55 알파
 			draw_texture_rect(ft, Rect2(Vector2(-w / 2.0, -w / 2.0), Vector2(w, w)), false,
@@ -90,7 +97,9 @@ func _draw() -> void:
 	# 끌어당기는 소용돌이(pull>0, 공허구)만 오브 텍스처 회전 표시
 	if pull > 0.0:
 		var tex := Assets.tex("res://assets/items/icon_voidorb.png")
-		var sz := radius * 1.15
+		# 폴백 경로의 회전 오브도 같은 상한을 쓴다. 위 스프라이트만 묶고 여기를 두면
+		# 애니가 없는 지대에서 그림이 다시 커진다.
+		var sz: float = minf(radius * 1.15, FX_MAX_SIZE)
 		if tex:
 			draw_set_transform(Vector2.ZERO, _t * 6.0, Vector2.ONE)
 			draw_texture_rect(tex, Rect2(Vector2(-sz / 2.0, -sz / 2.0), Vector2(sz, sz)), false,
