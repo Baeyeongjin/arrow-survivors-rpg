@@ -7987,11 +7987,33 @@ func _refresh_skill_hud() -> void:
 			var guide := "[콤보] 밑준비로 상태를 걸고 → 마무리로 터뜨린다"
 			if primed_dist < INF:
 				guide = "[콤보] 터뜨릴 대상 있음 — 마무리 스킬로 소비"
+			# 버프가 걸려 있으면 남은 시간이 콤보 안내보다 급하다. 있을 때만 자리를 뺏는다.
+			var buffs := _active_buff_text()
+			if buffs != "":
+				guide = buffs
 			skill_hud_label.text = "%s\n%s" % ["     ".join(names), guide]
 
 
 # 가장 가까운 "상태 걸린 적"까지의 거리. 없으면 INF.
 # 그룹을 직접 돌아 배열을 새로 만들지 않는다 — 매 프레임 도는 경로다.
+# 지금 걸려 있는 지속 효과의 남은 시간. 없으면 빈 문자열.
+#
+# 버프를 쓰고 나면 언제 끝나는지 알 방법이 전혀 없었다(사장님 지적). 보호는 방어
+# +4를 주는데 그게 살아 있는지 모르면 언제 파고들지 판단할 수 없다.
+#
+# 버프마다 표시 코드를 따로 두면 금방 흩어진다. 새 버프가 생기면 여기 한 줄만
+# 추가하면 HUD에 자동으로 뜨게 한 곳으로 모은다.
+func _active_buff_text() -> String:
+	var parts: Array[String] = []
+	if ward_timer > 0.0:
+		parts.append("보호 %.1f초" % ward_timer)
+	if player and player.slow_t > 0.0:
+		parts.append("둔화 %.1f초" % player.slow_t)
+	if parts.is_empty():
+		return ""
+	return "[지속] " + "  ·  ".join(parts)
+
+
 func _nearest_primed_dist() -> float:
 	# 트리 밖에서도 안전해야 한다. 회귀 테스트는 Main.new()로 인스턴스만 만들어
 	# 순수 함수를 검사하는데, get_tree()가 null이면 여기서 통째로 죽는다.
