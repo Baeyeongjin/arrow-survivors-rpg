@@ -105,10 +105,11 @@ func _initialize() -> void:
 
 	# 혼령의 메아리: 정예 처치 시 E 재사용 단축.
 	game.equipped = {"weapon": {}, "armor": {}, "trinket": game._roll_graveyard_gear(true, "trinket")}
-	game.skill_e_cd = 5.0
+	game.skill_cds["e"] = 5.0
 	_expect(game._has_gear_special("grave_echo"), "혼령의 메아리 장착 판정 미연결")
+	# 감소량이 1.5 -> 2.0으로 바뀌었다(_reduce_skill_cds(2.0)). 5.0 - 2.0 = 3.0.
 	game._grave_echo_on_elite()
-	_expect(is_equal_approx(game.skill_e_cd, 3.5), "정예 처치 E 재사용 단축 미적용: %.2f" % game.skill_e_cd)
+	_expect(is_equal_approx(float(game.skill_cds["e"]), 3.0), "정예 처치 E 재사용 단축 미적용: %.2f" % float(game.skill_cds["e"]))
 
 	# 수의의 가호: 층마다 처음 치명 피해 1회 방어.
 	game.equipped = {"weapon": {}, "armor": game._roll_graveyard_gear(true, "armor"), "trinket": {}}

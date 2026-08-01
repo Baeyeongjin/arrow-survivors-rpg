@@ -131,10 +131,10 @@ func _initialize() -> void:
 		"설원의 수호 냉기/보스 피해 감소 미적용")
 	game.equipped = {"weapon": {}, "armor": {}, "trinket": game._roll_glacier_gear(true, "trinket")}
 	game.glacier_chill = 80.0
-	game.skill_e_cd = 5.0
+	game.skill_cds["e"] = 5.0
 	game._glacier_hearth_echo_on_light()
 	_expect(is_equal_approx(game.glacier_chill, 50.0), "난롯불 메아리 냉기 추가 해제 오류: %.1f" % game.glacier_chill)
-	_expect(is_equal_approx(game.skill_e_cd, 2.5), "난롯불 메아리 E 단축 오류: %.1f" % game.skill_e_cd)
+	_expect(is_equal_approx(float(game.skill_cds["e"]), 2.5), "난롯불 메아리 E 단축 오류: %.1f" % float(game.skill_cds["e"]))
 
 	# 7) 선택 화면 설명과 전용 티어.
 	_expect("화로" in str(GameConfigScript.stage_info(game.GLACIER_STAGE).get("rule", "")),
