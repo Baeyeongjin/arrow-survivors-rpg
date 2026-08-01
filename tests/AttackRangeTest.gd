@@ -80,7 +80,7 @@ func _initialize() -> void:
 	_expect(mob.xp_value == int(round(float(tier["xp"]) * 2.0)),
 		"젬 값 배수 x2.0 미적용: %d (티어 xp=%d)" % [mob.xp_value, int(tier["xp"])])
 	_expect(game.GEM_DROP_CHANCE > 0.0 and game.GEM_DROP_CHANCE < 1.0,
-		"잡몹 젬 드랍이 확률이 아님(100% 드랍으로 회귀): %.2f" % game.GEM_DROP_CHANCE)
+		"잡몹 젬 드랍이 확률이 아님(100%% 드랍으로 회귀): %.2f" % game.GEM_DROP_CHANCE)
 	# 총 XP 수입이 예전(드랍 100% x 값 2.4)보다 확실히 낮아야 한다. 여기가 풀리면
 	# 요구 XP를 올려도 레벨업 속도가 되돌아간다.
 	var income_ratio: float = game.GEM_DROP_CHANCE * (2.0 / 2.4)

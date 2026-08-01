@@ -58,7 +58,8 @@ func _initialize() -> void:
 	_expect(is_equal_approx(fissure.hp, 92.5), "냉기 균열 파괴 배수 오류: %.1f" % fissure.hp)
 	fissure.hp = 100.0
 	fissure.take_damage(10.0, false, false, "fire")
-	_expect(is_equal_approx(fissure.hp, 97.0), "화염 균열 저항 배수 오류: %.1f" % fissure.hp)
+	# 콤보 게이트(0.30) x 화염 저항(0.30) = 0.09배. 두 배수가 곱해진다.
+	_expect(is_equal_approx(fissure.hp, 99.1), "화염 균열 저항 배수 오류: %.1f" % fissure.hp)
 
 	# 4) 보스 체력 게이트 → 갑옷 → 냉기 파괴 → 5초 딜타임 → 두 번째 게이트.
 	var boss = BossScript.new()

@@ -7993,7 +7993,10 @@ func _refresh_skill_hud() -> void:
 # 가장 가까운 "상태 걸린 적"까지의 거리. 없으면 INF.
 # 그룹을 직접 돌아 배열을 새로 만들지 않는다 — 매 프레임 도는 경로다.
 func _nearest_primed_dist() -> float:
-	if player == null:
+	# 트리 밖에서도 안전해야 한다. 회귀 테스트는 Main.new()로 인스턴스만 만들어
+	# 순수 함수를 검사하는데, get_tree()가 null이면 여기서 통째로 죽는다.
+	# 실제로 ActiveCombatTest가 이것 때문에 실패하고 있었다.
+	if player == null or not is_inside_tree():
 		return INF
 	var best := INF
 	for e in get_tree().get_nodes_in_group("enemies"):
