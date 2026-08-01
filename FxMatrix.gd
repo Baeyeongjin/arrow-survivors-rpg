@@ -49,10 +49,13 @@ const FORMS := {
 		"wind": "vfx_wind_ball", "earth": "vfx_earth_ball", "elec": "vfx_elec_ball",
 	},
 	"impact": {
-		"phys": "vfx_phys_002", "fire": "vfx_fire_explosion1", "ice": "vfx_ice_rock",
+		# 대지가 lavabubble(용암 거품)을 쓰고 있었다. 용암은 화염 테마라 대지 적중이
+		# 붉게 터졌다. earth_rock 은 아무 데도 안 쓰이고 있었다 — 바위 적중이 제자리다.
+		# 얼음은 rock 을 쓰고 있었는데 slam(내려찍기)이 놀고 있었다. slam 이 적중 그 자체다.
+		"phys": "vfx_phys_002", "fire": "vfx_fire_explosion1", "ice": "vfx_ice_slam",
 		"dark": "vfx_dark_explosion1", "holy": "vfx_holy_cross",
 		"water": "vfx_water_explosion", "wind": "vfx_wind_explosion",
-		"earth": "vfx_earth_lavabubble", "elec": "vfx_elec_explosion",
+		"earth": "vfx_earth_rock", "elec": "vfx_elec_explosion",
 	},
 	"slash": {
 		"phys": "vfx_phys_003", "fire": "vfx_fire_slash", "ice": "vfx_ice_slash",
