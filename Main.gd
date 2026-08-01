@@ -4969,7 +4969,9 @@ const GEAR_AFFIXES := [
 	{"stat": "max_hp", "name": "최대체력", "per": 14.0, "pct": false},
 	{"stat": "armor", "name": "방어", "per": 1.0, "pct": false},
 	{"stat": "area_mult", "name": "범위", "per": 0.05, "pct": true},
-	{"stat": "pickup_radius", "name": "자석", "per": 18.0, "pct": false},
+	# 자석(pickup_radius)은 접사에서 뺐다(사장님 결정). 전투에 개입하지 않는 편의 수치라
+	# 장비 슬롯을 차지할 값이 없었다 — 뽑히면 그 줄이 버려지는 것과 같았다.
+	# 흡수 범위는 영혼 등불 유물과 메타 성장이 계속 담당한다.
 	{"stat": "regen", "name": "재생", "per": 0.3, "pct": false},
 ]
 const GEAR_AFFIX_COUNT := {"common": 1, "rare": 1, "epic": 2, "legendary": 3}
