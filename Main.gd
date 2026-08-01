@@ -8633,6 +8633,11 @@ func _apply_burn(target, dps: float) -> void:
 	z.pull = 0.0
 	z.outline = false
 	z.col = Color(1.0, 0.5, 0.2)
+	# 화상 지대. anim_dir 이 비어 있어 VoidZone 의 절차 폴백으로 떨어지고 있었다 —
+	# 갈색 테두리 원 + 회전하는 점 8개가 그것이다(사장님이 지적한 "바닥의 동그란 원").
+	# 불꽃 애니를 얹는다. 이름을 박지 않고 매트릭스를 거치며, 화상이므로 원소는 fire 고정이다.
+	# 투명도는 VoidZone 이 스프라이트 경로에서 알파를 0.55로 묶고 맥동까지 준다.
+	z.anim_dir = FxMatrix.resolve_path("zone", "fire")
 	add_child(z)
 
 
