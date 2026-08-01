@@ -1966,7 +1966,8 @@ func _process(delta: float) -> void:
 	# 주기적으로 새 아이템 스폰 (뱀서식: 필드 아이템은 드물게)
 	pickup_timer -= delta
 	if pickup_timer <= 0.0:
-		pickup_timer = 34.0 / max(0.4, diff_loot)   # 뱀서식으로 더 뜸하게 (쉬움 ~28초 / 보통 ~44초)
+		# 하트·기력 물약 빈도 하향(사장님 결정). 34 -> 52 (쉬움 ~43초 / 보통 ~68초).
+		pickup_timer = 52.0 / max(0.4, diff_loot)
 		if get_tree().get_nodes_in_group("pickups").size() < int(2 + 2 * diff_loot):   # 화면 상한 하향 (쉬움 4 / 보통 3)
 			_spawn_pickup_random()
 
@@ -4083,24 +4084,38 @@ func _open_bonus_chest() -> void:
 	elif roll > 0.85:
 		count = 3      # 12%
 	# else 1 (85%)
-	# 뱀서식: 보물상자는 무기·패시브 둘 다 나옴 (진화/유니온은 별도 경로)
-	var opts: Array = _card_options()
+	# 보물상자는 장비를 준다(사장님 결정). 필드 랜덤 드롭을 없앤 대신 장비 획득을
+	# 여기로 일원화한다. 상자를 여는 순간이 곧 "뭐가 나올까"가 되어야 한다.
+	# 패시브는 레벨업 카드가 이미 담당하므로 상자까지 겹칠 필요가 없다.
 	var rewards: Array = []
 	for i in count:
-		if opts.is_empty():
+		var item: Dictionary = _roll_gear()
+		if player:
+			_spawn_gear_pickup(player.position, item)
+		else:
 			run_gold += 20
-			rewards.append({"icon": Assets.tex(PICON.get("clover", "")), "name": "골드 +20"})
-			continue
-		var c: Dictionary = _weighted_choice(opts)   # 보유 무기/패시브 우대(2.4배) — 레벨업과 동일
-		(c["act"] as Callable).call()
-		rewards.append({"icon": Assets.tex(c.get("icon", "")), "name": str(c.get("title", ""))})
-		opts.erase(c)
+		rewards.append({
+			"icon": Assets.tex(str(item.get("icon", ""))),
+			"name": str(item.get("name", "장비")),
+			"rarity": str(item.get("rarity", "common")),
+		})
 	# 상자 골드 (뱀서식 "55.00" 연출용) — 실제 골드도 적립
 	var chest_gold := float(count) * randf_range(12.0, 30.0) * greed_mult
 	run_gold += int(round(chest_gold))
 	_refresh_inventory_ui()
 	_update_ui()
-	_chest_fanfare(count)   # 1/3/5 등급별 연출 (좋을수록 화려)
+	# 연출 등급은 개수가 아니라 "제일 좋은 게 뭐가 나왔나"로 정한다.
+	# 상자가 장비를 주게 된 뒤로는 1개라도 전설이면 5개 평범보다 훨씬 큰 사건이다.
+	# 개수 등급(1/3/5)과 희귀도 등급 중 높은 쪽을 쓴다.
+	var best_rarity := 0
+	for r in rewards:
+		best_rarity = maxi(best_rarity, int(RARITY_ORDER.get(str(r.get("rarity", "")), 0)))
+	var fanfare_count: int = count
+	if best_rarity >= 4:      # 전설
+		fanfare_count = maxi(fanfare_count, 5)
+	elif best_rarity >= 3:    # 에픽
+		fanfare_count = maxi(fanfare_count, 3)
+	_chest_fanfare(fanfare_count)   # 1/3/5 등급별 연출 (좋을수록 화려)
 	_show_roulette(rewards, "보물 상자", chest_gold)
 
 
@@ -4287,7 +4302,8 @@ func on_enemy_killed(e: Enemy) -> void:
 	# 정예 처치는 스킬 쿨을 짧게 되돌려 준다 (궁극기 게이지를 대체하는 처치 보상).
 	if e.elite:
 		_reduce_skill_cds(0.8)
-	_maybe_drop_gear(e.position, e.elite)   # 장비 드롭 (엘리트 확정급, 일반 저확률)
+	# 필드 랜덤 장비 드롭 제거(사장님 결정). 장비는 보물상자로 일원화한다.
+	# 중간보스의 던전 전용 장비는 설계된 확정 보상이라 그대로 둔다.
 	# 왕좌 지휘관을 처치하면 마왕 보호막 게이트가 한 칸 열린다.
 	if str(e.tier.get("key", "")) == "throne_guard" \
 			and boss and is_instance_valid(boss) and boss.has_method("on_castle_guard_killed"):
