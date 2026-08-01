@@ -32,10 +32,10 @@ func _initialize() -> void:
 	# 1) 첫 성문 → 중간보스 → 마지막 성문 → 최종 보스 순서.
 	_expect(game.CASTLE_GATE_TIMES.size() == game.CASTLE_GATE_REQUIRED,
 		"성문 시간표와 요구 개수가 다름")
-	_expect(float(game.CASTLE_GATE_TIMES[0]) < game.CASTLE_MIDBOSS_TIME
-		and game.CASTLE_MIDBOSS_TIME < float(game.CASTLE_GATE_TIMES[1])
-		and float(game.CASTLE_GATE_TIMES[1]) < game.DUNGEON_BOSS_TIME,
-		"성문→흑기사 사령관→성문→마왕 리듬 순서가 깨짐")
+	_expect(float(game.CASTLE_GATE_TIMES[0]) < float(game.CASTLE_GATE_TIMES[1])
+		and float(game.CASTLE_GATE_TIMES[1]) < game.CASTLE_MIDBOSS_TIME
+		and game.CASTLE_MIDBOSS_TIME < game.DUNGEON_BOSS_TIME,
+		"성문 전부→흑기사 사령관→마왕 리듬 순서가 깨짐")
 	# 마왕성만 목표가 2개다. 관문 하나가 정예 묶음 전투 하나이므로 3개면 과밀해진다.
 	_expect(game.CASTLE_GATE_REQUIRED == 2, "마왕성 관문은 2곳이어야 함")
 

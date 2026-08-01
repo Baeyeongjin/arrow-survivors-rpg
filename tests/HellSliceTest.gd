@@ -30,9 +30,9 @@ func _initialize() -> void:
 	_expect(game.HELL_FISSURE_TIMES.size() == game.HELL_FISSURE_REQUIRED,
 		"균열 시간표와 요구 개수가 다름")
 	_expect(float(game.HELL_FISSURE_TIMES[0]) < float(game.HELL_FISSURE_TIMES[1])
-		and float(game.HELL_FISSURE_TIMES[1]) < game.HELL_MIDBOSS_TIME
-		and game.HELL_MIDBOSS_TIME < float(game.HELL_FISSURE_TIMES[2])
-		and float(game.HELL_FISSURE_TIMES[2]) < game.DUNGEON_BOSS_TIME,
+		and float(game.HELL_FISSURE_TIMES[1]) < float(game.HELL_FISSURE_TIMES[2])
+		and float(game.HELL_FISSURE_TIMES[2]) < game.HELL_MIDBOSS_TIME
+		and game.HELL_MIDBOSS_TIME < game.DUNGEON_BOSS_TIME,
 		"균열→중간보스→최종보스 리듬 순서가 깨짐")
 	_expect(game.DUNGEON_BOSS_TIME >= 240.0 and game.DUNGEON_BOSS_TIME <= 360.0,
 		"최종보스가 4~6분 창 밖에 있음")

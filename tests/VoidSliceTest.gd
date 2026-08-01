@@ -34,9 +34,9 @@ func _initialize() -> void:
 	_expect(game.VOID_ANCHOR_TIMES.size() == game.VOID_ANCHOR_REQUIRED,
 		"공허 닻 시간표와 요구 개수가 다름")
 	_expect(float(game.VOID_ANCHOR_TIMES[0]) < float(game.VOID_ANCHOR_TIMES[1])
-		and float(game.VOID_ANCHOR_TIMES[1]) < game.VOID_MIDBOSS_TIME
-		and game.VOID_MIDBOSS_TIME < float(game.VOID_ANCHOR_TIMES[2])
-		and float(game.VOID_ANCHOR_TIMES[2]) < game.DUNGEON_BOSS_TIME,
+		and float(game.VOID_ANCHOR_TIMES[1]) < float(game.VOID_ANCHOR_TIMES[2])
+		and float(game.VOID_ANCHOR_TIMES[2]) < game.VOID_MIDBOSS_TIME
+		and game.VOID_MIDBOSS_TIME < game.DUNGEON_BOSS_TIME,
 		"닻→심연의 눈→공허 감시자 리듬 순서가 깨짐")
 
 	# 2) 공허 탑 지형에서도 닻 주변 반경 58의 전투 공간을 확보한다.

@@ -30,9 +30,9 @@ func _initialize() -> void:
 	# 1) 세로 슬라이스 이벤트 순서.
 	_expect(game.GRAVE_SEAL_TIMES.size() == game.GRAVE_SEAL_REQUIRED, "봉인 시간표와 요구 개수가 다름")
 	_expect(float(game.GRAVE_SEAL_TIMES[0]) < float(game.GRAVE_SEAL_TIMES[1])
-		and float(game.GRAVE_SEAL_TIMES[1]) < game.GRAVE_MIDBOSS_TIME
-		and game.GRAVE_MIDBOSS_TIME < float(game.GRAVE_SEAL_TIMES[2])
-		and float(game.GRAVE_SEAL_TIMES[2]) < game.DUNGEON_BOSS_TIME,
+		and float(game.GRAVE_SEAL_TIMES[1]) < float(game.GRAVE_SEAL_TIMES[2])
+		and float(game.GRAVE_SEAL_TIMES[2]) < game.GRAVE_MIDBOSS_TIME
+		and game.GRAVE_MIDBOSS_TIME < game.DUNGEON_BOSS_TIME,
 		"봉인→무덤 기사→묘지 수호자 리듬 순서가 깨짐")
 
 	# 2) 봉인비 좌표는 묘지 개활지 안에서 실제 전투 가능해야 한다.

@@ -32,9 +32,9 @@ func _initialize() -> void:
 	_expect(game.GLACIER_BRAZIER_TIMES.size() == game.GLACIER_BRAZIER_REQUIRED,
 		"화로 시간표와 요구 개수가 다름")
 	_expect(float(game.GLACIER_BRAZIER_TIMES[0]) < float(game.GLACIER_BRAZIER_TIMES[1])
-		and float(game.GLACIER_BRAZIER_TIMES[1]) < game.GLACIER_MIDBOSS_TIME
-		and game.GLACIER_MIDBOSS_TIME < float(game.GLACIER_BRAZIER_TIMES[2])
-		and float(game.GLACIER_BRAZIER_TIMES[2]) < game.DUNGEON_BOSS_TIME,
+		and float(game.GLACIER_BRAZIER_TIMES[1]) < float(game.GLACIER_BRAZIER_TIMES[2])
+		and float(game.GLACIER_BRAZIER_TIMES[2]) < game.GLACIER_MIDBOSS_TIME
+		and game.GLACIER_MIDBOSS_TIME < game.DUNGEON_BOSS_TIME,
 		"화로→빙벽 골렘→빙결 거상 리듬 순서가 깨짐")
 
 	# 2) 화로 좌표는 좁은 빙하 회랑에서도 반경 58의 전투 공간을 확보해야 한다.
