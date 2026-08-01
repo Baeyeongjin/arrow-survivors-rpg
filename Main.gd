@@ -97,19 +97,33 @@ const BOSS_TIME := 180.0        # 첫 보스 3분 (1분→3분: 초반에 빌드
 const FINAL_STAGE := 5
 const RUN_TIME := 1800.0     # 30분에 피날레 사신 강림 (레거시 캠페인 모드)
 const DUNGEON_BOSS_TIME := 300.0   # 던전 모드: 5분 생존 후 던전 보스(목표) 출현 → 처치=클리어
+# 목표 등장 시각 — 층 시작 16초 안에 전부 띄운다 (사장님 결정: "처음부터 다 띄운다").
+#
+# 예전에는 뒤로 몰려 있었다(묘지 40/95/200). 그래서 2번째를 끝낸 1:45부터 3번째가 뜨는
+# 3:20까지 95초 동안 할 일이 없었고, 목표를 다 끝낸 뒤에도 보스 타이머까지 60~70초를
+# 더 기다렸다. 층 한가운데와 끝에 죽은 구간이 두 개 있었던 셈이다.
+#
+# 이제 셋이 처음부터 열려 있어 "어느 순서로 돌 것인가"가 플레이어 선택이 된다.
+# 목표 사이 이동이 빈 시간이 아니라 동선 짜기가 된다.
+# 0초가 아니라 8/12/16초로 조금 어긋낸 것은 층 시작 배너와 스폰 연출이 겹치지 않게
+# 하려는 것뿐이다. 체감은 "시작하자마자 셋 다"에 가깝다.
+#
+# 층 길이는 이제 중간보스 등장 시각(150초 전후)이 사실상의 하한이다.
+# 보스는 목표 전부 + 중간보스 처치로 열리므로(_stage_objectives_cleared) 한 층이
+# 대략 3~3.5분이 된다. 15분을 되찾으려면 목표를 늘리거나 이동 구간에 사건을 넣어야 한다.
 const HELL_STAGE := 2
-const HELL_FISSURE_TIMES := [45.0, 115.0, 190.0]
+const HELL_FISSURE_TIMES := [8.0, 12.0, 16.0]
 const HELL_FISSURE_REQUIRED := 3
 const HELL_MIDBOSS_TIME := 150.0
 # M5-A 묘지 세로 슬라이스: 영혼 봉인비 3곳(점령) · 2:30 무덤 기사 · 5:00 묘지 수호자.
 const GRAVE_STAGE := 1
-const GRAVE_SEAL_TIMES := [40.0, 95.0, 200.0]   # 00:40 / 01:35 / 03:20
+const GRAVE_SEAL_TIMES := [8.0, 12.0, 16.0]
 const GRAVE_SEAL_REQUIRED := 3
 const GRAVE_SEAL_DURATION := 10.0   # 봉인비 1곳당 누적 점령 시간
 const GRAVE_MIDBOSS_TIME := 150.0   # 02:30 무덤 기사
 # M5-B 빙하 세로 슬라이스: 얼어붙은 화로 3곳 · 2:35 빙벽 골렘 · 5:00 빙결 거상.
 const GLACIER_STAGE := 3
-const GLACIER_BRAZIER_TIMES := [45.0, 105.0, 205.0]   # 00:45 / 01:45 / 03:25
+const GLACIER_BRAZIER_TIMES := [8.0, 12.0, 16.0]
 const GLACIER_BRAZIER_REQUIRED := 3
 const GLACIER_MIDBOSS_TIME := 155.0   # 02:35 빙벽 골렘
 const GLACIER_CHILL_MAX := 100.0
@@ -117,7 +131,7 @@ const GLACIER_CHILL_RATE := 1.05
 const GLACIER_WARMTH_DRAIN := 24.0
 # M5-C 공허 세로 슬라이스: 공허 닻 3곳 · 2:40 심연의 눈 · 5:00 공허 감시자.
 const VOID_STAGE := 4
-const VOID_ANCHOR_TIMES := [45.0, 115.0, 205.0]
+const VOID_ANCHOR_TIMES := [8.0, 12.0, 16.0]
 const VOID_ANCHOR_REQUIRED := 3
 const VOID_ANCHOR_DURATION := 8.0
 const VOID_MIDBOSS_TIME := 160.0
@@ -125,7 +139,7 @@ const VOID_MIDBOSS_TIME := 160.0
 # 다른 던전이 목표 3개인 것과 달리 관문은 2개다. 관문 하나가 정예 묶음 전투 하나라
 # 밀도가 훨씬 높고, "첫 성문 → 중간보스 → 마지막 성문 → 마왕"의 관문 던전 리듬을 만든다.
 const CASTLE_STAGE := 5
-const CASTLE_GATE_TIMES := [50.0, 210.0]   # 00:50 / 03:30
+const CASTLE_GATE_TIMES := [8.0, 14.0]
 const CASTLE_GATE_REQUIRED := 2
 const CASTLE_GATE_RADIUS := 150.0
 const CASTLE_GATE_GUARDS := 4              # 관문 봉쇄전 수비대 수(지휘관 1 + 정예 3)
@@ -1875,10 +1889,19 @@ func _process(delta: float) -> void:
 		# M4 원정: 각 층에서 5분 생존 → 목표 보스. 1·2층은 경로 노드,
 		# 3층 보스는 최종 추출로 이어진다.
 		if not boss_spawned and not _boss_is_objective:
-			if not reaper_warned and dungeon_elapsed >= DUNGEON_BOSS_TIME - 45.0:
+			# 층의 할 일(목표 전부 + 중간보스)을 끝냈으면 타이머를 기다리지 않는다.
+			# 예전에는 DUNGEON_BOSS_TIME(300초)이 유일한 조건이라, 봉인비를 3분에 다
+			# 점령해도 남은 2분은 할 일 없이 버티기만 하는 죽은 시간이었다.
+			# 이제 300초는 "아무것도 안 해도 결국 보스는 온다"는 상한으로만 남는다.
+			#
+			# 중간보스는 '살아 있지 않음'이 아니라 '처치함'을 본다. 등장 시각(150초 전후)
+			# 이전에는 아직 살아 있지 않을 뿐이라, 그걸로 통과시키면 목표를 빨리 끝낸
+			# 플레이어가 중간보스를 통째로 건너뛰게 된다.
+			var cleared_early: bool = _stage_objectives_cleared() and _stage_midboss_defeated()
+			if not reaper_warned and (cleared_early or dungeon_elapsed >= DUNGEON_BOSS_TIME - 45.0):
 				reaper_warned = true
 				_event_banner("[경고] 곧 %d층 보스가 나타난다..." % expedition_floor)
-			if dungeon_elapsed >= DUNGEON_BOSS_TIME:
+			if cleared_early or dungeon_elapsed >= DUNGEON_BOSS_TIME:
 				# 고유 인카운터 던전은 중간보스가 살아 있으면 최종 관문이 열리지 않는다.
 				if map_stage == HELL_STAGE and hell_midboss_alive:
 					if not hell_boss_wait_warned:
@@ -2654,14 +2677,45 @@ func _spawn_budget(spike: int = 100) -> int:
 	return max(0, MAX_ENEMIES + spike - get_tree().get_nodes_in_group("enemies").size())
 
 
+# 스폰 치우침의 기준점(현재 목표). 없으면 Vector2.INF.
+# _ring_pos는 스폰마다 불리므로 매번 그룹을 훑으면 낭비다. 프레임당 한 번만 계산한다.
+var _spawn_goal := Vector2.INF
+var _spawn_goal_frame := -1
+
+
+func _spawn_goal_point() -> Vector2:
+	var frame := Engine.get_process_frames()
+	if frame == _spawn_goal_frame:
+		return _spawn_goal
+	_spawn_goal_frame = frame
+	_spawn_goal = Vector2.INF
+	var targets := _navigator_targets()
+	if not targets.is_empty():
+		_spawn_goal = targets[0]["pos"]
+	return _spawn_goal
+
+
 func _ring_pos(center: Vector2) -> Vector2:
 	# 화면 밖 둘레에서 스폰 (플레이어를 향해 몰려옴). 줌 반영해 화면 바로 밖에서 스폰.
 	var view := get_viewport_rect().size
 	var z: float = player.cam.zoom.x if player and player.cam else 1.0
 	var dist: float = max(view.x, view.y) / z * 0.58 + 70.0
-	# 뱀서식 전방위 포위: 진행 방향 상관없이 360° 전 둘레에서 스폰 (도망칠 틈 없음).
+	# 목표 방향으로 스폰을 치우친다.
+	# 목표 3개가 처음부터 열리면서 이동이 "동선 짜기"가 됐는데, 정작 걷는 동안 저항이
+	# 없으면 여전히 빈 시간이다. 목표 쪽에서 더 많이 나오면 이동이 "밀고 나아가기"가 된다.
+	# 60%만 치우치고 나머지는 전 둘레에 뿌려 뱀서식 포위감을 유지한다.
+	var goal_angle := 0.0
+	var biased := false
+	var goal := _spawn_goal_point()
+	if goal != Vector2.INF:
+		var to_goal := goal - center
+		if to_goal.length_squared() > 1.0:
+			goal_angle = to_goal.angle()
+			biased = true
 	for _try in 18:
 		var ang := randf() * TAU
+		if biased and randf() < 0.60:
+			ang = goal_angle + randf_range(-1.05, 1.05)   # 목표 쪽 약 120도 부채꼴
 		var p := center + Vector2(cos(ang), sin(ang)) * dist
 		p.x = clamp(p.x, 10.0, WORLD.x - 10.0)
 		p.y = clamp(p.y, 10.0, WORLD.y - 10.0)
@@ -4047,6 +4101,32 @@ func _flash(col: Color) -> void:
 func _slowmo(scale: float, ms: int) -> void:
 	Engine.time_scale = scale
 	_slowmo_until = Time.get_ticks_msec() + ms
+
+
+# 히트스톱 — 타격 순간을 아주 짧게 얼려 "통과했다"가 아니라 "부딪혔다"로 만든다.
+# 위의 _slowmo(0.55, 180ms)와는 다른 물건이다. 저건 보스 처치 같은 연출용이고
+# 이건 매 타격용이라 훨씬 짧고 훨씬 세게 얼린다.
+#
+# 뱀서식이라 한 번에 여러 마리를 동시에 때린다. 타격마다 얼리면 난전에서 화면이
+# 계속 끊기므로 두 가지 안전장치를 건다.
+#   1) 최소 간격 150ms — 난타 중에도 프레임이 뭉개지지 않는다.
+#   2) 더 긴 연출이 돌고 있으면 덮지 않는다 — 보스 처치 슬로우모션을 잘라먹지 않게.
+# 복귀는 기존 _slowmo 회수 코드가 실시간(_slowmo_until) 기준으로 함께 처리한다.
+const HITSTOP_MIN_GAP_MS := 150
+const HITSTOP_SCALE := 0.04
+
+var _hitstop_next_ok := 0
+
+
+func request_hitstop(ms: int) -> void:
+	if Effect.fx_level == 0:   # 이펙트를 끈 설정이면 정지도 넣지 않는다
+		return
+	var now := Time.get_ticks_msec()
+	if now < _hitstop_next_ok or now < _slowmo_until:
+		return
+	_hitstop_next_ok = now + HITSTOP_MIN_GAP_MS
+	Engine.time_scale = HITSTOP_SCALE
+	_slowmo_until = now + ms
 
 
 # 보물상자 개봉 연출 (뱀서식): 등급(1/3/5)이 높을수록 화려 — 금화·링·플래시·슬로우모션 스케일업
@@ -7896,8 +7976,16 @@ func _refresh_skill_hud() -> void:
 		skill_bar.dodge_max = Player.DODGE_COOLDOWN
 		skill_bar.queue_redraw()
 	if skill_hud_label:
-		skill_hud_label.text = "     ".join(names) if not names.is_empty() \
-			else "레벨업으로 스킬을 배우세요"
+		if names.is_empty():
+			skill_hud_label.text = "레벨업으로 스킬을 배우세요"
+		else:
+			# 콤보 가이드 한 줄. 스킬바가 payoff 슬롯을 밝혀 주지만 그것만으로는
+			# "왜 밝은지"를 알 수 없다. 규칙과 현재 상태를 같이 보여 준다.
+			# primed_dist는 위에서 이미 구한 값이라 그룹을 다시 훑지 않는다.
+			var guide := "[콤보] 밑준비로 상태를 걸고 → 마무리로 터뜨린다"
+			if primed_dist < INF:
+				guide = "[콤보] 터뜨릴 대상 있음 — 마무리 스킬로 소비"
+			skill_hud_label.text = "%s\n%s" % ["     ".join(names), guide]
 
 
 # 가장 가까운 "상태 걸린 적"까지의 거리. 없으면 INF.
@@ -12140,6 +12228,30 @@ func _nav_objective_done(node: Node) -> bool:
 	for method_name in NAV_DONE_METHODS:
 		if node.has_method(method_name):
 			return bool(node.call(method_name))
+	return false
+
+
+# 이 층의 고유 목표(봉인비·균열·화로·닻·성문)를 요구 개수만큼 끝냈는가.
+# 고유 인카운터가 없는 스테이지는 목표가 없으므로 false — 기존 타이머 흐름을 그대로 탄다.
+func _stage_objectives_cleared() -> bool:
+	match map_stage:
+		GRAVE_STAGE: return grave_seals_completed >= GRAVE_SEAL_REQUIRED
+		HELL_STAGE: return hell_fissures_sealed >= HELL_FISSURE_REQUIRED
+		GLACIER_STAGE: return glacier_braziers_lit >= GLACIER_BRAZIER_REQUIRED
+		VOID_STAGE: return void_anchors_stabilized >= VOID_ANCHOR_REQUIRED
+		CASTLE_STAGE: return castle_gates_opened >= CASTLE_GATE_REQUIRED
+	return false
+
+
+# 중간보스를 실제로 처치했는가. '살아 있지 않음'과 구분해야 한다 — 등장 전에도
+# alive는 false라서, 그걸로 보스를 열면 중간보스를 건너뛸 수 있다.
+func _stage_midboss_defeated() -> bool:
+	match map_stage:
+		GRAVE_STAGE: return grave_midboss_defeated
+		HELL_STAGE: return hell_midboss_defeated
+		GLACIER_STAGE: return glacier_midboss_defeated
+		VOID_STAGE: return void_midboss_defeated
+		CASTLE_STAGE: return castle_midboss_defeated
 	return false
 
 

@@ -531,6 +531,11 @@ func take_damage(d: float, crit: bool = false, dot: bool = false, element: Strin
 		_flash_t = 0.14
 		_hit_t = HIT_DUR
 		self_modulate = Color(8, 8, 9)
+		# 히트스톱. 처치 > 치명타 > 일반 순으로 길게 준다 — 터뜨리는 순간이 가장 무겁다.
+		# 연타 제한과 실제 적용 여부는 Main이 판단한다(request_hitstop).
+		# 지속피해(dot)는 여기 들어오지 않는다. 매 프레임 얼면 장판 위에서 게임이 멈춘다.
+		if m and m.has_method("request_hitstop"):
+			m.request_hitstop(80 if hp <= 0.0 else (55 if crit else 35))
 	# 데미지 숫자: 단발 타격(≥1)은 즉시, 지속피해(<1 틱)는 누적 후 주기 표시 (0 표시 방지)
 	if m and m.has_method("_spawn_dmg_num"):
 		if d >= 1.0 or crit:
@@ -690,11 +695,27 @@ func _draw() -> void:
 		draw_rect(Rect2(-ebw / 2.0 - 1.0, eby - 1.0, ebw + 2.0, bar_h + 2.0), Color(0.05, 0.04, 0.06, 0.92))
 		draw_rect(Rect2(-ebw / 2.0, eby, ebw * hp_ratio, bar_h),
 			Color(1.0, 0.78, 0.28) if elite else Color(0.92, 0.32, 0.30))
+	# 상태(화상·중독·기절…) 잔여 시간 바.
+	# 상태는 mark_status로 이미 관리되고 있었지만 화면 표현이 몸 색 하나뿐이었다.
+	# 콤보가 핵심 시스템인데 "언제까지 터뜨릴 수 있는지"를 알 방법이 없었고, 피격
+	# 플래시가 뜨면 몸 색마저 덮였다(_flash_t 조건). HP바 바로 아래에 얇게 붙인다.
+	if status != "" and status_t > 0.0:
+		var sbw: float = radius * 2.0
+		var sby: float = -radius * SPRITE_SCALE * 0.5 - 9.0 + (5.0 if elite else 3.0) + 2.0
+		var sp: float = clampf(status_t / SkillDefs.PRIME_TIME, 0.0, 1.0)
+		draw_rect(Rect2(-sbw / 2.0 - 1.0, sby - 1.0, sbw + 2.0, 4.0), Color(0.05, 0.04, 0.06, 0.92))
+		draw_rect(Rect2(-sbw / 2.0, sby, sbw * sp, 2.0), status_col)
 	var tex: Texture2D = null
 	if _sp_state == 1 and _frames_attack.size() > 0:
 		# 전조 신호 3: windup 포즈에서 프레임을 고정한다. 루프하지 않으므로 평소 공격과
 		# 확실히 구분되고, "무기를 들어올린 채 멈춰 있다"로 읽힌다.
 		tex = _frames_attack[mini(2, _frames_attack.size() - 1)]
+	elif _melee_state == 1 and _frames_attack.size() > 0:
+		# 일반 근접 예고도 정예와 같은 언어를 쓴다(정지·몸 색·포즈 고정). 도형 오버레이는 안 쓴다.
+		# 432f0ac에서 _draw_attack_warning의 부채꼴을 걷어낸 뒤로 일반 몹 대체가 없었다.
+		# 그래서 0.36초짜리 예고 구간이 화면에는 존재하지 않았고, 맞는 게 "못 피했다"가
+		# 아니라 "그냥 맞았다"가 됐다. 정지는 이미 되고 있었으므로 포즈와 색만 붙인다.
+		tex = _frames_attack[mini(1, _frames_attack.size() - 1)]
 	elif _attacking and _frames_attack.size() > 0:
 		tex = _frames_attack[int(_atk_t * 12.0) % _frames_attack.size()]
 	if tex == null:
@@ -719,6 +740,12 @@ func _draw() -> void:
 			var glow: Color = _sp.get("color", Color(1.0, 0.6, 0.2))
 			tint = tint.lerp(Color(glow.r * 2.6, glow.g * 2.6, glow.b * 2.6),
 				0.30 + sp_p * 0.60)
+		elif _melee_state == 1:
+			# 예고가 진행될수록 진해져 타격 시점을 읽게 한다.
+			# 정예(0.30~0.90)보다 옅게 잡는다 — 잡몹 여럿이 동시에 예고할 때
+			# 화면이 통째로 주황으로 뒤덮이면 오히려 아무것도 안 읽힌다.
+			var mp: float = clampf(1.0 - _melee_t / _melee_windup_duration(), 0.0, 1.0)
+			tint = tint.lerp(Color(2.4, 1.05, 0.42), 0.16 + mp * 0.40)
 		elif _sp_flash > 0.0:
 			# 발동 순간만 하얗게 터진다. 링이 아니라 몸 자체가 번쩍여 타격 프레임이 읽힌다.
 			tint = tint.lerp(Color(3.4, 3.4, 3.6), clampf(_sp_flash / 0.14, 0.0, 1.0))
