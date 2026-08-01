@@ -8422,7 +8422,11 @@ func _skill_nova(def: Dictionary, damage: float, effect: String) -> void:
 		if e.has_method("shove"):
 			e.shove(player.position, 260.0)
 	_break_near(player.position, radius, damage)
-	spawn_fx_form("cast", player.position, radius * 1.2, 0.0)
+	# 분출(nova)은 impact 형태를 쓴다. 예전에는 cast를 썼는데, cast는 _muzzle이 쓰는
+	# 총구 섬광용이라 손끝에 30~44px로 찍으라고 만든 그림이다. 그걸 반경 142px로
+	# 늘리니 형체를 알 수 없는 덩어리가 됐다(화염은 갈색 원으로 보였다).
+	# impact 행은 9원소 전부 폭발 자산이 잡혀 있어 "터뜨려 밀어낸다"와 맞는다.
+	spawn_fx_form("impact", player.position, radius * 1.2, 0.0)
 	shake_t = maxf(shake_t, 0.16)
 	play_sfx("hit", -10.0, 0.1)
 

@@ -53,7 +53,11 @@ func _effect_names() -> Array[String]:
 	if d == null:
 		return names
 	for dir_name in d.get_directories():
-		if dir_name.begins_with("fx_") or dir_name.begins_with("proj_"):
+		# vfx_* 는 스킬이 형태 x 원소 매트릭스로 고르는 자산군이다(FxMatrix).
+		# fx_* 와 별개 계열이라 예전에는 시트에 안 잡혔는데, 어긋난 조합을 찾으려면
+		# 이쪽을 봐야 한다(화염만 cast/zone/ward 세 군데에서 문제가 나왔다).
+		if dir_name.begins_with("fx_") or dir_name.begins_with("proj_") \
+				or dir_name.begins_with("vfx_"):
 			names.append(dir_name)
 	names.sort()
 	return names

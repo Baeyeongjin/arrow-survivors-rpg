@@ -35,7 +35,10 @@ const FALLBACK_ELEMENT := "phys"
 #   ward    보호·버프 (자기 강화)
 const FORMS := {
 	"cast": {
-		"phys": "vfx_phys_005", "fire": "vfx_fire_flamme", "ice": "vfx_ice_claw",
+		# cast는 _muzzle이 손끝에 30~44px로 찍는 총구 섬광이다. 작고 뾰족한 그림이 맞다.
+		# 화염은 flamme(제대로 된 불꽃 모양)을 여기 두면 손끝에서만 반짝이고 끝난다.
+		# 불꽃은 장판(zone)으로 보내고 여기엔 작은 pit을 쓴다.
+		"phys": "vfx_phys_005", "fire": "vfx_fire_pit", "ice": "vfx_ice_claw",
 		"dark": "vfx_dark_spin", "holy": "vfx_holy_wings", "water": "vfx_water_splash",
 		"wind": "vfx_wind_gust", "earth": "vfx_earth_grow", "elec": "vfx_elec_spin",
 	},
@@ -57,7 +60,9 @@ const FORMS := {
 		"wind": "vfx_wind_slash", "earth": "vfx_earth_spin", "elec": "vfx_elec_slash",
 	},
 	"zone": {
-		"phys": "vfx_boom_05", "fire": "vfx_fire_pit", "ice": "vfx_ice_spike",
+		# 장판은 "바닥에 깔려 지속되는 것"이다. 화염은 pit(작은 불씨 웅덩이)이라
+		# 96px로 늘리면 갈색 원처럼 보였다. 불꽃 모양인 flamme으로 바꾼다.
+		"phys": "vfx_boom_05", "fire": "vfx_fire_flamme", "ice": "vfx_ice_spike",
 		"dark": "vfx_dark_portal", "holy": "vfx_holy_blessing",
 		"water": "vfx_water_colomn", "wind": "vfx_wind_ground",
 		"earth": "vfx_earth_lava", "elec": "vfx_elec_lighting1",
