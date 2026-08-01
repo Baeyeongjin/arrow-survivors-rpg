@@ -97,10 +97,31 @@ func _movement_input() -> Vector2:
 	if Input.is_action_pressed("ui_down") or Input.is_key_pressed(KEY_S):
 		v.y += 1.0
 	if v == Vector2.ZERO:
-		var stick := Vector2(Input.get_joy_axis(0, JOY_AXIS_LEFT_X), Input.get_joy_axis(0, JOY_AXIS_LEFT_Y))
-		if stick.length() > 0.25:
-			v = stick
+		v = _stick_input()
 	return v.normalized() if v != Vector2.ZERO else Vector2.ZERO
+
+
+# 게임패드 왼쪽 스틱. 데드존 밖의 초과분만 남기고 다시 스케일한다.
+#
+# 예전에는 stick.length() > 0.25 면 그 값을 그대로 썼는데, 위에서 normalized()가
+# 걸려서 0.26짜리 드리프트도 전속력이 됐다. 축이 살짝 틀어진 패드가 꽂혀 있으면
+# 손을 안 대도 캐릭터가 한 방향으로 계속 걸어갔다(사장님 신고: 시작하면 오른쪽으로 감).
+#
+# 연결된 패드가 없으면 아예 읽지 않는다. 장치가 없는데도 축이 0이 아닌 값을 주는
+# 환경이 있어서, 길이 검사만으로는 못 막는다.
+const STICK_DEADZONE := 0.35
+
+
+func _stick_input() -> Vector2:
+	if Input.get_connected_joypads().is_empty():
+		return Vector2.ZERO
+	var stick := Vector2(
+		Input.get_joy_axis(0, JOY_AXIS_LEFT_X), Input.get_joy_axis(0, JOY_AXIS_LEFT_Y))
+	var mag := stick.length()
+	if mag <= STICK_DEADZONE:
+		return Vector2.ZERO
+	# 데드존을 뺀 나머지를 0~1로 다시 편다. 데드존 경계에서 속도가 튀지 않는다.
+	return stick.normalized() * ((mag - STICK_DEADZONE) / (1.0 - STICK_DEADZONE))
 
 
 # 마우스 커서의 월드 좌표. 자동조준을 걷어내고 조준을 플레이어 손에 돌려준다.
