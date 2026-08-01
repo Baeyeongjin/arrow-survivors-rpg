@@ -49,10 +49,13 @@ func _initialize() -> void:
 	var fissure = FissureScript.new()
 	fissure.configure(0, 100.0, 10.0)
 	fissure.take_damage(10.0, false, false, "phys")
-	_expect(is_equal_approx(fissure.hp, 90.0), "물리 균열 피해 기준값 오류: %.1f" % fissure.hp)
+	# 콤보 게이트: 상태가 안 발려 있으면 원소와 무관하게 0.30배다(HellFissure.take_damage).
+	# 화염 저항과 값이 같아 헷갈리지만 원인이 다르다 — 여기서는 setup 미적용이 이유다.
+	_expect(is_equal_approx(fissure.hp, 97.0), "물리 균열 콤보 게이트 배수 오류: %.1f" % fissure.hp)
 	fissure.hp = 100.0
 	fissure.take_damage(10.0, false, false, "ice")
-	_expect(is_equal_approx(fissure.hp, 75.0), "냉기 균열 파괴 배수 오류: %.1f" % fissure.hp)
+	# 콤보 게이트(0.30) x 냉기 특효(2.5) = 0.75배. 게이트가 원소 배수보다 먼저 걸린다.
+	_expect(is_equal_approx(fissure.hp, 92.5), "냉기 균열 파괴 배수 오류: %.1f" % fissure.hp)
 	fissure.hp = 100.0
 	fissure.take_damage(10.0, false, false, "fire")
 	_expect(is_equal_approx(fissure.hp, 97.0), "화염 균열 저항 배수 오류: %.1f" % fissure.hp)
