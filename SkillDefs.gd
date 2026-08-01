@@ -34,29 +34,29 @@ const ARCHETYPES := {
 	},
 	"burst": {
 		"name": "작렬", "form": "impact", "slot": "skill",
-		"cd": 5.0, "dmg": 3.1, "range": 300.0, "radius": 26.0,
+		"cd": 5.0, "dmg": 3.1, "range": 300.0, "radius": 84.0,
 		"desc": "커서 위치를 즉발로 터뜨린다",
 	},
 	"field": {
 		"name": "장판", "form": "zone", "slot": "skill",
-		"cd": 8.5, "dmg": 0.9, "range": 300.0, "radius": 28.0, "duration": 4.5,
+		"cd": 8.5, "dmg": 0.9, "range": 300.0, "radius": 96.0, "duration": 4.5,
 		"desc": "커서 위치에 지속 피해 지대를 남긴다",
 	},
 	"ward": {
 		"name": "보호", "form": "ward", "slot": "skill",
-		"cd": 12.0, "dmg": 0.0, "range": 0.0, "radius": 26.0, "duration": 5.0,
+		"cd": 12.0, "dmg": 0.0, "range": 0.0, "radius": 72.0, "duration": 5.0,
 		"desc": "자신을 감싸는 보호막을 두른다",
 	},
 	"nova": {
 		"name": "분출", "form": "cast", "slot": "skill",
-		"cd": 6.5, "dmg": 2.2, "range": 0.0, "radius": 28.0,
+		"cd": 6.5, "dmg": 2.2, "range": 0.0, "radius": 104.0,
 		"desc": "자기 주위로 터뜨려 밀어낸다",
 	},
 	# 대형 스킬 2종. 캐릭터 궁극기(마우스 우클릭 · 게이지 소모)와는 별개로, 긴 쿨다운을
 	# 대가로 한 방이 큰 Q/E/R/F 스킬이다. 궁극기는 게이지가 자원이고 이쪽은 쿨다운이다.
 	"ruin": {
 		"name": "파멸", "form": "impact", "slot": "heavy", "heavy": true,
-		"cd": 24.0, "dmg": 6.5, "range": 320.0, "radius": 33.0,
+		"cd": 24.0, "dmg": 6.5, "range": 320.0, "radius": 132.0,
 		"desc": "커서 위치에 대형 폭발 (긴 쿨다운)",
 	},
 	# 이름을 그림에 맞춘다. 이 스킬의 화염 자산은 vfx_fire_tornado(회오리)인데
@@ -64,7 +64,7 @@ const ARCHETYPES := {
 	# 빨아들이는 쪽으로 맞춘다 — 흩어진 적을 한곳에 모아 광역으로 정리하는 역할이다.
 	"aegis": {
 		"name": "회오리", "form": "zone", "slot": "heavy", "heavy": true,
-		"cd": 28.0, "dmg": 1.6, "range": 260.0, "radius": 33.0, "duration": 7.0,
+		"cd": 28.0, "dmg": 1.6, "range": 260.0, "radius": 148.0, "duration": 7.0,
 		"desc": "적을 중심으로 끌어당기는 소용돌이 (긴 쿨다운)",
 	},
 }

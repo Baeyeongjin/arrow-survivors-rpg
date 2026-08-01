@@ -2333,13 +2333,24 @@ func _fx_element() -> String:
 
 # 형태로 이펙트를 부른다. 무기는 형태만 고르고 실제 아트는 캐릭터 원소가 결정한다.
 # heavy=true는 궁극기·보스 패턴처럼 "큰 거다"를 알려야 할 때만.
+# 이펙트 그림의 최대 크기. 판정 범위와는 별개다 — 판정은 그대로 두고 그림만 묶는다.
+#
+# 스킬이 이펙트 크기를 판정 반경에서 그대로 가져다 써서, 반경 148짜리 회오리가
+# 64px 자산을 296px로 늘려 뭉갰다. 캐릭터 스프라이트가 33px인데 그 9배다.
+# 사장님 기준: 그림은 캐릭터의 2배(66px)를 넘지 않는다.
+#
+# 판정 범위를 줄이면 게임이 바뀌지만 그림만 묶으면 손맛은 그대로다.
+# 넓은 판정을 알려야 하는 곳(장판 테두리 등)은 VoidZone 이 따로 원을 그린다.
+const FX_MAX_SIZE := 66.0
+
+
 func spawn_fx_form(form: String, pos: Vector2, size_px: float = 72.0, rot: float = 0.0,
 		fps: float = 16.0, stretch: Vector2 = Vector2.ONE, heavy: bool = false,
 		alpha: float = 1.0) -> void:
 	var name := FxMatrix.resolve(form, _fx_element(), heavy)
 	if name == "":
 		return
-	spawn_fx(name, pos, size_px, rot, fps, stretch, alpha)
+	spawn_fx(name, pos, minf(size_px, FX_MAX_SIZE), rot, fps, stretch, alpha)
 
 
 func spawn_fx(dir_name: String, pos: Vector2, size_px: float = 72.0, rot: float = 0.0,
