@@ -2092,8 +2092,10 @@ func _physics_process(delta: float) -> void:
 				if a.position.distance_to(b.position) < a.radius + b.radius:
 					a.hit[b] = true
 					b.take_damage(a.damage)
-					# 타격 이펙트 (파괴 오브젝트에도 명중 연출 — 딜 들어가는 게 보이게)
-					spawn_fx("fx_hit", b.position, 40.0)
+					# 타격 이펙트 (파괴 오브젝트에도 명중 연출 — 딜 들어가는 게 보이게).
+					# 이름을 박지 않고 매트릭스를 거친다. 박아 두면 원소를 바꿔도
+					# 파괴물 명중만 옛 이펙트로 남는다(FxMatrixTest가 잡던 위반).
+					spawn_fx_form("impact", b.position, 40.0)
 					_spawn_dmg_num(b.position, max(1, int(round(a.damage))), false)
 					if a.pierce <= 0:
 						a.queue_free()
