@@ -8380,12 +8380,31 @@ func _skill_field(def: Dictionary, target: Vector2, damage: float, element: Stri
 	z.anim_dir = FxMatrix.resolve_path("zone", element, bool(def.get("heavy", false)))
 	z.outline = false
 	add_child(z)
-	# 숙련(결계): 펼친 자신도 보호를 받는다. 공격 지대가 안전 지대를 겸한다.
+	# 숙련(회오리): 펼친 자신도 보호를 받는다. 적을 모아 놓은 한복판에 서야 하므로
+	# 방어가 붙지 않으면 숙련이 오히려 자살 행위가 된다.
 	if bool(def.get("mastered", false)) and bool(def.get("heavy", false)):
 		player.armor += 4.0
 		ward_timer = maxf(ward_timer, float(def.get("duration", 7.0)))
 	spawn_fx_form("zone", target, float(def["radius"]) * 1.1, 0.0, 14.0, Vector2.ONE,
 		bool(def.get("heavy", false)))
+	# 회오리(heavy zone): 펼치는 순간 범위 안의 적을 중심으로 끌어당긴다.
+	# 흩어진 적을 한곳에 모아 광역으로 정리하는 역할을 준다. 자산이 소용돌이인데
+	# 아무것도 빨아들이지 않으면 그림과 효과가 따로 논다.
+	#
+	# shove(from, force)는 from의 반대 방향으로 미는 기존 함수다. 적 너머의 대칭점
+	# (2*적 - 중심)을 from으로 주면 밀려나는 방향이 곧 중심을 향한 당김이 된다.
+	# 당김 전용 함수를 새로 만들지 않으려고 이 방식을 쓴다.
+	if bool(def.get("heavy", false)):
+		var pull_r := float(def.get("radius", 148.0))
+		for node in get_tree().get_nodes_in_group("enemies"):
+			var e2 := node as Node2D
+			if e2 == null or not is_instance_valid(e2) or not e2.has_method("shove"):
+				continue
+			var to_center: Vector2 = target - e2.position
+			var d := to_center.length()
+			if d > pull_r or d < 1.0:
+				continue
+			e2.shove(e2.position - to_center, 300.0)
 	play_sfx("levelup", -16.0, 0.1)
 
 

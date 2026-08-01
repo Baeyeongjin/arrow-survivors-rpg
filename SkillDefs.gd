@@ -59,10 +59,13 @@ const ARCHETYPES := {
 		"cd": 24.0, "dmg": 6.5, "range": 320.0, "radius": 132.0,
 		"desc": "커서 위치에 대형 폭발 (긴 쿨다운)",
 	},
+	# 이름을 그림에 맞춘다. 이 스킬의 화염 자산은 vfx_fire_tornado(회오리)인데
+	# 이름만 "결계"라 무엇을 하는 스킬인지 읽히지 않았다. 자산이 회오리니 효과도
+	# 빨아들이는 쪽으로 맞춘다 — 흩어진 적을 한곳에 모아 광역으로 정리하는 역할이다.
 	"aegis": {
-		"name": "결계", "form": "zone", "slot": "heavy", "heavy": true,
+		"name": "회오리", "form": "zone", "slot": "heavy", "heavy": true,
 		"cd": 28.0, "dmg": 1.6, "range": 260.0, "radius": 148.0, "duration": 7.0,
-		"desc": "넓은 지속 결계를 펼친다 (긴 쿨다운)",
+		"desc": "적을 중심으로 끌어당기는 소용돌이 (긴 쿨다운)",
 	},
 }
 
